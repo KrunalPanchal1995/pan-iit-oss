@@ -1,0 +1,270 @@
+[submodule "openhousehold"]
+	path = openhousehold
+	url = https://github.com/KrunalPanchal1995/openhousehold.git
+[submodule "openfridge"]
+	path = openfridge
+	url = https://github.com/KrunalPanchal1995/openfridge.git
+[submodule "openpressurecooker"]
+	path = openpressurecooker
+	url = https://github.com/KrunalPanchal1995/openpressurecooker.git
+[submodule "openelevator"]
+	path = openelevator
+	url = https://github.com/KrunalPanchal1995/openelevator.git
+[submodule "opentrafficsignal"]
+	path = opentrafficsignal
+	url = https://github.com/KrunalPanchal1995/opentrafficsignal.git
+[submodule "opengps"]
+	path = opengps
+	url = https://github.com/KrunalPanchal1995/opengps.git
+[submodule "openqrcode"]
+	path = openqrcode
+	url = https://github.com/KrunalPanchal1995/openqrcode.git
+[submodule "openupi"]
+	path = openupi
+	url = https://github.com/KrunalPanchal1995/openupi.git
+[submodule "openunits"]
+	path = openunits
+	url = https://github.com/KrunalPanchal1995/openunits.git
+[submodule "opencalculus"]
+	path = opencalculus
+	url = https://github.com/KrunalPanchal1995/opencalculus.git
+[submodule "openvectors"]
+	path = openvectors
+	url = https://github.com/KrunalPanchal1995/openvectors.git
+[submodule "openheights"]
+	path = openheights
+	url = https://github.com/KrunalPanchal1995/openheights.git
+[submodule "openfractal"]
+	path = openfractal
+	url = https://github.com/KrunalPanchal1995/openfractal.git
+[submodule "openvfx"]
+	path = openvfx
+	url = https://github.com/KrunalPanchal1995/openvfx.git
+[submodule "openmapproject"]
+	path = openmapproject
+	url = https://github.com/KrunalPanchal1995/openmapproject.git
+[submodule "openodds"]
+	path = openodds
+	url = https://github.com/KrunalPanchal1995/openodds.git
+[submodule "openfloat"]
+	path = openfloat
+	url = https://github.com/KrunalPanchal1995/openfloat.git
+[submodule "openmotion"]
+	path = openmotion
+	url = https://github.com/KrunalPanchal1995/openmotion.git
+[submodule "openincline"]
+	path = openincline
+	url = https://github.com/KrunalPanchal1995/openincline.git
+[submodule "openprojectile"]
+	path = openprojectile
+	url = https://github.com/KrunalPanchal1995/openprojectile.git
+[submodule "opencrashsim"]
+	path = opencrashsim
+	url = https://github.com/KrunalPanchal1995/opencrashsim.git
+[submodule "openoscillator"]
+	path = openoscillator
+	url = https://github.com/KrunalPanchal1995/openoscillator.git
+[submodule "openchaos"]
+	path = openchaos
+	url = https://github.com/KrunalPanchal1995/openchaos.git
+[submodule "opengyro"]
+	path = opengyro
+	url = https://github.com/KrunalPanchal1995/opengyro.git
+[submodule "opencentripetal"]
+	path = opencentripetal
+	url = https://github.com/KrunalPanchal1995/opencentripetal.git
+[submodule "openheatspread"]
+	path = openheatspread
+	url = https://github.com/KrunalPanchal1995/openheatspread.git
+[submodule "openengine"]
+	path = openengine
+	url = https://github.com/KrunalPanchal1995/openengine.git
+[submodule "openheatpump"]
+	path = openheatpump
+	url = https://github.com/KrunalPanchal1995/openheatpump.git
+[submodule "openpipeflow"]
+	path = openpipeflow
+	url = https://github.com/KrunalPanchal1995/openpipeflow.git
+[submodule "openhydraulics"]
+	path = openhydraulics
+	url = https://github.com/KrunalPanchal1995/openhydraulics.git
+[submodule "openbuoyancy"]
+	path = openbuoyancy
+	url = https://github.com/KrunalPanchal1995/openbuoyancy.git
+[submodule "openboiling"]
+	path = openboiling
+	url = https://github.com/KrunalPanchal1995/openboiling.git
+[submodule "openohm"]
+	path = openohm
+	url = https://github.com/KrunalPanchal1995/openohm.git
+[submodule "opencircuitlab"]
+	path = opencircuitlab
+	url = https://github.com/KrunalPanchal1995/opencircuitlab.git
+[submodule "openrcfilter"]
+	path = openrcfilter
+	url = https://github.com/KrunalPanchal1995/openrcfilter.git
+[submodule "openemwave"]
+	path = openemwave
+	url = https://github.com/KrunalPanchal1995/openemwave.git
+[submodule "openinduction"]
+	path = openinduction
+	url = https://github.com/KrunalPanchal1995/openinduction.git
+[submodule "opendcmotor"]
+	path = opendcmotor
+	url = https://github.com/KrunalPanchal1995/opendcmotor.git
+[submodule "openmole"]
+	path = openmole
+	url = https://github.com/KrunalPanchal1995/openmole.git
+[submodule "openphtitration"]
+	path = openphtitration
+	url = https://github.com/KrunalPanchal1995/openphtitration.git
+[submodule "openbatterycell"]
+	path = openbatterycell
+	url = https://github.com/KrunalPanchal1995/openbatterycell.git
+[submodule "openreactionrate"]
+	path = openreactionrate
+	url = https://github.com/KrunalPanchal1995/openreactionrate.git
+[submodule "openarrhenius"]
+	path = openarrhenius
+	url = https://github.com/KrunalPanchal1995/openarrhenius.git
+[submodule "openignition"]
+	path = openignition
+	url = https://github.com/KrunalPanchal1995/openignition.git
+[submodule "openstressstrain"]
+	path = openstressstrain
+	url = https://github.com/KrunalPanchal1995/openstressstrain.git
+[submodule "openphasediagram"]
+	path = openphasediagram
+	url = https://github.com/KrunalPanchal1995/openphasediagram.git
+[submodule "openheartflow"]
+	path = openheartflow
+	url = https://github.com/KrunalPanchal1995/openheartflow.git
+[submodule "openneuron"]
+	path = openneuron
+	url = https://github.com/KrunalPanchal1995/openneuron.git
+[submodule "opengenetics"]
+	path = opengenetics
+	url = https://github.com/KrunalPanchal1995/opengenetics.git
+[submodule "openepidemic"]
+	path = openepidemic
+	url = https://github.com/KrunalPanchal1995/openepidemic.git
+[submodule "openbeam"]
+	path = openbeam
+	url = https://github.com/KrunalPanchal1995/openbeam.git
+[submodule "opentruss"]
+	path = opentruss
+	url = https://github.com/KrunalPanchal1995/opentruss.git
+[submodule "openbuildingsway"]
+	path = openbuildingsway
+	url = https://github.com/KrunalPanchal1995/openbuildingsway.git
+[submodule "openretainingwall"]
+	path = openretainingwall
+	url = https://github.com/KrunalPanchal1995/openretainingwall.git
+[submodule "opensurvey"]
+	path = opensurvey
+	url = https://github.com/KrunalPanchal1995/opensurvey.git
+[submodule "opengears"]
+	path = opengears
+	url = https://github.com/KrunalPanchal1995/opengears.git
+[submodule "openlinkage"]
+	path = openlinkage
+	url = https://github.com/KrunalPanchal1995/openlinkage.git
+[submodule "opentolerance"]
+	path = opentolerance
+	url = https://github.com/KrunalPanchal1995/opentolerance.git
+[submodule "openfatigue"]
+	path = openfatigue
+	url = https://github.com/KrunalPanchal1995/openfatigue.git
+[submodule "opencncpath"]
+	path = opencncpath
+	url = https://github.com/KrunalPanchal1995/opencncpath.git
+[submodule "opensculpt"]
+	path = opensculpt
+	url = https://github.com/KrunalPanchal1995/opensculpt.git
+[submodule "openbinary"]
+	path = openbinary
+	url = https://github.com/KrunalPanchal1995/openbinary.git
+[submodule "openpacket"]
+	path = openpacket
+	url = https://github.com/KrunalPanchal1995/openpacket.git
+[submodule "opensql"]
+	path = opensql
+	url = https://github.com/KrunalPanchal1995/opensql.git
+[submodule "opencrypto"]
+	path = opencrypto
+	url = https://github.com/KrunalPanchal1995/opencrypto.git
+[submodule "openneuralnet"]
+	path = openneuralnet
+	url = https://github.com/KrunalPanchal1995/openneuralnet.git
+[submodule "openregression"]
+	path = openregression
+	url = https://github.com/KrunalPanchal1995/openregression.git
+[submodule "opensolarbattery"]
+	path = opensolarbattery
+	url = https://github.com/KrunalPanchal1995/opensolarbattery.git
+[submodule "openloan"]
+	path = openloan
+	url = https://github.com/KrunalPanchal1995/openloan.git
+[submodule "openbreakeven"]
+	path = openbreakeven
+	url = https://github.com/KrunalPanchal1995/openbreakeven.git
+[submodule "openportfolio"]
+	path = openportfolio
+	url = https://github.com/KrunalPanchal1995/openportfolio.git
+[submodule "openseismo"]
+	path = openseismo
+	url = https://github.com/KrunalPanchal1995/openseismo.git
+[submodule "opennowcast"]
+	path = opennowcast
+	url = https://github.com/KrunalPanchal1995/opennowcast.git
+[submodule "openwatershed"]
+	path = openwatershed
+	url = https://github.com/KrunalPanchal1995/openwatershed.git
+[submodule "openorbit"]
+	path = openorbit
+	url = https://github.com/KrunalPanchal1995/openorbit.git
+[submodule "openseasons"]
+	path = openseasons
+	url = https://github.com/KrunalPanchal1995/openseasons.git
+[submodule "openeclipse"]
+	path = openeclipse
+	url = https://github.com/KrunalPanchal1995/openeclipse.git
+[submodule "openexoplanet"]
+	path = openexoplanet
+	url = https://github.com/KrunalPanchal1995/openexoplanet.git
+[submodule "openexperiment"]
+	path = openexperiment
+	url = https://github.com/KrunalPanchal1995/openexperiment.git
+[submodule "openuncertainty"]
+	path = openuncertainty
+	url = https://github.com/KrunalPanchal1995/openuncertainty.git
+[submodule "openstereodic"]
+	path = openstereodic
+	url = https://github.com/KrunalPanchal1995/openstereodic.git
+[submodule "openproteinmd"]
+	path = openproteinmd
+	url = https://github.com/KrunalPanchal1995/openproteinmd.git
+[submodule "openflame"]
+	path = openflame
+	url = https://github.com/KrunalPanchal1995/openflame.git
+[submodule "openkymo"]
+	path = openkymo
+	url = https://github.com/KrunalPanchal1995/openkymo.git
+[submodule "openabel"]
+	path = openabel
+	url = https://github.com/KrunalPanchal1995/openabel.git
+[submodule "openalias"]
+	path = openalias
+	url = https://github.com/KrunalPanchal1995/openalias.git
+[submodule "openmechanism"]
+	path = openmechanism
+	url = https://github.com/KrunalPanchal1995/openmechanism.git
+[submodule "openregularity"]
+	path = openregularity
+	url = https://github.com/KrunalPanchal1995/openregularity.git
+[submodule "openstitchdic"]
+	path = openstitchdic
+	url = https://github.com/KrunalPanchal1995/openstitchdic.git
+[submodule "openprocesssim"]
+	path = openprocesssim
+	url = https://github.com/KrunalPanchal1995/openprocesssim.git
