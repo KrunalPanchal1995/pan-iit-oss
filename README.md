@@ -25,7 +25,7 @@ Openfirststeps is the umbrella for a family of small teaching repositories made 
 
 ## Status
 
-259 repositories planned, 132 built and verified, 90 published so far. Published ones live at `https://github.com/KrunalPanchal1995/<name>` and their apps at `https://krunalpanchal1995.github.io/<name>/`.
+259 repositories planned, 132 built and verified, 103 published so far. Published ones live at `https://github.com/KrunalPanchal1995/<name>` and their apps at `https://krunalpanchal1995.github.io/<name>/`.
 
 ## All projects
 
@@ -79,7 +79,7 @@ Openfirststeps is the umbrella for a family of small teaching repositories made 
 - **[openohm](https://github.com/KrunalPanchal1995/openohm)** (live; secondary to diploma/undergrad): Design a resistor circuit to a power and current limit with Ohm's law. Voltage, current and resistance link every electric circuit, and power limits decide what is safe.
 - **[opencircuitlab](https://github.com/KrunalPanchal1995/opencircuitlab)** (live; secondary to diploma/undergrad): Build series and parallel circuits and solve them with Kirchhoff's laws. Series and parallel networks, solved with Kirchhoff's laws, are the basis of all circuit analysis.
 - **[openrcfilter](https://github.com/KrunalPanchal1995/openrcfilter)** (live; secondary to diploma/undergrad): Design a filter that removes noise from a sensor signal. A filter keeps the signal you want and removes noise, using only a resistor and a capacitor.
-- **`openledcontrol`** (built; secondary to diploma/undergrad): Build a light-activated LED controller with a sensor and transistor switch. A transistor lets a tiny sensor signal switch a larger load, the idea behind automatic lights.
+- **[openledcontrol](https://github.com/KrunalPanchal1995/openledcontrol)** (live; secondary to diploma/undergrad): Build a light-activated LED controller with a sensor and transistor switch. A transistor lets a tiny sensor signal switch a larger load, the idea behind automatic lights.
 - **[openemwave](https://github.com/KrunalPanchal1995/openemwave)** (live; secondary to diploma/undergrad): Watch an antenna radiate and visualise electric and magnetic fields. Accelerating charges radiate waves, which is how radios, mobiles and radar work.
 - **[openinduction](https://github.com/KrunalPanchal1995/openinduction)** (live; secondary to diploma/undergrad): Explain how a transformer and a generator work from Faraday's law. A changing magnetic field makes a voltage, the principle behind generators and transformers.
 - **[opendcmotor](https://github.com/KrunalPanchal1995/opendcmotor)** (live; secondary to diploma/undergrad): Read and use a DC motor's torque-speed curve for a drive. A motor's torque-speed curve tells you what load it can drive and how fast.
@@ -101,13 +101,13 @@ Openfirststeps is the umbrella for a family of small teaching repositories made 
 - **[openneuron](https://github.com/KrunalPanchal1995/openneuron)** (live; secondary to diploma/undergrad): Simulate a nerve cell firing and how signals travel. Nerve cells fire when a voltage threshold is crossed, which is how signals travel in the body.
 - **[opengenetics](https://github.com/KrunalPanchal1995/opengenetics)** (live; secondary to diploma/undergrad): Predict inheritance of traits with Punnett squares and simulation. Inheritance follows simple probability rules that predict how traits appear in offspring.
 - **[openepidemic](https://github.com/KrunalPanchal1995/openepidemic)** (live; secondary to diploma/undergrad): Fit an SIR model to outbreak data and test vaccination (general education only). Simple outbreak models show how contact rates and vaccination change the course of a disease.
-- **`opennutrition`** (built; secondary to diploma/undergrad): Balance food energy against activity (general education, not medical advice). Food energy and activity balance explain weight change in general terms.
+- **[opennutrition](https://github.com/KrunalPanchal1995/opennutrition)** (live; secondary to diploma/undergrad): Balance food energy against activity (general education, not medical advice). Food energy and activity balance explain weight change in general terms.
 
 ### Civil Engineering and Construction
 
 - **[openbeam](https://github.com/KrunalPanchal1995/openbeam)** (live; diploma/undergrad to advanced undergrad): Meet a deflection limit with the lightest beam (shear, moment, deflection). Beams carry loads by bending, and depth is the cheapest way to make them stiff.
 - **[opentruss](https://github.com/KrunalPanchal1995/opentruss)** (live; diploma/undergrad to advanced undergrad): Compute member forces in a truss bridge. A truss carries load through members in tension and compression, using little material.
-- **`openfoundation`** (built; diploma/undergrad to advanced undergrad): Choose a foundation size from soil bearing capacity. A foundation must spread the building load so the soil is not overloaded.
+- **[openfoundation](https://github.com/KrunalPanchal1995/openfoundation)** (live; diploma/undergrad to advanced undergrad): Choose a foundation size from soil bearing capacity. A foundation must spread the building load so the soil is not overloaded.
 - **[openbuildingsway](https://github.com/KrunalPanchal1995/openbuildingsway)** (live; diploma/undergrad to advanced undergrad): Predict building sway in an earthquake with multi-DOF vibration. Tall buildings sway in earthquakes and wind, and designers tune their natural frequencies.
 - **[openretainingwall](https://github.com/KrunalPanchal1995/openretainingwall)** (live; diploma/undergrad to advanced undergrad): Check a retaining wall against sliding and overturning. A retaining wall must resist soil pressure without sliding or overturning.
 - **[opensurvey](https://github.com/KrunalPanchal1995/opensurvey)** (live; diploma/undergrad to advanced undergrad): Level a site and measure distances with trigonometry and a total station model. Levelling and distance measurement with trigonometry set out every construction site.
@@ -124,7 +124,7 @@ Openfirststeps is the umbrella for a family of small teaching repositories made 
 ### Computer Science, Programming and Software
 
 - **[openbinary](https://github.com/KrunalPanchal1995/openbinary)** (live; secondary to diploma/undergrad): Build an adder from logic gates and see how computers count. Computers count in binary and compute with logic gates built from switches.
-- **`opensorting`** (built; secondary to diploma/undergrad): Compare sorting algorithms by swaps, comparisons and time. Different algorithms do the same job at very different costs as data grows.
+- **[opensorting](https://github.com/KrunalPanchal1995/opensorting)** (live; secondary to diploma/undergrad): Compare sorting algorithms by swaps, comparisons and time. Different algorithms do the same job at very different costs as data grows.
 - **[openpacket](https://github.com/KrunalPanchal1995/openpacket)** (live; secondary to diploma/undergrad): Follow a packet across the internet from browser to server. Data travels the internet in small packets, routed hop by hop.
 - **[opensql](https://github.com/KrunalPanchal1995/opensql)** (live; secondary to diploma/undergrad): Query a small database and design its tables. Relational databases store facts in tables that you question with simple queries.
 - **[opencrypto](https://github.com/KrunalPanchal1995/opencrypto)** (live; secondary to diploma/undergrad): Break and then fix a toy cipher, and learn why keys matter. Keys, not secrecy of the method, protect messages, and weak ciphers are easy to break.
@@ -133,19 +133,19 @@ Openfirststeps is the umbrella for a family of small teaching repositories made 
 
 - **[openneuralnet](https://github.com/KrunalPanchal1995/openneuralnet)** (live; higher secondary to advanced undergrad): Train a neural network from scratch and watch backpropagation. A neural network learns by adjusting weights to reduce error, using backpropagation.
 - **[openregression](https://github.com/KrunalPanchal1995/openregression)** (live; higher secondary to advanced undergrad): Predict crop yield with regression and spot overfitting. Fitting a line to data predicts new values, but too flexible a model memorises noise.
-- **`openclassifier`** (built; higher secondary to advanced undergrad): Draw decision boundaries and read a confusion matrix. A classifier draws a boundary between categories, and a confusion matrix shows its mistakes.
-- **`openrecommend`** (built; higher secondary to advanced undergrad): Build a recommender that suggests what you might like. Recommenders find items similar to what you liked using patterns in many users' choices.
-- **`openneuralode`** (built; higher secondary to advanced undergrad): Learn dynamics from data with neural ODEs. A neural network can learn the rate of change of a system and then simulate it forward.
-- **`openpinn`** (built; higher secondary to advanced undergrad): Solve the heat equation with a physics-informed network. A network trained with a physical law as part of its loss can solve equations with little data.
-- **`opensurrogate`** (built; higher secondary to advanced undergrad): Build a neural surrogate for stiff kinetics. A fast learned stand-in for a slow simulation makes design and uncertainty studies affordable.
-- **`opensymbolic`** (built; higher secondary to advanced undergrad): Rediscover physical laws with symbolic regression. Symbolic regression searches for a formula that fits data, so the result can be read and trusted.
-- **`openrobotarm`** (built; higher secondary to advanced undergrad): Forward and inverse kinematics for a pick-and-place arm. Inverse kinematics finds the joint angles that put a robot's hand where it is needed.
-- **`openpathplanner`** (built; higher secondary to advanced undergrad): Plan routes for a warehouse robot with A* and RRT. A robot must find a route that avoids obstacles, with algorithms like A* and RRT.
+- **[openclassifier](https://github.com/KrunalPanchal1995/openclassifier)** (live; higher secondary to advanced undergrad): Draw decision boundaries and read a confusion matrix. A classifier draws a boundary between categories, and a confusion matrix shows its mistakes.
+- **[openrecommend](https://github.com/KrunalPanchal1995/openrecommend)** (live; higher secondary to advanced undergrad): Build a recommender that suggests what you might like. Recommenders find items similar to what you liked using patterns in many users' choices.
+- **[openneuralode](https://github.com/KrunalPanchal1995/openneuralode)** (live; higher secondary to advanced undergrad): Learn dynamics from data with neural ODEs. A neural network can learn the rate of change of a system and then simulate it forward.
+- **[openpinn](https://github.com/KrunalPanchal1995/openpinn)** (live; higher secondary to advanced undergrad): Solve the heat equation with a physics-informed network. A network trained with a physical law as part of its loss can solve equations with little data.
+- **[opensurrogate](https://github.com/KrunalPanchal1995/opensurrogate)** (live; higher secondary to advanced undergrad): Build a neural surrogate for stiff kinetics. A fast learned stand-in for a slow simulation makes design and uncertainty studies affordable.
+- **[opensymbolic](https://github.com/KrunalPanchal1995/opensymbolic)** (live; higher secondary to advanced undergrad): Rediscover physical laws with symbolic regression. Symbolic regression searches for a formula that fits data, so the result can be read and trusted.
+- **[openrobotarm](https://github.com/KrunalPanchal1995/openrobotarm)** (live; higher secondary to advanced undergrad): Forward and inverse kinematics for a pick-and-place arm. Inverse kinematics finds the joint angles that put a robot's hand where it is needed.
+- **[openpathplanner](https://github.com/KrunalPanchal1995/openpathplanner)** (live; higher secondary to advanced undergrad): Plan routes for a warehouse robot with A* and RRT. A robot must find a route that avoids obstacles, with algorithms like A* and RRT.
 
 ### Electrical Power and Renewable Energy
 
 - **[opensolarbattery](https://github.com/KrunalPanchal1995/opensolarbattery)** (live; diploma/undergrad to advanced undergrad): Size a rooftop solar and battery system for a home. Matching solar output, battery size and demand decides cost and reliability of a home system.
-- **`opengrid`** (built; diploma/undergrad to advanced undergrad): See how the grid balances supply and demand, and what power factor does. The grid must balance supply and demand every second, and power factor changes the load on lines.
+- **[opengrid](https://github.com/KrunalPanchal1995/opengrid)** (live; diploma/undergrad to advanced undergrad): See how the grid balances supply and demand, and what power factor does. The grid must balance supply and demand every second, and power factor changes the load on lines.
 - **`openwindturbine`** (built; diploma/undergrad to advanced undergrad): Estimate wind-turbine power from the wind and blade size. A turbine's power rises with the cube of wind speed, so siting and size matter a great deal.
 - **`openmppt`** (built; diploma/undergrad to advanced undergrad): Track the maximum power point of a solar panel. A solar panel gives the most power at one operating point, which a controller keeps tracking.
 - **`openhydrogen`** (built; diploma/undergrad to advanced undergrad): Fill a hydrogen tank and use a fuel cell, thermodynamics first. Hydrogen stores and carries energy, and filling and using it involves heat and pressure.
