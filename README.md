@@ -25,7 +25,7 @@ Openfirststeps is the umbrella for a family of small teaching repositories made 
 
 ## Status
 
-259 repositories planned, 132 built and verified, 103 published so far. Published ones live at `https://github.com/KrunalPanchal1995/<name>` and their apps at `https://krunalpanchal1995.github.io/<name>/`.
+259 repositories planned, 132 built and verified, 113 published so far. Published ones live at `https://github.com/KrunalPanchal1995/<name>` and their apps at `https://krunalpanchal1995.github.io/<name>/`.
 
 ## All projects
 
@@ -154,24 +154,24 @@ Openfirststeps is the umbrella for a family of small teaching repositories made 
 
 - **`openmassbalance`** (built; diploma/undergrad to advanced undergrad): Close the mass and energy balance of a simple process. What goes into a process must come out or accumulate, and checking that finds errors.
 - **`openheatexchanger`** (built; diploma/undergrad to advanced undergrad): Size a heat exchanger for a target outlet temperature. A heat exchanger moves heat between fluids without mixing them, and its size sets cost.
-- **`opendistillation`** (built; diploma/undergrad to advanced undergrad): Separate ethanol and water with a distillation column. Distillation separates mixtures by boiling point differences, using a column of stages.
+- **[opendistillation](https://github.com/KrunalPanchal1995/opendistillation)** (live; diploma/undergrad to advanced undergrad): Separate ethanol and water with a distillation column. Distillation separates mixtures by boiling point differences, using a column of stages.
 - **`openreactor`** (built; diploma/undergrad to advanced undergrad): Design CSTR and PFR chemical reactors. The type and size of a reactor decide how much of a reactant converts to product.
-- **`opendesalination`** (built; diploma/undergrad to advanced undergrad): Estimate the energy to turn seawater into drinking water. Making fresh water from seawater takes a minimum amount of energy set by physics.
+- **[opendesalination](https://github.com/KrunalPanchal1995/opendesalination)** (live; diploma/undergrad to advanced undergrad): Estimate the energy to turn seawater into drinking water. Making fresh water from seawater takes a minimum amount of energy set by physics.
 - **`opengreensteel`** (built; diploma/undergrad to advanced undergrad): Decarbonise a blast furnace with hydrogen injection. Replacing carbon with hydrogen in a blast furnace could cut a large source of emissions.
 
 ### Aerospace, Automotive and Transportation
 
-- **`openairfoil`** (built; higher secondary to advanced undergrad): Estimate airfoil lift and drag with a panel method. The shape of a wing decides its lift and drag, and therefore a plane's fuel use.
-- **`openascent`** (built; higher secondary to advanced undergrad): Fly a rocket launch trajectory to orbit with staging. A rocket must climb and turn to reach orbit, and staging drops dead weight on the way.
+- **[openairfoil](https://github.com/KrunalPanchal1995/openairfoil)** (live; higher secondary to advanced undergrad): Estimate airfoil lift and drag with a panel method. The shape of a wing decides its lift and drag, and therefore a plane's fuel use.
+- **[openascent](https://github.com/KrunalPanchal1995/openascent)** (live; higher secondary to advanced undergrad): Fly a rocket launch trajectory to orbit with staging. A rocket must climb and turn to reach orbit, and staging drops dead weight on the way.
 - **`opensuspension`** (built; higher secondary to advanced undergrad): Tune a quarter-car suspension for ride comfort. A suspension trades comfort against road holding by tuning springs and dampers.
 - **`opentrafficflow`** (built; higher secondary to advanced undergrad): Explain traffic jams from nothing with a car-following model. Traffic jams can start from nothing when drivers react to the car in front.
-- **`opendronecontrol`** (built; higher secondary to advanced undergrad): PID hover and attitude control of a quadrotor. A multicopter hovers by controlling thrust with feedback, often a PID controller.
+- **[opendronecontrol](https://github.com/KrunalPanchal1995/opendronecontrol)** (live; higher secondary to advanced undergrad): PID hover and attitude control of a quadrotor. A multicopter hovers by controlling thrust with feedback, often a PID controller.
 
 ### Architecture, Design and Smart Buildings
 
-- **`opendaylight`** (built; higher secondary to diploma/undergrad): Plan windows for natural daylight using the sun path. Window size and sun path decide how much natural light a room gets and how much energy it needs.
-- **`opencomfort`** (built; higher secondary to diploma/undergrad): Cool a building passively with shading and ventilation. Shading and ventilation can keep a building cool without much energy.
-- **`openevacuation`** (built; higher secondary to diploma/undergrad): Plan a safe evacuation from a building with crowd flow. People move like a flow, and exits and corridors set how quickly a building can be emptied.
+- **[opendaylight](https://github.com/KrunalPanchal1995/opendaylight)** (live; higher secondary to diploma/undergrad): Plan windows for natural daylight using the sun path. Window size and sun path decide how much natural light a room gets and how much energy it needs.
+- **[opencomfort](https://github.com/KrunalPanchal1995/opencomfort)** (live; higher secondary to diploma/undergrad): Cool a building passively with shading and ventilation. Shading and ventilation can keep a building cool without much energy.
+- **[openevacuation](https://github.com/KrunalPanchal1995/openevacuation)** (live; higher secondary to diploma/undergrad): Plan a safe evacuation from a building with crowd flow. People move like a flow, and exits and corridors set how quickly a building can be emptied.
 
 ### Economics, Business, Finance and Entrepreneurship
 
@@ -184,7 +184,7 @@ Openfirststeps is the umbrella for a family of small teaching repositories made 
 
 - **[openseismo](https://github.com/KrunalPanchal1995/openseismo)** (live; secondary to diploma/undergrad): Locate an earthquake from seismograph arrivals. Arrival times of earthquake waves at several stations locate where the quake began.
 - **[opennowcast](https://github.com/KrunalPanchal1995/opennowcast)** (live; secondary to diploma/undergrad): Nowcast rain by advecting radar fields. Moving the latest radar picture forward predicts rain over the next hour.
-- **`openclimate`** (built; secondary to diploma/undergrad): Explain the greenhouse effect with a simple energy-balance model. A simple energy balance shows how greenhouse gases warm the Earth.
+- **[openclimate](https://github.com/KrunalPanchal1995/openclimate)** (live; secondary to diploma/undergrad): Explain the greenhouse effect with a simple energy-balance model. A simple energy balance shows how greenhouse gases warm the Earth.
 - **[openwatershed](https://github.com/KrunalPanchal1995/openwatershed)** (live; secondary to diploma/undergrad): Predict a river's flood peak from rainfall on a watershed. Rain falling on a catchment collects into a river, and the shape of the flood peak depends on the land.
 
 ### Astronomy and Space Science
@@ -480,7 +480,7 @@ Openfirststeps is the umbrella for a family of small teaching repositories made 
 
 ### Statistics, Research and Experimental Methods
 
-- **`openflamevolume`** (built; higher secondary to advanced undergrad): Rebuild a 3D flame from many 2D photos using stereo image correlation. Several views of a flame can be combined to rebuild its three-dimensional shape.
+- **[openflamevolume](https://github.com/KrunalPanchal1995/openflamevolume)** (live; higher secondary to advanced undergrad): Rebuild a 3D flame from many 2D photos using stereo image correlation. Several views of a flame can be combined to rebuild its three-dimensional shape.
 - **`opensmokevideo`** (built; higher secondary to advanced undergrad): Estimate smoke density and flow rate from a video using light absorption and refraction. How smoke absorbs and bends light tells its density and how fast it flows.
 
 ### Mechanical Engineering
