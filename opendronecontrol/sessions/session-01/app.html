@@ -1,0 +1,178 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Session 1: thrust, weight and hover</title>
+<style>
+  :root { --bg:#ffffff; --fg:#14181f; --muted:#5b6472; --card:#f3f5f8; --accent:#1f6feb; --good:#1a7f37; --bad:#b42318; --line:#d7dce3; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#0e1116; --fg:#e6e9ee; --muted:#9aa3b2; --card:#171b22; --accent:#58a6ff; --good:#3fb950; --bad:#f97066; --line:#2a313c; } }
+  * { box-sizing: border-box; }
+  body { margin:0; padding:16px; background:var(--bg); color:var(--fg); font:16px/1.5 system-ui, sans-serif; }
+  main { max-width: 780px; margin: 0 auto; }
+  h1 { font-size: 1.3rem; margin: 0 0 4px; }
+  p.sub { margin: 0 0 12px; color: var(--muted); }
+  .scroll { overflow-x:auto; }
+  canvas { width:100%; min-width:560px; height:auto; background:var(--card); border:1px solid var(--line); border-radius:8px; display:block; }
+  .sr { position:absolute; left:-9999px; }
+  .bar { display:flex; flex-wrap:wrap; gap:8px; margin:10px 0; }
+  button { font:inherit; padding:6px 12px; border:1px solid var(--line); background:var(--card); color:var(--fg); border-radius:6px; cursor:pointer; }
+  button[aria-pressed="true"] { border-color:var(--accent); color:var(--accent); font-weight:600; }
+  button:focus-visible, input:focus-visible { outline:3px solid var(--accent); outline-offset:2px; }
+  .row { display:grid; grid-template-columns: 11rem 1fr 6rem; gap:8px; align-items:center; margin:8px 0; }
+  .row output { text-align:right; font-variant-numeric: tabular-nums; }
+  @media (max-width: 560px) { .row { grid-template-columns: 1fr; gap:2px; } .row output { text-align:left; } }
+  input[type=range] { width:100%; accent-color: var(--accent); }
+  #readout, #challenge, .note { margin-top:10px; padding:10px 12px; background:var(--card); border-radius:8px; border:1px solid var(--line); }
+  #challenge[data-ok="true"] { border-color:var(--good); } #challenge[data-ok="true"] b { color:var(--good); }
+  .note { font-size:.85rem; color:var(--muted); }
+  a { color: var(--accent); }
+</style>
+</head>
+<body>
+<main>
+  <h1>Session 1: thrust, weight and hover</h1>
+  <p class="sub">Arrows show thrust and weight; the graphs show the hover point and what a fixed throttle does.</p>
+  <div class="bar" id="graphs" role="group" aria-label="Choose a graph"></div>
+  <div class="scroll"><canvas id="c" width="720" height="420" role="img" aria-label="Session 1: thrust, weight and hover: interactive plot"></canvas></div>
+  <div class="bar" id="presets" role="group" aria-label="Presets"></div>
+  <div id="controls"></div>
+  <div class="bar"><button id="reset" type="button">Reset</button></div>
+  <div id="readout"></div>
+  <div id="challenge" hidden></div>
+  <div id="status" class="sr" aria-live="polite"></div>
+  <p class="note">This is a simplified educational model. It is not a validated design tool and must not be used for real structures, electrical installations, vehicles, industrial processes or medical decisions.</p>
+  <p class="sub"><a href="https://github.com/KrunalPanchal1995/pan-iit-oss/tree/main/opendronecontrol">Back to the repository</a></p>
+</main>
+<script>
+"use strict";
+const PARAMS = [{"id": "m", "label": "Drone mass", "min": 0.6, "max": 2.0, "step": 0.1, "value": 1.2, "unit": "kg"}, {"id": "parcel", "label": "Parcel added", "min": 0, "max": 0.6, "step": 0.1, "value": 0, "unit": "kg"}, {"id": "rpm", "label": "Rotor speed (all four)", "min": 3000, "max": 9500, "step": 10, "value": 5180, "unit": "rpm"}];
+const GRAPHS = [{"id": "drone", "label": "Forces on the drone", "diagram": true}, {"id": "curve", "label": "Thrust against rotor speed"}, {"id": "drift", "label": "Height with a fixed throttle"}];
+const PRESETS = [{"label": "Hover, no parcel", "values": {"m": 1.2, "parcel": 0, "rpm": 5180}}, {"label": "Parcel added, same throttle", "values": {"m": 1.2, "parcel": 0.2, "rpm": 5180}}, {"label": "Full throttle", "values": {"m": 1.2, "parcel": 0, "rpm": 9500}}];
+const CHALLENGE = "Add a 0.2 kg parcel to the 1.2 kg drone and set the rotor speed so it drifts less than 10 cm in 2 s.";
+const CHALLENGE_SOLUTION = {"m": 1.2, "parcel": 0.2, "rpm": 5600};
+const G = 9.81, KT = 1.0e-5;
+const omegaOf = rpm => rpm * 2 * Math.PI / 60;
+const thrustOne = rpm => KT * omegaOf(rpm) ** 2;
+const hoverRpm = mass => Math.sqrt(mass * G / (4 * KT)) * 60 / (2 * Math.PI);
+const accel = q => 4 * thrustOne(q.rpm) / (q.m + q.parcel) - G;
+const challengeTest = CHALLENGE ? (p) => (Math.abs(p.m - 1.2) < 1e-9 && Math.abs(p.parcel - 0.2) < 1e-9 && Math.abs(0.5 * accel(p) * 4) < 0.1) : null;
+const cv = document.getElementById("c"), ctx = cv.getContext("2d");
+const W = cv.width, H = cv.height, p = {};
+let graph = GRAPHS.length ? GRAPHS[0].id : "main";
+const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+const fmt = v => (Math.abs(v) >= 1000 || (Math.abs(v) > 0 && Math.abs(v) < 0.01)) ? v.toExponential(2) : String(+v.toPrecision(4));
+function readout(html) {
+  document.getElementById("readout").innerHTML = html;
+  cv.setAttribute("aria-label", document.title + ". " + html.replace(/<[^>]+>/g, " ").replace(/&nbsp;/g, " "));  // screen readers get the numbers
+}
+let lastOk = null;
+// ---- plotting helpers: every graph gets labelled axes with units ----
+function niceTicks(lo, hi, n) {
+  const raw = (hi - lo) / n, mag = Math.pow(10, Math.floor(Math.log10(raw))), f = raw / mag;
+  const step = (f < 1.5 ? 1 : f < 3 ? 2 : f < 7 ? 5 : 10) * mag, out = [];
+  for (let v = Math.ceil(lo / step - 1e-9) * step; v <= hi + 1e-9; v += step) out.push(+v.toPrecision(12));
+  return out;
+}
+function axes(o, C) {
+  const L = 66, R = 16, T = 34, B = 50, w = W - L - R, h = H - T - B;
+  const X = v => L + (v - o.x[0]) / (o.x[1] - o.x[0]) * w, Y = v => T + h - (v - o.y[0]) / (o.y[1] - o.y[0]) * h;
+  ctx.lineWidth = 1; ctx.font = "12px system-ui";
+  for (const xv of niceTicks(o.x[0], o.x[1], 6)) {
+    ctx.strokeStyle = C.line; ctx.beginPath(); ctx.moveTo(X(xv), T); ctx.lineTo(X(xv), T + h); ctx.stroke();
+    ctx.fillStyle = C.muted; ctx.textAlign = "center"; ctx.fillText(fmt(xv), X(xv), T + h + 16);
+  }
+  for (const yv of niceTicks(o.y[0], o.y[1], 5)) {
+    ctx.strokeStyle = C.line; ctx.beginPath(); ctx.moveTo(L, Y(yv)); ctx.lineTo(L + w, Y(yv)); ctx.stroke();
+    ctx.fillStyle = C.muted; ctx.textAlign = "right"; ctx.fillText(fmt(yv), L - 6, Y(yv) + 4);
+  }
+  ctx.strokeStyle = C.fg; ctx.beginPath(); ctx.moveTo(L, T); ctx.lineTo(L, T + h); ctx.lineTo(L + w, T + h); ctx.stroke();
+  ctx.fillStyle = C.fg; ctx.textAlign = "center"; ctx.font = "13px system-ui";
+  ctx.fillText(o.xl, L + w / 2, H - 8);
+  ctx.save(); ctx.translate(14, T + h / 2); ctx.rotate(-Math.PI / 2); ctx.fillText(o.yl, 0, 0); ctx.restore();
+  ctx.font = "bold 13px system-ui"; ctx.fillText(o.title || "", L + w / 2, 20);
+  return { X, Y, L, T, w, h };
+}
+function curve(f, a, color, x0, x1, n) {
+  n = n || 160; ctx.save(); ctx.beginPath(); ctx.rect(a.L, a.T, a.w, a.h); ctx.clip();   // never draw outside the plot area
+  ctx.strokeStyle = color; ctx.lineWidth = 2.5; ctx.beginPath();
+  for (let i = 0; i <= n; i++) { const x = x0 + (x1 - x0) * i / n, y = f(x); i ? ctx.lineTo(a.X(x), a.Y(y)) : ctx.moveTo(a.X(x), a.Y(y)); }
+  ctx.stroke(); ctx.restore();
+}
+function dot(a, x, y, color, label) {
+  ctx.fillStyle = color; ctx.beginPath(); ctx.arc(a.X(x), a.Y(y), 6, 0, 2 * Math.PI); ctx.fill();
+  if (label) { ctx.textAlign = "left"; ctx.font = "12px system-ui"; ctx.fillText(label, a.X(x) + 9, a.Y(y) - 8); }
+}
+function draw() {
+  ctx.clearRect(0, 0, W, H);
+  const C = { fg: css("--fg"), muted: css("--muted"), accent: css("--accent"), line: css("--line"), good: css("--good"), bad: css("--bad") };
+const M = p.m + p.parcel, Wt = M * G, T = 4 * thrustOne(p.rpm), a = T / M - G, hr = hoverRpm(M), z2 = 0.5 * a * 4;
+if (graph === "drone") {
+  const cx = 360, cy = 210, sc = 4.2;                     // 4.2 px per newton
+  ctx.strokeStyle = C.fg; ctx.lineWidth = 6; ctx.beginPath(); ctx.moveTo(cx - 120, cy); ctx.lineTo(cx + 120, cy); ctx.stroke();
+  ctx.lineWidth = 2;
+  for (const dx of [-120, -60, 60, 120]) { ctx.beginPath(); ctx.ellipse(cx + dx, cy - 10, 26, 5, 0, 0, 2 * Math.PI); ctx.stroke(); }
+  ctx.fillStyle = C.fg; ctx.fillRect(cx - 26, cy - 14, 52, 28);
+  if (p.parcel > 0) { ctx.fillStyle = C.muted; ctx.fillRect(cx - 18, cy + 18, 36, 14 + 30 * p.parcel); }
+  function arrow(x, y0, len, col, label) {
+    const y1 = y0 + len; ctx.strokeStyle = col; ctx.fillStyle = col; ctx.lineWidth = 6;
+    ctx.beginPath(); ctx.moveTo(x, y0); ctx.lineTo(x, y1); ctx.stroke();
+    const s = Math.sign(len) || 1; ctx.beginPath(); ctx.moveTo(x - 10, y1 - 12 * s); ctx.lineTo(x + 10, y1 - 12 * s); ctx.lineTo(x, y1 + 4 * s); ctx.fill();
+    ctx.font = "13px system-ui"; ctx.textAlign = "left"; ctx.fillText(label, x + 16, y0 + len / 2);
+  }
+  arrow(cx - 200, cy, -Math.min(180, T * sc), C.good, "thrust " + T.toFixed(2) + " N");
+  arrow(cx + 200, cy, Math.min(180, Wt * sc), C.bad, "weight " + Wt.toFixed(2) + " N");
+  ctx.fillStyle = C.fg; ctx.font = "13px system-ui"; ctx.textAlign = "center";
+  ctx.fillText(Math.abs(a) < 0.05 ? "balanced: the drone hovers" : (a > 0 ? "thrust > weight: it accelerates up" : "weight > thrust: it accelerates down"), cx, 30);
+} else if (graph === "curve") {
+  const A = axes({ x: [3000, 9500], y: [0, 10], xl: "rotor speed (rpm)", yl: "thrust of one rotor (N)", title: "T = k_T omega^2: double the speed, four times the thrust" }, C);
+  curve(thrustOne, A, C.accent, 3000, 9500);
+  ctx.strokeStyle = C.bad; ctx.setLineDash([6, 4]); ctx.beginPath(); ctx.moveTo(A.L, A.Y(Wt / 4)); ctx.lineTo(A.L + A.w, A.Y(Wt / 4)); ctx.stroke(); ctx.setLineDash([]);
+  ctx.fillStyle = C.bad; ctx.textAlign = "right"; ctx.font = "12px system-ui"; ctx.fillText("weight / 4 = " + (Wt / 4).toFixed(2) + " N", A.L + A.w - 4, A.Y(Wt / 4) - 6);
+  if (hr <= 9500 && hr >= 3000) dot(A, hr, Wt / 4, C.bad, "hover " + hr.toFixed(0) + " rpm");
+  dot(A, p.rpm, thrustOne(p.rpm), C.good, "you");
+} else {
+  const A = axes({ x: [0, 2], y: [-4, 4], xl: "time (s)", yl: "height change z (m)", title: "Fixed throttle: z = a t^2 / 2" }, C);
+  ctx.strokeStyle = C.muted; ctx.beginPath(); ctx.moveTo(A.L, A.Y(0)); ctx.lineTo(A.L + A.w, A.Y(0)); ctx.stroke();
+  curve(t => 0.5 * a * t * t, A, a >= 0 ? C.good : C.bad, 0, 2);
+  dot(A, 2, Math.max(-4, Math.min(4, z2)), a >= 0 ? C.good : C.bad, (z2 >= 0 ? "+" : "") + z2.toFixed(2) + " m");
+}
+readout("mass " + M.toFixed(1) + " kg &nbsp; weight " + Wt.toFixed(2) + " N &nbsp; thrust " + T.toFixed(2) + " N &nbsp; a = " + a.toFixed(2) + " m/s^2 &nbsp; hover needs " + hr.toFixed(0) + " rpm &nbsp; thrust-to-weight at 9500 rpm = " + (4 * thrustOne(9500) / Wt).toFixed(2) + " &nbsp; height after 2 s: " + z2.toFixed(2) + " m");
+
+  const ch = document.getElementById("challenge");
+  if (challengeTest) { const ok = !!challengeTest(p); ch.hidden = false; ch.dataset.ok = String(ok);
+    ch.innerHTML = "<b>Challenge:</b> " + CHALLENGE + " &nbsp; " + (ok ? "<b>Done!</b>" : "Not yet.");
+    if (ok !== lastOk) { document.getElementById("status").textContent = ok ? "Challenge done." : "Challenge not yet done."; lastOk = ok; } }
+}
+const box = document.getElementById("controls");
+const inputs = {};
+for (const q of PARAMS) {
+  p[q.id] = q.value;
+  const row = document.createElement("div"); row.className = "row";
+  row.innerHTML = `<label for="${q.id}">${q.label} (${q.unit || "no unit"})</label>` +
+    `<input id="${q.id}" type="range" min="${q.min}" max="${q.max}" step="${q.step}" value="${q.value}">` +
+    `<output for="${q.id}">${q.value}</output>`;
+  const inp = row.querySelector("input"), out = row.querySelector("output");
+  inputs[q.id] = [inp, out];
+  inp.addEventListener("input", () => { p[q.id] = +inp.value; out.textContent = inp.value; draw(); });
+  box.appendChild(row);
+}
+function setAll(vals) { for (const k in vals) { p[k] = vals[k]; if (inputs[k]) { inputs[k][0].value = vals[k]; inputs[k][1].textContent = vals[k]; } } draw(); }
+const DEFAULTS = Object.assign({}, p);
+document.getElementById("reset").addEventListener("click", () => setAll(DEFAULTS));
+for (const g of GRAPHS) {
+  const b = document.createElement("button"); b.type = "button"; b.textContent = g.label;
+  b.setAttribute("aria-pressed", String(g.id === graph));
+  b.addEventListener("click", () => { graph = g.id; for (const x of document.querySelectorAll("#graphs button")) x.setAttribute("aria-pressed", String(x === b)); draw(); });
+  document.getElementById("graphs").appendChild(b);
+}
+for (const pr of PRESETS) {
+  const b = document.createElement("button"); b.type = "button"; b.textContent = pr.label;
+  b.addEventListener("click", () => setAll(pr.values));
+  document.getElementById("presets").appendChild(b);
+}
+matchMedia("(prefers-color-scheme: dark)").addEventListener("change", draw);
+draw();
+</script>
+</body>
+</html>

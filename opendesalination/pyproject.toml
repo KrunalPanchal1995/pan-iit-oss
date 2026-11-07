@@ -1,0 +1,11 @@
+[project]
+name = "opendesalination"
+version = "0.1.0"
+description = "Estimate the energy to turn seawater into drinking water: osmotic pressure, least work and a reverse osmosis simulation in 3 sessions."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+dependencies = ["numpy", "matplotlib"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

@@ -1,0 +1,384 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Session 5: a pocket with a boss</title>
+<style>
+  :root { --bg:#ffffff; --fg:#14181f; --muted:#5b6472; --card:#f3f5f8; --accent:#003f7f; --good:#c86a00; --bad:#d81b60; --line:#d7dce3; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#0e1116; --fg:#e6e9ee; --muted:#9aa3b2; --card:#171b22; --accent:#3b8fe0; --good:#ffc857; --bad:#e0457b; --line:#2a313c; } }
+  * { box-sizing: border-box; }
+  body { margin:0; padding:16px; background:var(--bg); color:var(--fg); font:16px/1.5 system-ui, sans-serif; }
+  main { max-width: 780px; margin: 0 auto; }
+  h1 { font-size: 1.3rem; margin: 0 0 4px; }
+  p.sub { margin: 0 0 12px; color: var(--muted); }
+  .scroll { overflow-x:auto; }
+  canvas { width:100%; min-width:560px; height:auto; background:var(--card); border:1px solid var(--line); border-radius:8px; display:block; }
+  .sr { position:absolute; left:-9999px; }
+  .bar { display:flex; flex-wrap:wrap; gap:8px; margin:10px 0; }
+  button { font:inherit; padding:6px 12px; border:1px solid var(--line); background:var(--card); color:var(--fg); border-radius:6px; cursor:pointer; }
+  button[aria-pressed="true"] { border-color:var(--accent); color:var(--accent); font-weight:600; }
+  button:focus-visible, input:focus-visible { outline:3px solid var(--accent); outline-offset:2px; }
+  .row { display:grid; grid-template-columns: 11rem 1fr 6rem; gap:8px; align-items:center; margin:8px 0; }
+  .row output { text-align:right; font-variant-numeric: tabular-nums; }
+  @media (max-width: 560px) { .row { grid-template-columns: 1fr; gap:2px; } .row output { text-align:left; } }
+  input[type=range] { width:100%; accent-color: var(--accent); }
+  #readout, #challenge, .note { margin-top:10px; padding:10px 12px; background:var(--card); border-radius:8px; border:1px solid var(--line); }
+  #challenge[data-ok="true"] { border-color:var(--good); } #challenge[data-ok="true"] b { color:var(--good); }
+  .note { font-size:.85rem; color:var(--muted); }
+  a { color: var(--accent); }
+</style>
+</head>
+<body>
+<main>
+  <h1>Session 5: a pocket with a boss</h1>
+  <p class="sub">Move the boss, change the cutter and stepover, and see the rings split, the unbroken path and the time against the raster program.</p>
+  <div class="bar" id="graphs" role="group" aria-label="Choose a graph"></div>
+  <div class="scroll"><canvas id="c" width="720" height="420" role="img" aria-label="Session 5: a pocket with a boss, cut without lifting: interactive plot"></canvas></div>
+  <div class="bar" id="presets" role="group" aria-label="Presets"></div>
+  <div id="controls"></div>
+  <div class="bar"><button id="reset" type="button">Reset</button></div>
+  <div id="readout"></div>
+  <div id="challenge" hidden></div>
+  <div id="status" class="sr" aria-live="polite"></div>
+  <p class="note">This is a simplified educational model. It is not a validated design tool and must not be used for real structures, electrical installations, vehicles, industrial processes or medical decisions.</p>
+  <p class="sub"><a href="https://github.com/KrunalPanchal1995/pan-iit-oss/tree/main/opencncpath">Back to the repository</a></p>
+</main>
+<script>
+"use strict";
+const PARAMS = [{"id": "w", "label": "Pocket width", "min": 20, "max": 80, "step": 1, "value": 40, "unit": "mm"}, {"id": "h", "label": "Pocket height", "min": 20, "max": 60, "step": 1, "value": 30, "unit": "mm"}, {"id": "bx", "label": "Boss centre x", "min": 5, "max": 75, "step": 0.5, "value": 20, "unit": "mm"}, {"id": "by", "label": "Boss centre y", "min": 5, "max": 55, "step": 0.5, "value": 15, "unit": "mm"}, {"id": "bd", "label": "Boss diameter", "min": 4, "max": 30, "step": 1, "value": 12, "unit": "mm"}, {"id": "D", "label": "Cutter diameter", "min": 2, "max": 12, "step": 0.5, "value": 6, "unit": "mm"}, {"id": "s", "label": "Stepover", "min": 1, "max": 8, "step": 0.5, "value": 4, "unit": "mm"}];
+const GRAPHS = [{"id": "rings", "label": "Rings", "diagram": true}, {"id": "path", "label": "One-layer path", "diagram": true}, {"id": "time", "label": "Time against stepover"}];
+const PRESETS = [{"label": "Roadmap pocket: 40 x 30, boss 12", "values": {"w": 40, "h": 30, "bx": 20, "by": 15, "bd": 12, "D": 6, "s": 4}}, {"label": "Wide pocket, boss 14: a ring is added", "values": {"w": 60, "h": 40, "bx": 30, "by": 20, "bd": 14, "D": 6, "s": 4}}, {"label": "Boss off centre", "values": {"w": 40, "h": 30, "bx": 14, "by": 15, "bd": 12, "D": 6, "s": 4}}, {"label": "Boss too big: the cutter cannot pass", "values": {"w": 40, "h": 30, "bx": 20, "by": 15, "bd": 20, "D": 6, "s": 4}}];
+const CHALLENGE = "Find a pocket where rings every stepover leave an uncut strip, so that the planner has to add a ring (hint: a wide pocket with a boss a little too big for the gap above it).";
+const CHALLENGE_SOLUTION = {"w": 60, "h": 40, "bx": 30, "by": 20, "bd": 14, "D": 6, "s": 4};
+const TWO_PI = 2 * Math.PI, mod = (a, m) => ((a % m) + m) % m;
+const clearance = (x, y, w, h, c, rb) => Math.min(x, w - x, y, h - y, Math.hypot(x - c[0], y - c[1]) - rb);
+function checkSetup(w, h, c, bd, d, s) {
+  if (Math.min(w, h, d, s, bd) <= 0) throw new Error("sizes, cutter diameter and stepover must be positive");
+  if (s > d + 1e-12) throw new Error("stepover " + s + " mm is larger than the cutter diameter " + d + " mm: strips of material would be left");
+  const gap = Math.min(c[0], w - c[0], c[1], h - c[1]) - bd / 2;
+  if (gap <= 0) throw new Error("the boss must lie completely inside the pocket, away from every wall");
+  if (Math.abs(gap - d) < 1e-9) throw new Error("the cutter just fits (gap " + gap + " mm) between the boss and a wall: no room to move along the gap");
+}
+function levelNonempty(w, h, c, br, ell) {
+  const x0 = ell, y0 = ell, x1 = w - ell, y1 = h - ell; if (x1 < x0 || y1 < y0) return false;
+  return [x0, x1].some(x => [y0, y1].some(y => Math.hypot(x - c[0], y - c[1]) >= br + ell));
+}
+function maxClearance(w, h, c, bd) {
+  let lo = 0, hi = 0.5 * Math.min(w, h);
+  for (let i = 0; i < 100; i++) { const m = 0.5 * (lo + hi); if (levelNonempty(w, h, c, bd / 2, m)) lo = m; else hi = m; }
+  return lo;
+}
+function levelOffsets(rho, r, s) {
+  if (r > rho + 1e-12) throw new Error("the cutter radius " + r + " mm does not fit: the largest clearance is only " + rho.toFixed(3) + " mm");
+  const offs = [r]; while (offs[offs.length - 1] + s <= rho - 1e-9) offs.push(offs[offs.length - 1] + s);
+  if (rho - offs[offs.length - 1] > r) offs.push(rho);
+  return offs;
+}
+const pStart = p => p[0] === "L" ? p[1] : [p[1][0] + p[2] * Math.cos(p[3]), p[1][1] + p[2] * Math.sin(p[3])];
+const pEnd = p => p[0] === "L" ? p[2] : [p[1][0] + p[2] * Math.cos(p[3] + p[4]), p[1][1] + p[2] * Math.sin(p[3] + p[4])];
+const pLen = p => p[0] === "L" ? Math.hypot(p[2][0] - p[1][0], p[2][1] - p[1][1]) : Math.abs(p[4]) * p[2];
+function levelPieces(w, h, c, br, ell) {
+  const x0 = ell, y0 = ell, x1 = w - ell, y1 = h - ell;
+  if (x1 < x0 - 1e-12 || y1 < y0 - 1e-12) return [];
+  const R = br + ell, cs = [[x0, y0], [x1, y0], [x1, y1], [x0, y1]], pieces = []; let angles = [];
+  for (let i = 0; i < 4; i++) {
+    const P0 = cs[i], P1 = cs[(i + 1) % 4], dx = P1[0] - P0[0], dy = P1[1] - P0[1], a = dx * dx + dy * dy;
+    if (a < 1e-18) continue;
+    const b = 2 * (dx * (P0[0] - c[0]) + dy * (P0[1] - c[1])), cc = (P0[0] - c[0]) ** 2 + (P0[1] - c[1]) ** 2 - R * R, disc = b * b - 4 * a * cc, ts = [0, 1];
+    if (disc > 1e-12) { const sq = Math.sqrt(disc); [(-b - sq) / (2 * a), (-b + sq) / (2 * a)].forEach(t => { if (t > 1e-9 && t < 1 - 1e-9) { ts.push(t); angles.push(Math.atan2(P0[1] + t * dy - c[1], P0[0] + t * dx - c[0])); } }); }
+    ts.sort((u, v) => u - v);
+    for (let k = 0; k + 1 < ts.length; k++) {
+      const ta = ts[k], tb = ts[k + 1]; if (tb - ta < 1e-12) continue; const tm = 0.5 * (ta + tb);
+      if (Math.hypot(P0[0] + tm * dx - c[0], P0[1] + tm * dy - c[1]) >= R) pieces.push(["L", [P0[0] + ta * dx, P0[1] + ta * dy], [P0[0] + tb * dx, P0[1] + tb * dy]]);
+    }
+  }
+  const inside = (x, y) => x > x0 + 1e-9 && x < x1 - 1e-9 && y > y0 + 1e-9 && y < y1 - 1e-9;
+  if (angles.length) {
+    angles = angles.map(a => mod(a, TWO_PI)).sort((u, v) => u - v);
+    for (let k = 0; k < angles.length; k++) {
+      const a = angles[k]; let b = angles[(k + 1) % angles.length]; if (k === angles.length - 1) b += TWO_PI;
+      const mid = 0.5 * (a + b); if (inside(c[0] + R * Math.cos(mid), c[1] + R * Math.sin(mid))) pieces.push(["A", c, R, b, -(b - a)]);
+    }
+  } else if (c[0] - R > x0 && c[0] + R < x1 && c[1] - R > y0 && c[1] + R < y1) pieces.push(["A", c, R, 0, -TWO_PI]);
+  return pieces;
+}
+function chainLoops(pieces, tol) {
+  tol = tol || 1e-6; const rest = pieces.slice(), loops = [];
+  while (rest.length) {
+    const loop = [rest.shift()];
+    for (;;) {
+      const e = pEnd(loop[loop.length - 1]), s0 = pStart(loop[0]);
+      if (Math.hypot(e[0] - s0[0], e[1] - s0[1]) < tol) break;
+      const i = rest.findIndex(p => { const s = pStart(p); return Math.hypot(e[0] - s[0], e[1] - s[1]) < tol; });
+      if (i < 0) throw new Error("the pieces of this ring do not close");
+      loop.push(rest.splice(i, 1)[0]);
+    }
+    loops.push(loop);
+  }
+  return loops;
+}
+function sampleLoop(loop, step) {
+  const pts = [];
+  loop.forEach(p => {
+    if (p[0] === "L") pts.push(p[1]);
+    else { const n = Math.max(2, Math.floor(Math.abs(p[4]) * p[2] / step) + 1); for (let k = 0; k < n; k++) pts.push([p[1][0] + p[2] * Math.cos(p[3] + p[4] * k / n), p[1][1] + p[2] * Math.sin(p[3] + p[4] * k / n)]); }
+  });
+  return pts;
+}
+const signedArea = pts => 0.5 * pts.reduce((s, q, i) => { const r = pts[(i + 1) % pts.length]; return s + q[0] * r[1] - r[0] * q[1]; }, 0);
+function pointInPolygon(pt, poly) {
+  let inside = false;
+  for (let i = 0; i < poly.length; i++) { const a = poly[i], b = poly[(i + 1) % poly.length]; if ((a[1] > pt[1]) !== (b[1] > pt[1]) && pt[0] < a[0] + (pt[1] - a[1]) * (b[0] - a[0]) / (b[1] - a[1])) inside = !inside; }
+  return inside;
+}
+function levelLoops(w, h, c, bd, ell) {
+  let last = null;
+  for (const dl of [0, -1e-6, 1e-6, -1e-5]) { try { return chainLoops(levelPieces(w, h, c, bd / 2, ell + dl)); } catch (e) { last = e; } }
+  throw last;
+}
+function levelComponents(w, h, c, bd, ell) {
+  const loops = levelLoops(w, h, c, bd, ell), samples = loops.map(l => sampleLoop(l, 0.2)), areas = samples.map(signedArea), comps = [];
+  loops.forEach((lp, i) => { if (areas[i] > 0) { const xs = samples[i].map(q => q[0]), ys = samples[i].map(q => q[1]); comps.push({ ell, outer: lp, poly: samples[i], holes: [], children: [], isPoint: Math.max(Math.max.apply(null, xs) - Math.min.apply(null, xs), Math.max.apply(null, ys) - Math.min.apply(null, ys)) < 0.05 }); } });
+  loops.forEach((lp, i) => { if (areas[i] <= 0) { for (const cp of comps) if (pointInPolygon(samples[i][0], cp.poly)) { cp.holes.push(lp); break; } } });
+  return comps;
+}
+function buildTree(w, h, c, bd, d, s, offs) {
+  checkSetup(w, h, c, bd, d, s);
+  const rho = maxClearance(w, h, c, bd); offs = offs || levelOffsets(rho, d / 2, s);
+  const levels = offs.map(ell => levelComponents(w, h, c, bd, Math.abs(ell - rho) < 1e-9 ? ell - 1e-4 : ell)), roots = levels[0];
+  if (roots.length !== 1) throw new Error("the free space for the cutter centre has " + roots.length + " separate parts: the cutter would have to lift between them");
+  for (let k = 0; k + 1 < levels.length; k++) for (const cp of levels[k + 1]) {
+    const p0 = pStart(cp.outer[0]); let found = false;
+    for (const u of levels[k]) if (pointInPolygon(p0, u.poly) && !u.holes.some(hl => pointInPolygon(p0, sampleLoop(hl, 0.2)))) { u.children.push(cp); found = true; break; }
+    if (!found) throw new Error("a ring has no parent ring: the set-up is not supported");
+  }
+  return { roots, levels, offs, rho };
+}
+const segsLen = segs => segs.reduce((s, p) => s + pLen(p), 0);
+function nearestOnPiece(p, q) {
+  if (p[0] === "L") {
+    const dx = p[2][0] - p[1][0], dy = p[2][1] - p[1][1], t = (dx === 0 && dy === 0) ? 0 : Math.max(0, Math.min(1, ((q[0] - p[1][0]) * dx + (q[1] - p[1][1]) * dy) / (dx * dx + dy * dy)));
+    return [Math.hypot(p[1][0] + t * dx - q[0], p[1][1] + t * dy - q[1]), t];
+  }
+  const c = p[1], R = p[2], a0 = p[3], sw = p[4], ang = Math.atan2(q[1] - c[1], q[0] - c[0]), u = sw < 0 ? mod(a0 - ang, TWO_PI) / Math.abs(sw) : mod(ang - a0, TWO_PI) / Math.abs(sw);
+  const cands = u > 1 ? [0, 1] : [u]; let best = null;
+  for (const t of cands) { const a = a0 + sw * t, dd = Math.hypot(c[0] + R * Math.cos(a) - q[0], c[1] + R * Math.sin(a) - q[1]); if (!best || dd < best[0]) best = [dd, t]; }
+  return best;
+}
+function splitPiece(p, t) {
+  if (t <= 1e-12) return [null, p]; if (t >= 1 - 1e-12) return [p, null];
+  if (p[0] === "L") { const m = [p[1][0] + t * (p[2][0] - p[1][0]), p[1][1] + t * (p[2][1] - p[1][1])]; return [["L", p[1], m], ["L", m, p[2]]]; }
+  return [["A", p[1], p[2], p[3], p[4] * t], ["A", p[1], p[2], p[3] + p[4] * t, p[4] * (1 - t)]];
+}
+function enterLoop(loop, q) {
+  const vs = loop.map(p => nearestOnPiece(p, q)), lo = Math.min.apply(null, vs.map(v => v[0])), bi = vs.findIndex(v => v[0] <= lo + 1e-9), best = vs[bi];
+  const sp = splitPiece(loop[bi], best[1]), rot = (sp[1] ? [sp[1]] : []).concat(loop.slice(bi + 1), loop.slice(0, bi), sp[0] ? [sp[0]] : []);
+  return [rot, pStart(rot[0])];
+}
+function linkRoute(p, q, c, cutR, w, h, r) {
+  if (Math.hypot(q[0] - p[0], q[1] - p[1]) < 1e-9) return [];
+  const dx = q[0] - p[0], dy = q[1] - p[1], t = Math.max(0, Math.min(1, ((c[0] - p[0]) * dx + (c[1] - p[1]) * dy) / (dx * dx + dy * dy)));
+  if (Math.hypot(p[0] + t * dx - c[0], p[1] + t * dy - c[1]) >= cutR - 1e-9) return [["L", p, q]];
+  const dp = Math.hypot(p[0] - c[0], p[1] - c[1]), dq = Math.hypot(q[0] - c[0], q[1] - c[1]);
+  if (dp < cutR - 1e-6 || dq < cutR - 1e-6) throw new Error("a link starts inside the boss circle");
+  const ap = Math.atan2(p[1] - c[1], p[0] - c[0]), aq = Math.atan2(q[1] - c[1], q[0] - c[0]), fp = Math.acos(Math.min(1, cutR / dp)), fq = Math.acos(Math.min(1, cutR / dq)); let best = null;
+  for (const sg of [1, -1]) {
+    const tp = ap + sg * fp, tq = aq - sg * fq, sweep = sg * mod((tq - tp) * sg, TWO_PI);
+    const T1 = [c[0] + cutR * Math.cos(tp), c[1] + cutR * Math.sin(tp)], T2 = [c[0] + cutR * Math.cos(tq), c[1] + cutR * Math.sin(tq)];
+    const route = Math.hypot(T1[0] - p[0], T1[1] - p[1]) > 1e-9 ? [["L", p, T1]] : [];
+    route.push(["A", c, cutR, tp, sweep]); if (Math.hypot(q[0] - T2[0], q[1] - T2[1]) > 1e-9) route.push(["L", T2, q]);
+    const ok = route.every(pc => sampleLoop([pc], 0.1).every(v => clearance(v[0], v[1], w, h, c, cutR - r) >= r - 1e-6));
+    if (ok && (!best || segsLen(route) < segsLen(best) - 1e-9)) best = route;
+  }
+  if (!best) throw new Error("no route round the boss stays inside the pocket: the cutter would have to lift");
+  return best;
+}
+function walkTree(root, w, h, c, bd, d, start) {
+  const r = d / 2, cutR = bd / 2 + r, path = []; let pos = start;
+  const go = q => { linkRoute(pos, q, c, cutR, w, h, r).forEach(x => path.push(x)); pos = q; };
+  const nd = (loop, q) => Math.min.apply(null, loop.map(p => nearestOnPiece(p, q)[0]));
+  const minBy = (arr, f) => { const vals = arr.map(f), lo = Math.min.apply(null, vals); return arr[vals.findIndex(v => v <= lo + 1e-9)]; };
+  const cutLoop = loop => { const e = enterLoop(loop, pos); go(e[1]); e[0].forEach(x => path.push(x)); pos = pEnd(e[0][e[0].length - 1]); };
+  const visit = cp => {
+    if (cp.isPoint) { const xs = cp.poly.map(q => q[0]), ys = cp.poly.map(q => q[1]); go([0.5 * (Math.min.apply(null, xs) + Math.max.apply(null, xs)), 0.5 * (Math.min.apply(null, ys) + Math.max.apply(null, ys))]); }
+    else { cutLoop(cp.outer); const todo = cp.holes.slice(); while (todo.length) { const nx = minBy(todo, lp => nd(lp, pos)); todo.splice(todo.indexOf(nx), 1); cutLoop(nx); } }
+    const todo = cp.children.slice(); while (todo.length) { const nx = minBy(todo, ch => nd(ch.outer, pos)); todo.splice(todo.indexOf(nx), 1); visit(nx); }
+  };
+  visit(root); return path;
+}
+function densify(path, step) {
+  const pts = [];
+  path.forEach(p => { const n = Math.max(1, Math.ceil(pLen(p) / step)); for (let k = 0; k < n; k++) pts.push(p[0] === "L" ? [p[1][0] + (p[2][0] - p[1][0]) * k / n, p[1][1] + (p[2][1] - p[1][1]) * k / n] : [p[1][0] + p[2] * Math.cos(p[3] + p[4] * k / n), p[1][1] + p[2] * Math.sin(p[3] + p[4] * k / n)]); });
+  pts.push(pEnd(path[path.length - 1])); return pts;
+}
+function uncoveredCells(path, w, h, c, bd, r) {
+  const res = 0.25, slack = 0.01, nx = Math.ceil((w - res / 2) / res), ny = Math.ceil((h - res / 2) / res), cov = new Uint8Array(nx * ny), R = r + slack;
+  densify(path, res).forEach(q => {
+    const i0 = Math.max(0, Math.floor((q[0] - R - res / 2) / res)), i1 = Math.min(nx - 1, Math.ceil((q[0] + R - res / 2) / res)), j0 = Math.max(0, Math.floor((q[1] - R - res / 2) / res)), j1 = Math.min(ny - 1, Math.ceil((q[1] + R - res / 2) / res));
+    for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) if (Math.hypot(res / 2 + i * res - q[0], res / 2 + j * res - q[1]) <= R) cov[j * nx + i] = 1;
+  });
+  const out = [];
+  for (let j = 0; j < ny; j++) for (let i = 0; i < nx; i++) {
+    const x = res / 2 + i * res, y = res / 2 + j * res; if (cov[j * nx + i] || Math.hypot(x - c[0], y - c[1]) < bd / 2) continue;
+    let corner = false;
+    for (const cx of [0, w]) for (const cy of [0, h]) { const sx = cx === 0 ? 1 : -1, sy = cy === 0 ? 1 : -1; if (Math.abs(x - cx) < r && Math.abs(y - cy) < r && Math.hypot(x - (cx + sx * r), y - (cy + sy * r)) > r) corner = true; }
+    if (!corner) out.push([x, y]);
+  }
+  return out;
+}
+function planPocket(w, h, c, bd, d, s, refine) {
+  try {
+    checkSetup(w, h, c, bd, d, s);
+    const r = d / 2; let rho = maxClearance(w, h, c, bd), offs = levelOffsets(rho, r, s), added = [], tree, path, bad = [];
+    for (let it = 0; it < 12; it++) {
+      tree = buildTree(w, h, c, bd, d, s, offs); offs = tree.offs; rho = tree.rho;
+      path = walkTree(tree.roots[0], w, h, c, bd, d, [r, r]);
+      bad = refine === false ? [] : uncoveredCells(path, w, h, c, bd, r); if (!bad.length) break;
+      const phimax = Math.max.apply(null, bad.map(q => clearance(q[0], q[1], w, h, c, bd / 2)));
+      let nw = Math.max(r, phimax - 0.3 * r); if (offs.some(o => Math.abs(nw - o) < 0.05)) nw = phimax - 0.6 * r;
+      offs = offs.concat([Math.min(nw, rho - 1e-3)]).sort((u, v) => u - v); added.push(nw);
+    }
+    return { path, levels: tree.levels, offs, rho, len: segsLen(path), added, uncovered: bad.length };
+  } catch (e) { return { error: e.message }; }
+}
+const nLines = (span, s) => Math.ceil(span / s - 1e-9) + 1;
+function rasterStats(w, h, c, bd, d, s) {
+  const r = d / 2, R = bd / 2 + r, layers = 3, dz = 5 / layers, n = nLines(h - d, s); let cut = 0, plunges = 0;
+  for (let j = 0; j < n; j++) {
+    const y = n === 1 ? r : r + (h - 2 * r) * j / (n - 1), dy = y - c[1];
+    const segs = Math.abs(dy) < R - 1e-9 ? [[r, c[0] - Math.sqrt(R * R - dy * dy)], [c[0] + Math.sqrt(R * R - dy * dy), w - r]] : [[r, w - r]];
+    segs.forEach(sg => { cut += Math.abs(sg[1] - sg[0]); plunges++; });
+  }
+  cut += 2 * Math.PI * R + 2 * ((w - 2 * r) + (h - 2 * r)); plunges += 2;
+  let pl = 0; for (let k = 1; k <= layers; k++) pl += (1 + k * dz) * plunges;
+  return { perLayer: cut, plunges, time: layers * cut / 300 * 60 + pl / 100 * 60 };
+}
+const contourTime = len => { const layers = 3, dz = 5 / layers; let pl = 0; for (let k = 1; k <= layers; k++) pl += 1 + k * dz; return layers * len / 300 * 60 + pl / 100 * 60; };
+window.R = { clearance, maxClearance, levelOffsets, planPocket, rasterStats, contourTime, levelComponents, uncoveredCells };
+const challengeTest = CHALLENGE ? (p) => { const q = planPocket(p.w, p.h, [p.bx, p.by], p.bd, p.D, p.s); return !q.error && q.added.length > 0; } : null;
+const cv = document.getElementById("c"), ctx = cv.getContext("2d");
+const W = cv.width, H = cv.height, p = {};
+let graph = GRAPHS.length ? GRAPHS[0].id : "main";
+const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+const fmt = v => (Math.abs(v) >= 1000 || (Math.abs(v) > 0 && Math.abs(v) < 0.01)) ? v.toExponential(2) : String(+v.toPrecision(4));
+function readout(html) {
+  document.getElementById("readout").innerHTML = html;
+  cv.setAttribute("aria-label", document.title + ". " + html.replace(/<[^>]+>/g, " ").replace(/&nbsp;/g, " "));  // screen readers get the numbers
+}
+let lastOk = null;
+// ---- plotting helpers: every graph gets labelled axes with units ----
+function niceTicks(lo, hi, n) {
+  const raw = (hi - lo) / n, mag = Math.pow(10, Math.floor(Math.log10(raw))), f = raw / mag;
+  const step = (f < 1.5 ? 1 : f < 3 ? 2 : f < 7 ? 5 : 10) * mag, out = [];
+  for (let v = Math.ceil(lo / step - 1e-9) * step; v <= hi + 1e-9; v += step) out.push(+v.toPrecision(12));
+  return out;
+}
+function axes(o, C) {
+  const L = 66, R = 16, T = 34, B = 50, w = W - L - R, h = H - T - B;
+  const X = v => L + (v - o.x[0]) / (o.x[1] - o.x[0]) * w, Y = v => T + h - (v - o.y[0]) / (o.y[1] - o.y[0]) * h;
+  ctx.lineWidth = 1; ctx.font = "12px system-ui";
+  for (const xv of niceTicks(o.x[0], o.x[1], 6)) {
+    ctx.strokeStyle = C.line; ctx.beginPath(); ctx.moveTo(X(xv), T); ctx.lineTo(X(xv), T + h); ctx.stroke();
+    ctx.fillStyle = C.muted; ctx.textAlign = "center"; ctx.fillText(fmt(xv), X(xv), T + h + 16);
+  }
+  for (const yv of niceTicks(o.y[0], o.y[1], 5)) {
+    ctx.strokeStyle = C.line; ctx.beginPath(); ctx.moveTo(L, Y(yv)); ctx.lineTo(L + w, Y(yv)); ctx.stroke();
+    ctx.fillStyle = C.muted; ctx.textAlign = "right"; ctx.fillText(fmt(yv), L - 6, Y(yv) + 4);
+  }
+  ctx.strokeStyle = C.fg; ctx.beginPath(); ctx.moveTo(L, T); ctx.lineTo(L, T + h); ctx.lineTo(L + w, T + h); ctx.stroke();
+  ctx.fillStyle = C.fg; ctx.textAlign = "center"; ctx.font = "13px system-ui";
+  ctx.fillText(o.xl, L + w / 2, H - 8);
+  ctx.save(); ctx.translate(14, T + h / 2); ctx.rotate(-Math.PI / 2); ctx.fillText(o.yl, 0, 0); ctx.restore();
+  ctx.font = "bold 13px system-ui"; ctx.fillText(o.title || "", L + w / 2, 20);
+  return { X, Y, L, T, w, h };
+}
+function curve(f, a, color, x0, x1, n) {
+  n = n || 160; ctx.save(); ctx.beginPath(); ctx.rect(a.L, a.T, a.w, a.h); ctx.clip();   // never draw outside the plot area
+  ctx.strokeStyle = color; ctx.lineWidth = 2.5; ctx.beginPath();
+  for (let i = 0; i <= n; i++) { const x = x0 + (x1 - x0) * i / n, y = f(x); i ? ctx.lineTo(a.X(x), a.Y(y)) : ctx.moveTo(a.X(x), a.Y(y)); }
+  ctx.stroke(); ctx.restore();
+}
+function dot(a, x, y, color, label) {
+  ctx.fillStyle = color; ctx.beginPath(); ctx.arc(a.X(x), a.Y(y), 6, 0, 2 * Math.PI); ctx.fill();
+  if (label) { ctx.textAlign = "left"; ctx.font = "12px system-ui"; ctx.fillText(label, a.X(x) + 9, a.Y(y) - 8); }
+}
+function draw() {
+  ctx.clearRect(0, 0, W, H);
+  const C = { fg: css("--fg"), muted: css("--muted"), accent: css("--accent"), line: css("--line"), good: css("--good"), bad: css("--bad") };
+const ctr = [p.bx, p.by], PW = p.w, PH = p.h;
+const view = () => {
+  const xs = [0, PW], ys = [0, PH + 0.3 * PH], pw = W - 66 - 16, ph = H - 34 - 50;
+  const sc = Math.min(pw / (PW + 4), ph / (ys[1] + 4)), wx = pw / sc, wy = ph / sc, cx = PW / 2, cy = (ys[0] + ys[1]) / 2;
+  return axes({ x: [cx - wx / 2, cx + wx / 2], y: [cy - wy / 2, cy + wy / 2], xl: "x (mm)", yl: "y (mm)", title: "" }, C);
+};
+const polyl = (a, pts, col, w, dash) => { ctx.save(); ctx.beginPath(); ctx.rect(a.L, a.T, a.w, a.h); ctx.clip(); ctx.setLineDash(dash || []); ctx.strokeStyle = col; ctx.lineWidth = w; ctx.beginPath(); pts.forEach((q, i) => i ? ctx.lineTo(a.X(q[0]), a.Y(q[1])) : ctx.moveTo(a.X(q[0]), a.Y(q[1]))); ctx.stroke(); ctx.restore(); };
+const note = (a, lines, right) => { ctx.font = "12px system-ui"; ctx.textAlign = right ? "right" : "left"; lines.forEach((l, i) => { ctx.fillStyle = l[1]; ctx.fillText(l[0], right ? a.L + a.w - 10 : a.L + 10, a.T + 16 + 16 * i); }); };
+const frame = a => {
+  polyl(a, [[0, 0], [PW, 0], [PW, PH], [0, PH], [0, 0]], C.muted, 2.5);
+  ctx.save(); ctx.fillStyle = C.line; ctx.beginPath(); ctx.arc(a.X(ctr[0]), a.Y(ctr[1]), a.X(ctr[0] + p.bd / 2) - a.X(ctr[0]), 0, 2 * Math.PI); ctx.fill(); ctx.strokeStyle = C.muted; ctx.lineWidth = 1.5; ctx.stroke(); ctx.restore();
+};
+const plan = planPocket(PW, PH, ctr, p.bd, p.D, p.s), ras = (() => { try { return rasterStats(PW, PH, ctr, p.bd, p.D, p.s); } catch (e) { return null; } })();
+let msg = "";
+if (plan.error) {
+  const a = view(); frame(a); ctx.fillStyle = C.bad; ctx.font = "13px system-ui"; ctx.textAlign = "center"; ctx.fillText(plan.error.length > 90 ? plan.error.slice(0, 90) + "..." : plan.error, W / 2, H / 2); msg = "No path: " + plan.error + ".";
+} else if (graph === "rings") {
+  const a = view(); frame(a);
+  plan.levels.forEach((lv, k) => lv.forEach(cp => { [cp.outer].concat(cp.holes).forEach(lp => { const pts = densify(lp, 0.15); pts.push(pts[0]); polyl(a, pts, k < plan.offs.length && plan.added.some(v => Math.abs(v - plan.offs[k]) < 1e-9) ? C.good : C.accent, 2); }); }));
+  note(a, [["blue: rings at clearance " + plan.offs.map(v => v.toFixed(2)).join(", ") + " mm", C.accent]].concat(plan.added.length ? [["orange: ring added by the coverage check", C.good]] : []));
+  msg = plan.offs.length + " rings; pieces per ring " + plan.levels.map(l => l.length).join(", ") + "; largest clearance " + plan.rho.toFixed(3) + " mm.";
+} else if (graph === "path") {
+  const a = view(); frame(a); const pts = densify(plan.path, 0.15); polyl(a, pts, C.accent, 1.6);
+  dot(a, pts[0][0], pts[0][1], C.good);
+  note(a, [["blue: one layer, no lift: " + plan.len.toFixed(1) + " mm", C.accent], ["orange dot: where the cutter plunges", C.good]]);
+  msg = "Contour: one layer " + plan.len.toFixed(1) + " mm, cutting time of 3 layers " + contourTime(plan.len).toFixed(1) + " s" + (ras ? "; Session 3 raster: " + ras.time.toFixed(1) + " s with " + ras.plunges + " plunges per layer." : ".");
+} else {
+  const ss = []; for (let v = 1; v <= p.D + 1e-9; v += 0.5) ss.push(v);
+  const ct = ss.map(v => { const q = planPocket(PW, PH, ctr, p.bd, p.D, v); return q.error ? NaN : contourTime(q.len); }), rt = ss.map(v => rasterStats(PW, PH, ctr, p.bd, p.D, v).time);
+  const top = Math.max.apply(null, ct.concat(rt).filter(v => isFinite(v))) * 1.05;
+  const a = axes({ x: [1, Math.max(p.D, 1.5)], y: [0, top], xl: "stepover (mm)", yl: "cutting time (s)", title: "Cutting time against stepover" }, C);
+  const line = (vals, col) => { ctx.save(); ctx.strokeStyle = col; ctx.lineWidth = 2; ctx.beginPath(); let on = false; ss.forEach((v, i) => { if (!isFinite(vals[i])) { on = false; return; } on ? ctx.lineTo(a.X(v), a.Y(vals[i])) : ctx.moveTo(a.X(v), a.Y(vals[i])); on = true; }); ctx.stroke(); ctx.restore(); };
+  line(ct, C.accent); line(rt, C.bad);
+  ctx.save(); ctx.strokeStyle = C.fg; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.moveTo(a.X(p.s), a.T); ctx.lineTo(a.X(p.s), a.T + a.h); ctx.stroke(); ctx.restore();
+  note(a, [["blue: contour, one unbroken cut", C.accent], ["magenta: Session 3 raster with lifts", C.bad], ["black: your stepover", C.fg]], true);
+  msg = "Time against stepover for the pocket shown (3 layers).";
+}
+readout("Pocket " + PW + " x " + PH + " mm, boss " + p.bd + " mm at (" + p.bx + ", " + p.by + "), cutter " + p.D + " mm, stepover " + p.s + " mm. " + (plan.error ? "" : "Rings at " + plan.offs.map(v => v.toFixed(2)).join(", ") + " mm" + (plan.added.length ? " (" + plan.added.length + " added by the coverage check)" : "") + "; ") + msg);
+
+  const ch = document.getElementById("challenge");
+  if (challengeTest) { const ok = !!challengeTest(p); ch.hidden = false; ch.dataset.ok = String(ok);
+    ch.innerHTML = "<b>Challenge:</b> " + CHALLENGE + " &nbsp; " + (ok ? "<b>Done!</b>" : "Not yet.");
+    if (ok !== lastOk) { document.getElementById("status").textContent = ok ? "Challenge done." : "Challenge not yet done."; lastOk = ok; } }
+}
+const box = document.getElementById("controls");
+const inputs = {};
+for (const q of PARAMS) {
+  p[q.id] = q.value;
+  const row = document.createElement("div"); row.className = "row";
+  row.innerHTML = `<label for="${q.id}">${q.label} (${q.unit || "no unit"})</label>` +
+    `<input id="${q.id}" type="range" min="${q.min}" max="${q.max}" step="${q.step}" value="${q.value}">` +
+    `<output for="${q.id}">${q.value}</output>`;
+  const inp = row.querySelector("input"), out = row.querySelector("output");
+  inputs[q.id] = [inp, out];
+  inp.addEventListener("input", () => { p[q.id] = +inp.value; out.textContent = inp.value; draw(); });
+  box.appendChild(row);
+}
+function setAll(vals) { for (const k in vals) { p[k] = vals[k]; if (inputs[k]) { inputs[k][0].value = vals[k]; inputs[k][1].textContent = vals[k]; } } draw(); }
+const DEFAULTS = Object.assign({}, p);
+document.getElementById("reset").addEventListener("click", () => setAll(DEFAULTS));
+for (const g of GRAPHS) {
+  const b = document.createElement("button"); b.type = "button"; b.textContent = g.label;
+  b.setAttribute("aria-pressed", String(g.id === graph));
+  b.addEventListener("click", () => { graph = g.id; for (const x of document.querySelectorAll("#graphs button")) x.setAttribute("aria-pressed", String(x === b)); draw(); });
+  document.getElementById("graphs").appendChild(b);
+}
+for (const pr of PRESETS) {
+  const b = document.createElement("button"); b.type = "button"; b.textContent = pr.label;
+  b.addEventListener("click", () => setAll(pr.values));
+  document.getElementById("presets").appendChild(b);
+}
+matchMedia("(prefers-color-scheme: dark)").addEventListener("change", draw);
+draw();
+</script>
+</body>
+</html>

@@ -1,0 +1,219 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Session 3: design an ethanol-water column</title>
+<style>
+  :root { --bg:#ffffff; --fg:#14181f; --muted:#5b6472; --card:#f3f5f8; --accent:#1f6feb; --good:#1a7f37; --bad:#b42318; --line:#d7dce3; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#0e1116; --fg:#e6e9ee; --muted:#9aa3b2; --card:#171b22; --accent:#58a6ff; --good:#3fb950; --bad:#f97066; --line:#2a313c; } }
+  * { box-sizing: border-box; }
+  body { margin:0; padding:16px; background:var(--bg); color:var(--fg); font:16px/1.5 system-ui, sans-serif; }
+  main { max-width: 780px; margin: 0 auto; }
+  h1 { font-size: 1.3rem; margin: 0 0 4px; }
+  p.sub { margin: 0 0 12px; color: var(--muted); }
+  .scroll { overflow-x:auto; }
+  canvas { width:100%; min-width:560px; height:auto; background:var(--card); border:1px solid var(--line); border-radius:8px; display:block; }
+  .sr { position:absolute; left:-9999px; }
+  .bar { display:flex; flex-wrap:wrap; gap:8px; margin:10px 0; }
+  button { font:inherit; padding:6px 12px; border:1px solid var(--line); background:var(--card); color:var(--fg); border-radius:6px; cursor:pointer; }
+  button[aria-pressed="true"] { border-color:var(--accent); color:var(--accent); font-weight:600; }
+  button:focus-visible, input:focus-visible { outline:3px solid var(--accent); outline-offset:2px; }
+  .row { display:grid; grid-template-columns: 11rem 1fr 6rem; gap:8px; align-items:center; margin:8px 0; }
+  .row output { text-align:right; font-variant-numeric: tabular-nums; }
+  @media (max-width: 560px) { .row { grid-template-columns: 1fr; gap:2px; } .row output { text-align:left; } }
+  input[type=range] { width:100%; accent-color: var(--accent); }
+  #readout, #challenge, .note { margin-top:10px; padding:10px 12px; background:var(--card); border-radius:8px; border:1px solid var(--line); }
+  #challenge[data-ok="true"] { border-color:var(--good); } #challenge[data-ok="true"] b { color:var(--good); }
+  .note { font-size:.85rem; color:var(--muted); }
+  a { color: var(--accent); }
+</style>
+</head>
+<body>
+<main>
+  <h1>Session 3: design an ethanol-water column</h1>
+  <p class="sub">McCabe-Thiele staircase, the designed column and the reflux cost trade-off.</p>
+  <div class="bar" id="graphs" role="group" aria-label="Choose a graph"></div>
+  <div class="scroll"><canvas id="c" width="720" height="420" role="img" aria-label="Session 3: design an ethanol-water column: interactive plot"></canvas></div>
+  <div class="bar" id="presets" role="group" aria-label="Presets"></div>
+  <div id="controls"></div>
+  <div class="bar"><button id="reset" type="button">Reset</button></div>
+  <div id="readout"></div>
+  <div id="challenge" hidden></div>
+  <div id="status" class="sr" aria-live="polite"></div>
+  <p class="note">This is a simplified educational model. It is not a validated design tool and must not be used for real structures, electrical installations, vehicles, industrial processes or medical decisions. Ethanol vapour is flammable; distilling alcohol needs a licence in India.</p>
+  <p class="sub"><a href="https://github.com/KrunalPanchal1995/pan-iit-oss/tree/main/opendistillation">Back to the repository</a></p>
+</main>
+<script>
+"use strict";
+const PARAMS = [{"id": "f", "label": "Reflux R / Rmin", "min": 1.05, "max": 3, "step": 0.05, "value": 1.5, "unit": ""}, {"id": "xD", "label": "Top product xD", "min": 60, "max": 92, "step": 1, "value": 80, "unit": "mol %"}, {"id": "xB", "label": "Bottoms xB", "min": 0.5, "max": 5, "step": 0.5, "value": 2, "unit": "mol %"}, {"id": "zF", "label": "Feed zF", "min": 5, "max": 30, "step": 1, "value": 10, "unit": "mol %"}];
+const GRAPHS = [{"id": "mt", "label": "McCabe-Thiele"}, {"id": "col", "label": "Column and temperatures", "diagram": true}, {"id": "cost", "label": "Cost versus reflux"}];
+const PRESETS = [{"label": "Distillery design", "values": {"f": 1.5, "xD": 80, "xB": 2, "zF": 10}}, {"label": "Near minimum reflux", "values": {"f": 1.1, "xD": 80, "xB": 2, "zF": 10}}, {"label": "Tangent pinch (xD 0.86)", "values": {"f": 1.5, "xD": 86, "xB": 2, "zF": 10}}];
+const CHALLENGE = "Make xD at least 0.80 with xB at most 0.02 in at most 12 stages while the reboiler duty stays below 330 kW.";
+const CHALLENGE_SOLUTION = {"f": 1.75, "xD": 80, "xB": 2, "zF": 10};
+const challengeTest = CHALLENGE ? (p) => { const r = window._last; return !!r && p.xD >= 80 && p.xB <= 2 && r.ok && r.n <= 12 && r.duty < 330; } : null;
+const cv = document.getElementById("c"), ctx = cv.getContext("2d");
+const W = cv.width, H = cv.height, p = {};
+// ---- ethanol-water thermodynamics (same model as the Python lessons) ----
+const ANT = { e: [8.20417, 1642.89, 230.300], w: [8.07131, 1730.63, 233.426] };   // Antoine, mmHg and degrees C
+const psat = (t, c) => Math.pow(10, ANT[c][0] - ANT[c][1] / (t + ANT[c][2]));
+function gammas(x, nonideal) {           // van Laar activity coefficients
+  if (!nonideal) return [1, 1];
+  const a = 1.6798, b = 0.9227, x2 = 1 - x, d = a * x + b * x2;
+  return [Math.exp(a * Math.pow(b * x2 / d, 2)), Math.exp(b * Math.pow(a * x / d, 2))];
+}
+function bubble(x, P, nonideal) {         // bubble temperature by bisection
+  const g = gammas(x, nonideal); let lo = -50, hi = 250;
+  for (let i = 0; i < 60; i++) { const t = (lo + hi) / 2; if (x * g[0] * psat(t, "e") + (1 - x) * g[1] * psat(t, "w") > P) hi = t; else lo = t; }
+  const t = (lo + hi) / 2, pe = x * g[0] * psat(t, "e"), pw = (1 - x) * g[1] * psat(t, "w");
+  return { T: t, y: pe / P, pe, pw, g1: g[0], g2: g[1] };
+}
+function poly(a, X, Y, color, lw, dash) {   // polyline clipped to the plot area
+  ctx.save(); ctx.beginPath(); ctx.rect(a.L, a.T, a.w, a.h); ctx.clip();
+  ctx.strokeStyle = color; ctx.lineWidth = lw || 2.5; ctx.setLineDash(dash || []); ctx.beginPath();
+  for (let i = 0; i < X.length; i++) { const px = a.X(X[i]), py = a.Y(Y[i]); i ? ctx.lineTo(px, py) : ctx.moveTo(px, py); }
+  ctx.stroke(); ctx.restore();
+}
+function label(a, x, y, text, color) { ctx.fillStyle = color; ctx.font = "12px system-ui"; ctx.textAlign = "left"; ctx.fillText(text, a.X(x), a.Y(y)); }
+let graph = GRAPHS.length ? GRAPHS[0].id : "main";
+const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+const fmt = v => (Math.abs(v) >= 1000 || (Math.abs(v) > 0 && Math.abs(v) < 0.01)) ? v.toExponential(2) : String(+v.toPrecision(4));
+function readout(html) {
+  document.getElementById("readout").innerHTML = html;
+  cv.setAttribute("aria-label", document.title + ". " + html.replace(/<[^>]+>/g, " ").replace(/&nbsp;/g, " "));  // screen readers get the numbers
+}
+let lastOk = null;
+// ---- plotting helpers: every graph gets labelled axes with units ----
+function niceTicks(lo, hi, n) {
+  const raw = (hi - lo) / n, mag = Math.pow(10, Math.floor(Math.log10(raw))), f = raw / mag;
+  const step = (f < 1.5 ? 1 : f < 3 ? 2 : f < 7 ? 5 : 10) * mag, out = [];
+  for (let v = Math.ceil(lo / step - 1e-9) * step; v <= hi + 1e-9; v += step) out.push(+v.toPrecision(12));
+  return out;
+}
+function axes(o, C) {
+  const L = 66, R = 16, T = 34, B = 50, w = W - L - R, h = H - T - B;
+  const X = v => L + (v - o.x[0]) / (o.x[1] - o.x[0]) * w, Y = v => T + h - (v - o.y[0]) / (o.y[1] - o.y[0]) * h;
+  ctx.lineWidth = 1; ctx.font = "12px system-ui";
+  for (const xv of niceTicks(o.x[0], o.x[1], 6)) {
+    ctx.strokeStyle = C.line; ctx.beginPath(); ctx.moveTo(X(xv), T); ctx.lineTo(X(xv), T + h); ctx.stroke();
+    ctx.fillStyle = C.muted; ctx.textAlign = "center"; ctx.fillText(fmt(xv), X(xv), T + h + 16);
+  }
+  for (const yv of niceTicks(o.y[0], o.y[1], 5)) {
+    ctx.strokeStyle = C.line; ctx.beginPath(); ctx.moveTo(L, Y(yv)); ctx.lineTo(L + w, Y(yv)); ctx.stroke();
+    ctx.fillStyle = C.muted; ctx.textAlign = "right"; ctx.fillText(fmt(yv), L - 6, Y(yv) + 4);
+  }
+  ctx.strokeStyle = C.fg; ctx.beginPath(); ctx.moveTo(L, T); ctx.lineTo(L, T + h); ctx.lineTo(L + w, T + h); ctx.stroke();
+  ctx.fillStyle = C.fg; ctx.textAlign = "center"; ctx.font = "13px system-ui";
+  ctx.fillText(o.xl, L + w / 2, H - 8);
+  ctx.save(); ctx.translate(14, T + h / 2); ctx.rotate(-Math.PI / 2); ctx.fillText(o.yl, 0, 0); ctx.restore();
+  ctx.font = "bold 13px system-ui"; ctx.fillText(o.title || "", L + w / 2, 20);
+  return { X, Y, L, T, w, h };
+}
+function curve(f, a, color, x0, x1, n) {
+  n = n || 160; ctx.save(); ctx.beginPath(); ctx.rect(a.L, a.T, a.w, a.h); ctx.clip();   // never draw outside the plot area
+  ctx.strokeStyle = color; ctx.lineWidth = 2.5; ctx.beginPath();
+  for (let i = 0; i <= n; i++) { const x = x0 + (x1 - x0) * i / n, y = f(x); i ? ctx.lineTo(a.X(x), a.Y(y)) : ctx.moveTo(a.X(x), a.Y(y)); }
+  ctx.stroke(); ctx.restore();
+}
+function dot(a, x, y, color, label) {
+  ctx.fillStyle = color; ctx.beginPath(); ctx.arc(a.X(x), a.Y(y), 6, 0, 2 * Math.PI); ctx.fill();
+  if (label) { ctx.textAlign = "left"; ctx.font = "12px system-ui"; ctx.fillText(label, a.X(x) + 9, a.Y(y) - 8); }
+}
+function draw() {
+  ctx.clearRect(0, 0, W, H);
+  const C = { fg: css("--fg"), muted: css("--muted"), accent: css("--accent"), line: css("--line"), good: css("--good"), bad: css("--bad") };
+  
+if (!window._eq) {
+  const n = 2000, X = [], Y = [], T = []; for (let i = 0; i <= n; i++) { const b = bubble(i / n, 760, true); X.push(i / n); Y.push(b.y); T.push(b.T); }
+  let k = 1; while (k < n && Y[k] > X[k]) k++;
+  window._eq = { X, Y, T, n, k, xaz: X[k] };
+}
+const E = window._eq;
+const interp = (v, xs, ys, hiIdx) => { let lo = 0, hi = hiIdx; if (v <= xs[0]) return ys[0]; if (v >= xs[hi]) return ys[hi];
+  while (hi - lo > 1) { const m = (lo + hi) >> 1; if (xs[m] > v) hi = m; else lo = m; } return ys[lo] + (ys[hi] - ys[lo]) * (v - xs[lo]) / (xs[hi] - xs[lo]); };
+const yeq = x => interp(x, E.X, E.Y, E.n), xeq = y => interp(y, E.Y, E.X, E.k - 1), tb = x => interp(x, E.X, E.T, E.n);
+function rmin(zF, xD) { let s = -1, xp = zF; for (let i = 0; i <= 2000; i++) { const x = zF + (xD - 1e-4 - zF) * i / 2000, v = (xD - yeq(x)) / (xD - x); if (v > s) { s = v; xp = x; } } return { R: s / (1 - s), x: xp }; }
+function mt(zF, xD, xB, R) {
+  const D = 100 * (zF - xB) / (xD - xB), B = 100 - D, L = R * D, V = L + D, Lb = L + 100, Vb = V;
+  const xs = [], ys = []; let y = xD, feed = 0;
+  for (let n = 1; n <= 200; n++) { const x = xeq(y); xs.push(x); ys.push(y); if (x <= xB) return { ok: true, xs, ys, n, feed: feed || n, D, B, L, V, Lb, Vb };
+    if (!feed && x <= zF) feed = n + 1; y = feed ? Lb / Vb * x - B * xB / Vb : R / (R + 1) * x + xD / (R + 1); }
+  return { ok: false, xs, ys, n: 200, feed, D, B, L, V, Lb, Vb };
+}
+const zF = p.zF / 100, xD = p.xD / 100, xB = p.xB / 100;
+let msg = "", res = null, rm = null, R = NaN, duty = NaN, trays = NaN, cost = NaN;
+if (xD >= E.xaz) msg = "<b>xD = " + xD.toFixed(2) + " is beyond the azeotrope (x = " + E.xaz.toFixed(3) + "): no column at 1 atm can reach it.</b>";
+else { rm = rmin(zF, xD); R = p.f * rm.R; res = mt(zF, xD, xB, R); duty = res.Vb * 40 * 1000 / 3600; trays = Math.ceil((res.n - 1) / 0.6); cost = trays * 2.0 + duty * 0.24;
+  if (!res.ok) msg = "<b>Pinched: more than 200 stages.</b> "; }
+if (graph === "mt") {
+  const A = axes({ x: [0, 1], y: [0, 1], xl: "ethanol in liquid, x (mole fraction)", yl: "ethanol in vapour, y (mole fraction)", title: "McCabe-Thiele on the real ethanol-water curve" }, C);
+  curve(t => t, A, C.muted, 0, 1, 2); poly(A, E.X, E.Y, C.good);
+  if (res) {
+    curve(x => R / (R + 1) * x + xD / (R + 1), A, C.accent, zF, xD, 2); curve(x => res.Lb / res.Vb * x - res.B * xB / res.Vb, A, "#e9a23b", xB, zF, 2);
+    poly(A, [zF, zF], [0, 1], C.muted, 1, [3, 4]);
+    const X = [xD], Y = [xD]; for (let i = 0; i < res.xs.length; i++) { X.push(res.xs[i]); Y.push(res.ys[i]); if (i + 1 < res.xs.length) { X.push(res.xs[i]); Y.push(res.ys[i + 1]); } }
+    poly(A, X, Y, C.bad, 1.4);
+    label(A, 0.03, 0.95, "green: equilibrium; blue: rectifying line; orange: stripping line", C.fg); label(A, 0.03, 0.9, "red: " + res.n + " stages, feed on stage " + res.feed, C.bad);
+  }
+} else if (graph === "col") {
+  if (res) {
+    const n = Math.min(res.n, 24), top = 50, bot = 380, h = (bot - top) / n, cx = 250, cw = 110;
+    ctx.font = "12px system-ui";
+    for (let i = 0; i < n; i++) { const t = tb(res.xs[i]), fr = Math.max(0, Math.min(1, (t - 78) / 22));
+      ctx.fillStyle = "hsl(" + (220 - 220 * fr) + ",70%,55%)"; ctx.fillRect(cx, top + i * h + 1, cw, h - 2);
+      ctx.fillStyle = C.fg; ctx.textAlign = "left"; if (h > 11 || i % 2 === 0) ctx.fillText((i + 1) + ": x = " + res.xs[i].toFixed(3) + ", " + t.toFixed(1) + " C", cx + cw + 10, top + i * h + h / 2 + 4); }
+    ctx.strokeStyle = C.fg; ctx.lineWidth = 2; ctx.strokeRect(cx, top, cw, bot - top);
+    const fy = top + (Math.min(res.feed, n) - 0.5) * h; ctx.beginPath(); ctx.moveTo(130, fy); ctx.lineTo(cx, fy); ctx.stroke();
+    ctx.textAlign = "left"; ctx.fillText("feed, zF = " + zF.toFixed(2), 30, fy - 6);
+    ctx.textAlign = "center"; ctx.fillText("top: D = " + res.D.toFixed(1) + " kmol/h, xD = " + xD.toFixed(2), cx + cw / 2, 36);
+    ctx.fillText("bottom: B = " + res.B.toFixed(1) + " kmol/h, reboiler " + duty.toFixed(0) + " kW", cx + cw / 2, 402);
+    if (res.n > n) { ctx.fillStyle = C.bad; ctx.textAlign = "left"; ctx.fillText("(" + (res.n - n) + " stages not drawn)", 30, 380); }
+  } else { ctx.fillStyle = C.bad; ctx.font = "14px system-ui"; ctx.textAlign = "center"; ctx.fillText("No column: the top product is beyond the azeotrope.", W / 2, H / 2); }
+} else {
+  const A = axes({ x: [1, 3], y: [0, 300], xl: "reflux ratio as a multiple of Rmin", yl: "annual cost (lakh rupees, illustrative)", title: "Trays plus steam: find the cheapest reflux" }, C);
+  if (res) {
+    const X = [], Y = [], S = []; for (let f = 1.05; f <= 3.0001; f += 0.05) { const r = mt(zF, xD, xB, f * rm.R); if (!r.ok) continue; const du = r.Vb * 40 * 1000 / 3600; X.push(f); Y.push(Math.ceil((r.n - 1) / 0.6) * 2.0 + du * 0.24); }
+    poly(A, X, Y, C.good); let k = 0; for (let i = 1; i < Y.length; i++) if (Y[i] < Y[k]) k = i;
+    dot(A, X[k], Y[k], C.accent, "cheapest " + X[k].toFixed(2) + " x Rmin"); if (res.ok) dot(A, p.f, cost, C.bad, "you");
+  }
+}
+readout(msg + (res ? "Rmin = " + rm.R.toFixed(3) + (rm.x > zF + 0.01 ? " (tangent pinch at x = " + rm.x.toFixed(2) + ")" : " (pinch at the feed)") + " &nbsp; R = " + R.toFixed(3) + " &nbsp; " + res.n + " stages, feed on stage " + res.feed + ", " + trays + " real trays &nbsp; reboiler " + duty.toFixed(0) + " kW &nbsp; cost " + cost.toFixed(1) + " lakh rupees per year" : ""));
+window._last = res ? { ok: res.ok, n: res.n, duty } : null;
+
+  const ch = document.getElementById("challenge");
+  if (challengeTest) { const ok = !!challengeTest(p); ch.hidden = false; ch.dataset.ok = String(ok);
+    ch.innerHTML = "<b>Challenge:</b> " + CHALLENGE + " &nbsp; " + (ok ? "<b>Done!</b>" : "Not yet.");
+    if (ok !== lastOk) { document.getElementById("status").textContent = ok ? "Challenge done." : "Challenge not yet done."; lastOk = ok; } }
+}
+const box = document.getElementById("controls");
+const inputs = {};
+for (const q of PARAMS) {
+  p[q.id] = q.value;
+  const row = document.createElement("div"); row.className = "row";
+  row.innerHTML = `<label for="${q.id}">${q.label} (${q.unit || "no unit"})</label>` +
+    `<input id="${q.id}" type="range" min="${q.min}" max="${q.max}" step="${q.step}" value="${q.value}">` +
+    `<output for="${q.id}">${q.value}</output>`;
+  const inp = row.querySelector("input"), out = row.querySelector("output");
+  inputs[q.id] = [inp, out];
+  inp.addEventListener("input", () => { p[q.id] = +inp.value; out.textContent = inp.value; draw(); });
+  box.appendChild(row);
+}
+function setAll(vals) { for (const k in vals) { p[k] = vals[k]; if (inputs[k]) { inputs[k][0].value = vals[k]; inputs[k][1].textContent = vals[k]; } } draw(); }
+const DEFAULTS = Object.assign({}, p);
+document.getElementById("reset").addEventListener("click", () => setAll(DEFAULTS));
+for (const g of GRAPHS) {
+  const b = document.createElement("button"); b.type = "button"; b.textContent = g.label;
+  b.setAttribute("aria-pressed", String(g.id === graph));
+  b.addEventListener("click", () => { graph = g.id; for (const x of document.querySelectorAll("#graphs button")) x.setAttribute("aria-pressed", String(x === b)); draw(); });
+  document.getElementById("graphs").appendChild(b);
+}
+for (const pr of PRESETS) {
+  const b = document.createElement("button"); b.type = "button"; b.textContent = pr.label;
+  b.addEventListener("click", () => setAll(pr.values));
+  document.getElementById("presets").appendChild(b);
+}
+matchMedia("(prefers-color-scheme: dark)").addEventListener("change", draw);
+draw();
+</script>
+</body>
+</html>

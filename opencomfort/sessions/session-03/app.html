@@ -1,0 +1,211 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Session 3: a day in the room</title>
+<style>
+  :root { --bg:#ffffff; --fg:#14181f; --muted:#5b6472; --card:#f3f5f8; --accent:#1f6feb; --good:#1a7f37; --bad:#b42318; --line:#d7dce3; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#0e1116; --fg:#e6e9ee; --muted:#9aa3b2; --card:#171b22; --accent:#58a6ff; --good:#3fb950; --bad:#f97066; --line:#2a313c; } }
+  * { box-sizing: border-box; }
+  body { margin:0; padding:16px; background:var(--bg); color:var(--fg); font:16px/1.5 system-ui, sans-serif; }
+  main { max-width: 780px; margin: 0 auto; }
+  h1 { font-size: 1.3rem; margin: 0 0 4px; }
+  p.sub { margin: 0 0 12px; color: var(--muted); }
+  .scroll { overflow-x:auto; }
+  canvas { width:100%; min-width:560px; height:auto; background:var(--card); border:1px solid var(--line); border-radius:8px; display:block; }
+  .sr { position:absolute; left:-9999px; }
+  .bar { display:flex; flex-wrap:wrap; gap:8px; margin:10px 0; }
+  button { font:inherit; padding:6px 12px; border:1px solid var(--line); background:var(--card); color:var(--fg); border-radius:6px; cursor:pointer; }
+  button[aria-pressed="true"] { border-color:var(--accent); color:var(--accent); font-weight:600; }
+  button:focus-visible, input:focus-visible { outline:3px solid var(--accent); outline-offset:2px; }
+  .row { display:grid; grid-template-columns: 11rem 1fr 6rem; gap:8px; align-items:center; margin:8px 0; }
+  .row output { text-align:right; font-variant-numeric: tabular-nums; }
+  @media (max-width: 560px) { .row { grid-template-columns: 1fr; gap:2px; } .row output { text-align:left; } }
+  input[type=range] { width:100%; accent-color: var(--accent); }
+  #readout, #challenge, .note { margin-top:10px; padding:10px 12px; background:var(--card); border-radius:8px; border:1px solid var(--line); }
+  #challenge[data-ok="true"] { border-color:var(--good); } #challenge[data-ok="true"] b { color:var(--good); }
+  .note { font-size:.85rem; color:var(--muted); }
+  a { color: var(--accent); }
+</style>
+</head>
+<body>
+<main>
+  <h1>Session 3: a day in the room</h1>
+  <p class="sub">Hour-by-hour simulation of a top-floor room in Chennai on 15 April.</p>
+  <div class="bar" id="graphs" role="group" aria-label="Choose a graph"></div>
+  <div class="scroll"><canvas id="c" width="720" height="420" role="img" aria-label="Session 3: a day in the room: interactive plot"></canvas></div>
+  <div class="bar" id="presets" role="group" aria-label="Presets"></div>
+  <div id="controls"></div>
+  <div class="bar"><button id="reset" type="button">Reset</button></div>
+  <div id="readout"></div>
+  <div id="challenge" hidden></div>
+  <div id="status" class="sr" aria-live="polite"></div>
+  <p class="note">This is a simplified educational model. It is not a validated design tool and must not be used for real structures, electrical installations, vehicles, industrial processes or medical decisions.</p>
+  <p class="sub"><a href="https://github.com/KrunalPanchal1995/pan-iit-oss/tree/main/opencomfort">Back to the repository</a></p>
+</main>
+<script>
+"use strict";
+const PARAMS = [{"id": "D", "label": "Overhang depth", "min": 0, "max": 2, "step": 0.1, "value": 0, "unit": "m"}, {"id": "a", "label": "Roof solar absorptance", "min": 20, "max": 90, "step": 5, "value": 80, "unit": "%"}, {"id": "mode", "label": "Windows: 0 closed, 1 open, 2 night only", "min": 0, "max": 2, "step": 1, "value": 0, "unit": "mode"}, {"id": "ach", "label": "Air changes when open", "min": 2, "max": 30, "step": 1, "value": 20, "unit": "1/h"}, {"id": "cm", "label": "Thermal mass C_m", "min": 1, "max": 20, "step": 1, "value": 6, "unit": "MJ/K"}, {"id": "t", "label": "Time of day shown", "min": 0, "max": 24, "step": 0.5, "value": 15, "unit": "h"}];
+const GRAPHS = [{"id": "day", "label": "Temperature over the day"}, {"id": "room", "label": "Room picture", "diagram": true}, {"id": "depth", "label": "Peak vs overhang depth"}];
+const PRESETS = [{"label": "As built", "values": {"D": 0, "a": 80, "mode": 0, "ach": 20, "cm": 6, "t": 15}}, {"label": "Shade + white roof, closed", "values": {"D": 0.6, "a": 30, "mode": 0, "ach": 20, "cm": 6, "t": 15}}, {"label": "Shade + white roof + night flush", "values": {"D": 0.6, "a": 30, "mode": 2, "ach": 20, "cm": 6, "t": 15}}];
+const CHALLENGE = "Keep the peak indoor temperature at or below 36.5 C with no more than 20 air changes per hour and the standard thermal mass (6 MJ/K).";
+const CHALLENGE_SOLUTION = {"D": 0.6, "a": 30, "mode": 1, "ach": 20, "cm": 6, "t": 15};
+const challengeTest = CHALLENGE ? (p) => (p.ach <= 20 && p.cm === 6 && lastSim && lastSim.peak <= 36.5) : null;
+let lastShade = 0, lastSim = null;   // set by draw() for the challenge check
+const cv = document.getElementById("c"), ctx = cv.getContext("2d");
+const W = cv.width, H = cv.height, p = {};
+let graph = GRAPHS.length ? GRAPHS[0].id : "main";
+const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+const fmt = v => (Math.abs(v) >= 1000 || (Math.abs(v) > 0 && Math.abs(v) < 0.01)) ? v.toExponential(2) : String(+v.toPrecision(4));
+function readout(html) {
+  document.getElementById("readout").innerHTML = html;
+  cv.setAttribute("aria-label", document.title + ". " + html.replace(/<[^>]+>/g, " ").replace(/&nbsp;/g, " "));  // screen readers get the numbers
+}
+let lastOk = null;
+// ---- plotting helpers: every graph gets labelled axes with units ----
+function niceTicks(lo, hi, n) {
+  const raw = (hi - lo) / n, mag = Math.pow(10, Math.floor(Math.log10(raw))), f = raw / mag;
+  const step = (f < 1.5 ? 1 : f < 3 ? 2 : f < 7 ? 5 : 10) * mag, out = [];
+  for (let v = Math.ceil(lo / step - 1e-9) * step; v <= hi + 1e-9; v += step) out.push(+v.toPrecision(12));
+  return out;
+}
+function axes(o, C) {
+  const L = 66, R = 16, T = 34, B = 50, w = W - L - R, h = H - T - B;
+  const X = v => L + (v - o.x[0]) / (o.x[1] - o.x[0]) * w, Y = v => T + h - (v - o.y[0]) / (o.y[1] - o.y[0]) * h;
+  ctx.lineWidth = 1; ctx.font = "12px system-ui";
+  for (const xv of niceTicks(o.x[0], o.x[1], 6)) {
+    ctx.strokeStyle = C.line; ctx.beginPath(); ctx.moveTo(X(xv), T); ctx.lineTo(X(xv), T + h); ctx.stroke();
+    ctx.fillStyle = C.muted; ctx.textAlign = "center"; ctx.fillText(fmt(xv), X(xv), T + h + 16);
+  }
+  for (const yv of niceTicks(o.y[0], o.y[1], 5)) {
+    ctx.strokeStyle = C.line; ctx.beginPath(); ctx.moveTo(L, Y(yv)); ctx.lineTo(L + w, Y(yv)); ctx.stroke();
+    ctx.fillStyle = C.muted; ctx.textAlign = "right"; ctx.fillText(fmt(yv), L - 6, Y(yv) + 4);
+  }
+  ctx.strokeStyle = C.fg; ctx.beginPath(); ctx.moveTo(L, T); ctx.lineTo(L, T + h); ctx.lineTo(L + w, T + h); ctx.stroke();
+  ctx.fillStyle = C.fg; ctx.textAlign = "center"; ctx.font = "13px system-ui";
+  ctx.fillText(o.xl, L + w / 2, H - 8);
+  ctx.save(); ctx.translate(14, T + h / 2); ctx.rotate(-Math.PI / 2); ctx.fillText(o.yl, 0, 0); ctx.restore();
+  ctx.font = "bold 13px system-ui"; ctx.fillText(o.title || "", L + w / 2, 20);
+  return { X, Y, L, T, w, h };
+}
+function curve(f, a, color, x0, x1, n) {
+  n = n || 160; ctx.save(); ctx.beginPath(); ctx.rect(a.L, a.T, a.w, a.h); ctx.clip();   // never draw outside the plot area
+  ctx.strokeStyle = color; ctx.lineWidth = 2.5; ctx.beginPath();
+  for (let i = 0; i <= n; i++) { const x = x0 + (x1 - x0) * i / n, y = f(x); i ? ctx.lineTo(a.X(x), a.Y(y)) : ctx.moveTo(a.X(x), a.Y(y)); }
+  ctx.stroke(); ctx.restore();
+}
+function dot(a, x, y, color, label) {
+  ctx.fillStyle = color; ctx.beginPath(); ctx.arc(a.X(x), a.Y(y), 6, 0, 2 * Math.PI); ctx.fill();
+  if (label) { ctx.textAlign = "left"; ctx.font = "12px system-ui"; ctx.fillText(label, a.X(x) + 9, a.Y(y) - 8); }
+}
+function draw() {
+  ctx.clearRect(0, 0, W, H);
+  const C = { fg: css("--fg"), muted: css("--muted"), accent: css("--accent"), line: css("--line"), good: css("--good"), bad: css("--bad") };
+const D2R = Math.PI / 180, lat = 13.08 * D2R, dec = 23.45 * Math.sin(D2R * 360 * (284 + 105) / 365) * D2R;
+const room = { uw: 30, ur: 40, ha: 400, f: 0.7, qi: 250, vol: 48, cm: p.cm * 1e6 };
+const lim = 0.31 * 31 + 17.8 + 3.5 + 1.8;
+function drive(h, P) {
+  const w = 15 * (h - 12) * D2R, sa = Math.sin(lat) * Math.sin(dec) + Math.cos(lat) * Math.cos(dec) * Math.cos(w);
+  const alt = Math.asin(Math.max(-1, Math.min(1, sa)));
+  const e = -Math.cos(dec) * Math.sin(w), n = Math.cos(lat) * Math.sin(dec) - Math.sin(lat) * Math.cos(dec) * Math.cos(w);
+  const az = Math.atan2(e, n) / D2R, g = ((az - 270 + 180) % 360 + 360) % 360 - 180;
+  const s = Math.sin(alt), idn = s > 0.01 ? 1100 * Math.exp(-0.18 / s) : 0;
+  const ct = Math.cos(alt) * Math.cos(g * D2R);
+  let fsh = 1; if (ct > 0) { const t = Math.tan(Math.min(alt, 89.9 * D2R)) / Math.max(Math.cos(g * D2R), 1e-9); fsh = Math.min(1, Math.max(0, (P.D * t - 0.3) / 1.5)); }
+  const win = alt > 0 ? idn * Math.max(ct, 0) * (1 - fsh) + 0.5 * idn * (0.12 + 0.2 * (Math.max(s, 0) + 0.12)) : 0;
+  const roof = alt > 0 ? idn * (s + 0.12) : 0;
+  const to = 31 + 4.5 * Math.cos(2 * Math.PI * (h - 15) / 24);
+  const hh = ((h % 24) + 24) % 24;
+  const ach = P.mode === 0 ? 0.5 : P.mode === 1 ? P.ach : ((hh >= 19 || hh < 7) ? P.ach : 0.5);
+  return { to, tsa: to + P.a / 100 * roof / 20 - 3.9, qs: 0.8 * 2 * win, hv: 1200 * ach * 48 / 3600 };
+}
+function sim(P) {
+  const n = 288, dt = 300, half = [];
+  for (let j = 0; j <= 2 * n; j++) half.push(drive(j * 24 / (2 * n), P));
+  const den = d => room.uw + room.ur + d.hv + room.ha;
+  const a0 = half.map(d => ((room.uw + d.hv) * d.to + room.ur * d.tsa + room.qi + (1 - room.f) * d.qs) / den(d));
+  const a1 = half.map(d => room.ha / den(d));
+  const k0 = half.map((d, j) => (room.ha * a0[j] + room.f * d.qs) / room.cm), k1 = half.map((d, j) => room.ha * (a1[j] - 1) / room.cm);
+  const day = t0 => { const tm = [t0]; for (let i = 0; i < n; i++) { const j = 2 * i, r = (jj, t) => k0[jj] + k1[jj] * t, t = tm[i];
+    const q1 = r(j, t), q2 = r(j + 1, t + dt / 2 * q1), q3 = r(j + 1, t + dt / 2 * q2), q4 = r(j + 2, t + dt * q3); tm.push(t + dt * (q1 + 2 * q2 + 2 * q3 + q4) / 6); } return tm; };
+  const e0 = day(0)[n], e1 = day(1)[n], tm = day(e0 / (1 - (e1 - e0)));
+  const ta = tm.map((t, i) => a0[2 * i] + a1[2 * i] * t), hrs = tm.map((t, i) => i * 24 / n);
+  let dh = 0; for (let i = 0; i < n; i++) dh += 0.5 * (Math.max(0, ta[i] - lim) + Math.max(0, ta[i + 1] - lim)) * (24 / n);
+  return { ta, tm, hrs, to: hrs.map(h => 31 + 4.5 * Math.cos(2 * Math.PI * (h - 15) / 24)), peak: Math.max(...ta), dh, half };
+}
+const cur = sim({ D: p.D, a: p.a, mode: p.mode, ach: p.ach }), base = sim({ D: 0, a: 80, mode: 0, ach: 20 });
+const idx = Math.round(p.t / 24 * 288), tNow = cur.ta[idx];
+const cost = (p.D >= 1.15 ? 12000 : p.D >= 0.55 ? 6000 : 0) + (p.a <= 30 ? 8000 : 0) + (p.mode === 2 ? 1500 : 0);
+lastSim = cur;
+if (graph === "day") {
+  const A = axes({ x: [0, 24], y: [24, 48], xl: "solar time (h)", yl: "indoor air temperature (C)", title: "Indoor temperature over the design day" }, C);
+  ctx.fillStyle = C.good; ctx.globalAlpha = 0.1; ctx.fillRect(A.L, A.Y(lim), A.w, A.Y(24) - A.Y(lim)); ctx.globalAlpha = 1;
+  const line = (xs, ys, col, w) => { ctx.save(); ctx.beginPath(); ctx.rect(A.L, A.T, A.w, A.h); ctx.clip(); ctx.strokeStyle = col; ctx.lineWidth = w; ctx.beginPath();
+    xs.forEach((x, i) => { i ? ctx.lineTo(A.X(x), A.Y(ys[i])) : ctx.moveTo(A.X(x), A.Y(ys[i])); }); ctx.stroke(); ctx.restore(); };
+  line(cur.hrs, base.ta, C.bad, 2); line(cur.hrs, cur.to, C.muted, 1.5); line(cur.hrs, cur.ta, C.accent, 3);
+  dot(A, p.t, tNow, C.fg, tNow.toFixed(1) + " C");
+  ctx.font = "12px system-ui"; ctx.textAlign = "left";
+  ctx.fillStyle = C.bad; ctx.fillText("red: as built (no shade, dark roof, closed)", A.L + 10, A.T + 16);
+  ctx.fillStyle = C.accent; ctx.fillText("blue: your design", A.L + 10, A.T + 32);
+  ctx.fillStyle = C.muted; ctx.fillText("grey: outdoor air; green band: comfortable with a fan (up to " + lim.toFixed(1) + " C)", A.L + 10, A.T + 48);
+} else if (graph === "room") {
+  const hot = Math.min(1, Math.max(0, (tNow - 26) / 22)), d = cur.half[2 * idx];
+  ctx.fillStyle = "hsl(" + (210 - 210 * hot) + ",75%,55%)"; ctx.globalAlpha = 0.35; ctx.fillRect(200, 150, 320, 200); ctx.globalAlpha = 1;
+  const roofHot = Math.min(1, Math.max(0, (d.tsa - 26) / 40));
+  ctx.fillStyle = "hsl(" + (210 - 210 * roofHot) + ",70%,50%)"; ctx.fillRect(190, 130, 340, 20);
+  ctx.strokeStyle = C.fg; ctx.lineWidth = 6; ctx.beginPath(); ctx.moveTo(200, 150); ctx.lineTo(200, 350); ctx.lineTo(520, 350); ctx.lineTo(520, 150); ctx.stroke();
+  ctx.clearRect(517, 210, 8, 90); ctx.strokeStyle = C.accent; ctx.lineWidth = 2; ctx.strokeRect(517, 210, 6, 90);
+  ctx.fillStyle = C.muted; ctx.fillRect(520, 196, 100 * p.D, 8);
+  ctx.fillStyle = "hsl(" + (210 - 210 * Math.min(1, Math.max(0, (cur.tm[idx] - 26) / 22))) + ",60%,45%)"; ctx.fillRect(200, 340, 320, 14);
+  if (d.hv > 20) { ctx.strokeStyle = C.good; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(120, 280); ctx.lineTo(600, 250); ctx.stroke(); }
+  ctx.fillStyle = C.fg; ctx.font = "13px system-ui"; ctx.textAlign = "center";
+  ctx.fillText("indoor air " + tNow.toFixed(1) + " C", 360, 250); ctx.fillText("floor slab " + cur.tm[idx].toFixed(1) + " C", 360, 380);
+  ctx.textAlign = "left"; ctx.font = "12px system-ui";
+  ctx.fillText(p.t.toFixed(1) + " h solar time; outdoor " + d.to.toFixed(1) + " C; roof sol-air " + d.tsa.toFixed(1) + " C", 20, 30);
+  ctx.fillText("sun through the west window " + d.qs.toFixed(0) + " W; windows " + (d.hv > 20 ? "OPEN" : "closed"), 20, 52);
+  ctx.fillStyle = C.muted; ctx.fillText("colour: blue cool, red hot (roof, air and floor slab)", 20, 410);
+} else {
+  const A = axes({ x: [0, 2], y: [33, 48], xl: "overhang depth D (m)", yl: "peak indoor temperature (C)", title: "Peak temperature against overhang depth, your other settings" }, C);
+  const pts = []; for (let k = 0; k <= 20; k++) { const D = k * 0.1; pts.push([D, sim({ D, a: p.a, mode: p.mode, ach: p.ach }).peak]); }
+  ctx.strokeStyle = C.accent; ctx.lineWidth = 2.5; ctx.beginPath(); pts.forEach(([x, y], i) => { i ? ctx.lineTo(A.X(x), A.Y(y)) : ctx.moveTo(A.X(x), A.Y(y)); }); ctx.stroke();
+  dot(A, p.D, cur.peak, C.fg, cur.peak.toFixed(1) + " C");
+}
+readout("peak " + cur.peak.toFixed(1) + " C (as built " + base.peak.toFixed(1) + " C) &nbsp; discomfort " + cur.dh.toFixed(0) + " K h above " + lim.toFixed(1) + " C &nbsp; cost about Rs " + cost + " &nbsp; at " + p.t + " h: " + tNow.toFixed(1) + " C");
+  const ch = document.getElementById("challenge");
+  if (challengeTest) { const ok = !!challengeTest(p); ch.hidden = false; ch.dataset.ok = String(ok);
+    ch.innerHTML = "<b>Challenge:</b> " + CHALLENGE + " &nbsp; " + (ok ? "<b>Done!</b>" : "Not yet.");
+    if (ok !== lastOk) { document.getElementById("status").textContent = ok ? "Challenge done." : "Challenge not yet done."; lastOk = ok; } }
+}
+const box = document.getElementById("controls");
+const inputs = {};
+for (const q of PARAMS) {
+  p[q.id] = q.value;
+  const row = document.createElement("div"); row.className = "row";
+  row.innerHTML = `<label for="${q.id}">${q.label} (${q.unit || "no unit"})</label>` +
+    `<input id="${q.id}" type="range" min="${q.min}" max="${q.max}" step="${q.step}" value="${q.value}">` +
+    `<output for="${q.id}">${q.value}</output>`;
+  const inp = row.querySelector("input"), out = row.querySelector("output");
+  inputs[q.id] = [inp, out];
+  inp.addEventListener("input", () => { p[q.id] = +inp.value; out.textContent = inp.value; draw(); });
+  box.appendChild(row);
+}
+function setAll(vals) { for (const k in vals) { p[k] = vals[k]; if (inputs[k]) { inputs[k][0].value = vals[k]; inputs[k][1].textContent = vals[k]; } } draw(); }
+const DEFAULTS = Object.assign({}, p);
+document.getElementById("reset").addEventListener("click", () => setAll(DEFAULTS));
+for (const g of GRAPHS) {
+  const b = document.createElement("button"); b.type = "button"; b.textContent = g.label;
+  b.setAttribute("aria-pressed", String(g.id === graph));
+  b.addEventListener("click", () => { graph = g.id; for (const x of document.querySelectorAll("#graphs button")) x.setAttribute("aria-pressed", String(x === b)); draw(); });
+  document.getElementById("graphs").appendChild(b);
+}
+for (const pr of PRESETS) {
+  const b = document.createElement("button"); b.type = "button"; b.textContent = pr.label;
+  b.addEventListener("click", () => setAll(pr.values));
+  document.getElementById("presets").appendChild(b);
+}
+matchMedia("(prefers-color-scheme: dark)").addEventListener("change", draw);
+draw();
+</script>
+</body>
+</html>

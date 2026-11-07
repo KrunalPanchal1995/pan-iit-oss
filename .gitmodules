@@ -55,9 +55,6 @@
 [submodule "openprojectile"]
 	path = openprojectile
 	url = https://github.com/KrunalPanchal1995/openprojectile.git
-[submodule "opencrashsim"]
-	path = opencrashsim
-	url = https://github.com/KrunalPanchal1995/opencrashsim.git
 [submodule "openoscillator"]
 	path = openoscillator
 	url = https://github.com/KrunalPanchal1995/openoscillator.git
@@ -91,9 +88,6 @@
 [submodule "openinduction"]
 	path = openinduction
 	url = https://github.com/KrunalPanchal1995/openinduction.git
-[submodule "opendcmotor"]
-	path = opendcmotor
-	url = https://github.com/KrunalPanchal1995/opendcmotor.git
 [submodule "openmole"]
 	path = openmole
 	url = https://github.com/KrunalPanchal1995/openmole.git
@@ -145,9 +139,6 @@
 [submodule "openfatigue"]
 	path = openfatigue
 	url = https://github.com/KrunalPanchal1995/openfatigue.git
-[submodule "opencncpath"]
-	path = opencncpath
-	url = https://github.com/KrunalPanchal1995/opencncpath.git
 [submodule "opensculpt"]
 	path = opensculpt
 	url = https://github.com/KrunalPanchal1995/opensculpt.git
@@ -157,9 +148,6 @@
 [submodule "opensql"]
 	path = opensql
 	url = https://github.com/KrunalPanchal1995/opensql.git
-[submodule "opencrypto"]
-	path = opencrypto
-	url = https://github.com/KrunalPanchal1995/opencrypto.git
 [submodule "openneuralnet"]
 	path = openneuralnet
 	url = https://github.com/KrunalPanchal1995/openneuralnet.git
@@ -262,24 +250,9 @@
 [submodule "opensymbolic"]
 	path = opensymbolic
 	url = https://github.com/KrunalPanchal1995/opensymbolic.git
-[submodule "opencomfort"]
-	path = opencomfort
-	url = https://github.com/KrunalPanchal1995/opencomfort.git
 [submodule "openflamevolume"]
 	path = openflamevolume
 	url = https://github.com/KrunalPanchal1995/openflamevolume.git
-[submodule "opendaylight"]
-	path = opendaylight
-	url = https://github.com/KrunalPanchal1995/opendaylight.git
-[submodule "opendesalination"]
-	path = opendesalination
-	url = https://github.com/KrunalPanchal1995/opendesalination.git
-[submodule "opendistillation"]
-	path = opendistillation
-	url = https://github.com/KrunalPanchal1995/opendistillation.git
-[submodule "opendronecontrol"]
-	path = opendronecontrol
-	url = https://github.com/KrunalPanchal1995/opendronecontrol.git
 [submodule "openevacuation"]
 	path = openevacuation
 	url = https://github.com/KrunalPanchal1995/openevacuation.git

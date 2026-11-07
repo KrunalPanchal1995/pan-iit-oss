@@ -1,0 +1,194 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Session 1: boil, condense, repeat</title>
+<style>
+  :root { --bg:#ffffff; --fg:#14181f; --muted:#5b6472; --card:#f3f5f8; --accent:#1f6feb; --good:#1a7f37; --bad:#b42318; --line:#d7dce3; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#0e1116; --fg:#e6e9ee; --muted:#9aa3b2; --card:#171b22; --accent:#58a6ff; --good:#3fb950; --bad:#f97066; --line:#2a313c; } }
+  * { box-sizing: border-box; }
+  body { margin:0; padding:16px; background:var(--bg); color:var(--fg); font:16px/1.5 system-ui, sans-serif; }
+  main { max-width: 780px; margin: 0 auto; }
+  h1 { font-size: 1.3rem; margin: 0 0 4px; }
+  p.sub { margin: 0 0 12px; color: var(--muted); }
+  .scroll { overflow-x:auto; }
+  canvas { width:100%; min-width:560px; height:auto; background:var(--card); border:1px solid var(--line); border-radius:8px; display:block; }
+  .sr { position:absolute; left:-9999px; }
+  .bar { display:flex; flex-wrap:wrap; gap:8px; margin:10px 0; }
+  button { font:inherit; padding:6px 12px; border:1px solid var(--line); background:var(--card); color:var(--fg); border-radius:6px; cursor:pointer; }
+  button[aria-pressed="true"] { border-color:var(--accent); color:var(--accent); font-weight:600; }
+  button:focus-visible, input:focus-visible { outline:3px solid var(--accent); outline-offset:2px; }
+  .row { display:grid; grid-template-columns: 11rem 1fr 6rem; gap:8px; align-items:center; margin:8px 0; }
+  .row output { text-align:right; font-variant-numeric: tabular-nums; }
+  @media (max-width: 560px) { .row { grid-template-columns: 1fr; gap:2px; } .row output { text-align:left; } }
+  input[type=range] { width:100%; accent-color: var(--accent); }
+  #readout, #challenge, .note { margin-top:10px; padding:10px 12px; background:var(--card); border-radius:8px; border:1px solid var(--line); }
+  #challenge[data-ok="true"] { border-color:var(--good); } #challenge[data-ok="true"] b { color:var(--good); }
+  .note { font-size:.85rem; color:var(--muted); }
+  a { color: var(--accent); }
+</style>
+</head>
+<body>
+<main>
+  <h1>Session 1: boil, condense, repeat</h1>
+  <p class="sub">Column picture and x-y staircase at total reflux with a constant relative volatility.</p>
+  <div class="bar" id="graphs" role="group" aria-label="Choose a graph"></div>
+  <div class="scroll"><canvas id="c" width="720" height="420" role="img" aria-label="Session 1: boil, condense, repeat: interactive plot"></canvas></div>
+  <div class="bar" id="presets" role="group" aria-label="Presets"></div>
+  <div id="controls"></div>
+  <div class="bar"><button id="reset" type="button">Reset</button></div>
+  <div id="readout"></div>
+  <div id="challenge" hidden></div>
+  <div id="status" class="sr" aria-live="polite"></div>
+  <p class="note">This is a simplified educational model. It is not a validated design tool and must not be used for real structures, electrical installations, vehicles, industrial processes or medical decisions. Ethanol vapour is flammable; distilling alcohol needs a licence in India.</p>
+  <p class="sub"><a href="https://github.com/KrunalPanchal1995/pan-iit-oss/tree/main/opendistillation">Back to the repository</a></p>
+</main>
+<script>
+"use strict";
+const PARAMS = [{"id": "alpha", "label": "Relative volatility alpha", "min": 1.2, "max": 8, "step": 0.1, "value": 2.5, "unit": ""}, {"id": "xB", "label": "Bottom liquid xB", "min": 0.5, "max": 10, "step": 0.5, "value": 2, "unit": "mol %"}, {"id": "xD", "label": "Top product xD", "min": 50, "max": 98, "step": 1, "value": 80, "unit": "mol %"}, {"id": "zF", "label": "Feed zF", "min": 5, "max": 40, "step": 1, "value": 10, "unit": "mol %"}];
+const GRAPHS = [{"id": "column", "label": "Column picture", "diagram": true}, {"id": "xy", "label": "x-y staircase"}];
+const PRESETS = [{"label": "Distillery wash", "values": {"alpha": 2.5, "xB": 2, "xD": 80, "zF": 10}}, {"label": "Hard split (alpha 1.5)", "values": {"alpha": 1.5, "xB": 2, "xD": 80, "zF": 10}}, {"label": "Easy split (alpha 6)", "values": {"alpha": 6, "xB": 2, "xD": 80, "zF": 10}}];
+const CHALLENGE = "Reach xD of at least 0.80 from xB = 0.02 or lower with at most 5 stages.";
+const CHALLENGE_SOLUTION = {"alpha": 3, "xB": 2, "xD": 80, "zF": 10};
+const challengeTest = CHALLENGE ? (p) => (p.xD >= 80 && p.xB <= 2 && Math.ceil(Math.log((p.xD / (100 - p.xD)) / (p.xB / (100 - p.xB))) / Math.log(p.alpha) - 1e-9) <= 5) : null;
+const cv = document.getElementById("c"), ctx = cv.getContext("2d");
+const W = cv.width, H = cv.height, p = {};
+// ---- ethanol-water thermodynamics (same model as the Python lessons) ----
+const ANT = { e: [8.20417, 1642.89, 230.300], w: [8.07131, 1730.63, 233.426] };   // Antoine, mmHg and degrees C
+const psat = (t, c) => Math.pow(10, ANT[c][0] - ANT[c][1] / (t + ANT[c][2]));
+function gammas(x, nonideal) {           // van Laar activity coefficients
+  if (!nonideal) return [1, 1];
+  const a = 1.6798, b = 0.9227, x2 = 1 - x, d = a * x + b * x2;
+  return [Math.exp(a * Math.pow(b * x2 / d, 2)), Math.exp(b * Math.pow(a * x / d, 2))];
+}
+function bubble(x, P, nonideal) {         // bubble temperature by bisection
+  const g = gammas(x, nonideal); let lo = -50, hi = 250;
+  for (let i = 0; i < 60; i++) { const t = (lo + hi) / 2; if (x * g[0] * psat(t, "e") + (1 - x) * g[1] * psat(t, "w") > P) hi = t; else lo = t; }
+  const t = (lo + hi) / 2, pe = x * g[0] * psat(t, "e"), pw = (1 - x) * g[1] * psat(t, "w");
+  return { T: t, y: pe / P, pe, pw, g1: g[0], g2: g[1] };
+}
+function poly(a, X, Y, color, lw, dash) {   // polyline clipped to the plot area
+  ctx.save(); ctx.beginPath(); ctx.rect(a.L, a.T, a.w, a.h); ctx.clip();
+  ctx.strokeStyle = color; ctx.lineWidth = lw || 2.5; ctx.setLineDash(dash || []); ctx.beginPath();
+  for (let i = 0; i < X.length; i++) { const px = a.X(X[i]), py = a.Y(Y[i]); i ? ctx.lineTo(px, py) : ctx.moveTo(px, py); }
+  ctx.stroke(); ctx.restore();
+}
+function label(a, x, y, text, color) { ctx.fillStyle = color; ctx.font = "12px system-ui"; ctx.textAlign = "left"; ctx.fillText(text, a.X(x), a.Y(y)); }
+let graph = GRAPHS.length ? GRAPHS[0].id : "main";
+const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+const fmt = v => (Math.abs(v) >= 1000 || (Math.abs(v) > 0 && Math.abs(v) < 0.01)) ? v.toExponential(2) : String(+v.toPrecision(4));
+function readout(html) {
+  document.getElementById("readout").innerHTML = html;
+  cv.setAttribute("aria-label", document.title + ". " + html.replace(/<[^>]+>/g, " ").replace(/&nbsp;/g, " "));  // screen readers get the numbers
+}
+let lastOk = null;
+// ---- plotting helpers: every graph gets labelled axes with units ----
+function niceTicks(lo, hi, n) {
+  const raw = (hi - lo) / n, mag = Math.pow(10, Math.floor(Math.log10(raw))), f = raw / mag;
+  const step = (f < 1.5 ? 1 : f < 3 ? 2 : f < 7 ? 5 : 10) * mag, out = [];
+  for (let v = Math.ceil(lo / step - 1e-9) * step; v <= hi + 1e-9; v += step) out.push(+v.toPrecision(12));
+  return out;
+}
+function axes(o, C) {
+  const L = 66, R = 16, T = 34, B = 50, w = W - L - R, h = H - T - B;
+  const X = v => L + (v - o.x[0]) / (o.x[1] - o.x[0]) * w, Y = v => T + h - (v - o.y[0]) / (o.y[1] - o.y[0]) * h;
+  ctx.lineWidth = 1; ctx.font = "12px system-ui";
+  for (const xv of niceTicks(o.x[0], o.x[1], 6)) {
+    ctx.strokeStyle = C.line; ctx.beginPath(); ctx.moveTo(X(xv), T); ctx.lineTo(X(xv), T + h); ctx.stroke();
+    ctx.fillStyle = C.muted; ctx.textAlign = "center"; ctx.fillText(fmt(xv), X(xv), T + h + 16);
+  }
+  for (const yv of niceTicks(o.y[0], o.y[1], 5)) {
+    ctx.strokeStyle = C.line; ctx.beginPath(); ctx.moveTo(L, Y(yv)); ctx.lineTo(L + w, Y(yv)); ctx.stroke();
+    ctx.fillStyle = C.muted; ctx.textAlign = "right"; ctx.fillText(fmt(yv), L - 6, Y(yv) + 4);
+  }
+  ctx.strokeStyle = C.fg; ctx.beginPath(); ctx.moveTo(L, T); ctx.lineTo(L, T + h); ctx.lineTo(L + w, T + h); ctx.stroke();
+  ctx.fillStyle = C.fg; ctx.textAlign = "center"; ctx.font = "13px system-ui";
+  ctx.fillText(o.xl, L + w / 2, H - 8);
+  ctx.save(); ctx.translate(14, T + h / 2); ctx.rotate(-Math.PI / 2); ctx.fillText(o.yl, 0, 0); ctx.restore();
+  ctx.font = "bold 13px system-ui"; ctx.fillText(o.title || "", L + w / 2, 20);
+  return { X, Y, L, T, w, h };
+}
+function curve(f, a, color, x0, x1, n) {
+  n = n || 160; ctx.save(); ctx.beginPath(); ctx.rect(a.L, a.T, a.w, a.h); ctx.clip();   // never draw outside the plot area
+  ctx.strokeStyle = color; ctx.lineWidth = 2.5; ctx.beginPath();
+  for (let i = 0; i <= n; i++) { const x = x0 + (x1 - x0) * i / n, y = f(x); i ? ctx.lineTo(a.X(x), a.Y(y)) : ctx.moveTo(a.X(x), a.Y(y)); }
+  ctx.stroke(); ctx.restore();
+}
+function dot(a, x, y, color, label) {
+  ctx.fillStyle = color; ctx.beginPath(); ctx.arc(a.X(x), a.Y(y), 6, 0, 2 * Math.PI); ctx.fill();
+  if (label) { ctx.textAlign = "left"; ctx.font = "12px system-ui"; ctx.fillText(label, a.X(x) + 9, a.Y(y) - 8); }
+}
+function draw() {
+  ctx.clearRect(0, 0, W, H);
+  const C = { fg: css("--fg"), muted: css("--muted"), accent: css("--accent"), line: css("--line"), good: css("--good"), bad: css("--bad") };
+  
+const a = p.alpha, xB = p.xB / 100, xD = p.xD / 100, zF = p.zF / 100;
+const odds = z => z / (1 - z), yv = x => a * x / (1 + (a - 1) * x);
+const N = Math.log(odds(xD) / odds(xB)) / Math.log(a), Nw = Math.ceil(N - 1e-9);
+const xs = [xB]; while (xs.length <= Math.min(Nw, 60)) xs.push(yv(xs[xs.length - 1]));
+const D = 100 * (zF - xB) / (xD - xB), B = 100 - D, rec = D * xD / (100 * zF);
+if (graph === "column") {
+  const shown = Math.min(Nw, 16), top = 70, bot = 350, hgt = (bot - top) / shown, cx = 300, cw = 120;
+  ctx.font = "12px system-ui"; ctx.textAlign = "center";
+  ctx.fillStyle = C.accent; ctx.globalAlpha = 0.25; ctx.fillRect(cx - 60, 18, 120 + 120, 36); ctx.globalAlpha = 1;
+  ctx.fillStyle = C.fg; ctx.fillText("condenser: top product xD = " + xD.toFixed(2), cx + 60, 41);
+  for (let i = 0; i < shown; i++) {
+    const xi = xs[Math.min(i + 1, xs.length - 1)], y0 = bot - (i + 1) * hgt;
+    ctx.fillStyle = "hsl(" + (210 - 180 * xi) + ",70%,55%)"; ctx.fillRect(cx, y0 + 2, cw, hgt - 4);
+    ctx.fillStyle = C.fg; ctx.textAlign = "left"; ctx.fillText("stage " + (i + 1) + ": x = " + xi.toFixed(3), cx + cw + 10, y0 + hgt / 2 + 4);
+  }
+  ctx.strokeStyle = C.fg; ctx.lineWidth = 2; ctx.strokeRect(cx, top, cw, bot - top);
+  ctx.fillStyle = C.bad; ctx.globalAlpha = 0.25; ctx.fillRect(cx - 60, bot + 12, 240, 36); ctx.globalAlpha = 1;
+  ctx.fillStyle = C.fg; ctx.textAlign = "center"; ctx.fillText("reboiler: bottom liquid xB = " + xB.toFixed(3), cx + 60, bot + 35);
+  ctx.textAlign = "left"; ctx.fillText("vapour rises, liquid falls", 20, 100); ctx.fillText("total reflux: every stage", 20, 124); ctx.fillText("multiplies the odds by alpha", 20, 142);
+  if (Nw > shown) { ctx.fillStyle = C.bad; ctx.fillText("(" + (Nw - shown) + " more stages not drawn)", 20, 180); }
+  ctx.fillStyle = C.muted; ctx.fillText("colour: blue = water-rich, orange = ethanol-rich", 20, 405);
+} else {
+  const A = axes({ x: [0, 1], y: [0, 1], xl: "ethanol in liquid, x (mole fraction)", yl: "ethanol in vapour, y (mole fraction)", title: "x-y diagram: each step is one stage" }, C);
+  curve(x => x, A, C.muted, 0, 1, 2);
+  curve(yv, A, C.good, 0, 1);
+  const X = [], Y = []; for (let i = 0; i < xs.length - 1; i++) { X.push(xs[i], xs[i], xs[i + 1]); Y.push(xs[i], xs[i + 1], xs[i + 1]); }
+  poly(A, X, Y, C.bad, 1.6);
+  poly(A, [xD, xD], [0, 1], C.accent, 1, [4, 4]);
+  label(A, 0.03, 0.95, "green: equilibrium y(x), alpha = " + a, C.good); label(A, 0.03, 0.9, "red: stages at total reflux", C.bad);
+}
+readout("N_min (Fenske) = " + N.toFixed(2) + " so " + Nw + " whole stages &nbsp; D = " + D.toFixed(2) + " mol, B = " + B.toFixed(2) + " mol per 100 mol of feed &nbsp; ethanol recovery = " + rec.toFixed(3));
+
+  const ch = document.getElementById("challenge");
+  if (challengeTest) { const ok = !!challengeTest(p); ch.hidden = false; ch.dataset.ok = String(ok);
+    ch.innerHTML = "<b>Challenge:</b> " + CHALLENGE + " &nbsp; " + (ok ? "<b>Done!</b>" : "Not yet.");
+    if (ok !== lastOk) { document.getElementById("status").textContent = ok ? "Challenge done." : "Challenge not yet done."; lastOk = ok; } }
+}
+const box = document.getElementById("controls");
+const inputs = {};
+for (const q of PARAMS) {
+  p[q.id] = q.value;
+  const row = document.createElement("div"); row.className = "row";
+  row.innerHTML = `<label for="${q.id}">${q.label} (${q.unit || "no unit"})</label>` +
+    `<input id="${q.id}" type="range" min="${q.min}" max="${q.max}" step="${q.step}" value="${q.value}">` +
+    `<output for="${q.id}">${q.value}</output>`;
+  const inp = row.querySelector("input"), out = row.querySelector("output");
+  inputs[q.id] = [inp, out];
+  inp.addEventListener("input", () => { p[q.id] = +inp.value; out.textContent = inp.value; draw(); });
+  box.appendChild(row);
+}
+function setAll(vals) { for (const k in vals) { p[k] = vals[k]; if (inputs[k]) { inputs[k][0].value = vals[k]; inputs[k][1].textContent = vals[k]; } } draw(); }
+const DEFAULTS = Object.assign({}, p);
+document.getElementById("reset").addEventListener("click", () => setAll(DEFAULTS));
+for (const g of GRAPHS) {
+  const b = document.createElement("button"); b.type = "button"; b.textContent = g.label;
+  b.setAttribute("aria-pressed", String(g.id === graph));
+  b.addEventListener("click", () => { graph = g.id; for (const x of document.querySelectorAll("#graphs button")) x.setAttribute("aria-pressed", String(x === b)); draw(); });
+  document.getElementById("graphs").appendChild(b);
+}
+for (const pr of PRESETS) {
+  const b = document.createElement("button"); b.type = "button"; b.textContent = pr.label;
+  b.addEventListener("click", () => setAll(pr.values));
+  document.getElementById("presets").appendChild(b);
+}
+matchMedia("(prefers-color-scheme: dark)").addEventListener("change", draw);
+draw();
+</script>
+</body>
+</html>
