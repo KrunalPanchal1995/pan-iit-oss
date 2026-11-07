@@ -1,0 +1,184 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Session 1: follow a payment</title>
+<style>
+  :root { --bg:#ffffff; --fg:#14181f; --muted:#5b6472; --card:#f3f5f8; --accent:#1f6feb; --good:#1a7f37; --bad:#b42318; --line:#d7dce3; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#0e1116; --fg:#e6e9ee; --muted:#9aa3b2; --card:#171b22; --accent:#58a6ff; --good:#3fb950; --bad:#f97066; --line:#2a313c; } }
+  * { box-sizing: border-box; }
+  body { margin:0; padding:16px; background:var(--bg); color:var(--fg); font:16px/1.5 system-ui, sans-serif; }
+  main { max-width: 780px; margin: 0 auto; }
+  h1 { font-size: 1.3rem; margin: 0 0 4px; }
+  p.sub { margin: 0 0 12px; color: var(--muted); }
+  .scroll { overflow-x:auto; }
+  canvas { width:100%; min-width:560px; height:auto; background:var(--card); border:1px solid var(--line); border-radius:8px; display:block; }
+  .sr { position:absolute; left:-9999px; }
+  .bar { display:flex; flex-wrap:wrap; gap:8px; margin:10px 0; }
+  button { font:inherit; padding:6px 12px; border:1px solid var(--line); background:var(--card); color:var(--fg); border-radius:6px; cursor:pointer; }
+  button[aria-pressed="true"] { border-color:var(--accent); color:var(--accent); font-weight:600; }
+  button:focus-visible, input:focus-visible { outline:3px solid var(--accent); outline-offset:2px; }
+  .row { display:grid; grid-template-columns: 11rem 1fr 6rem; gap:8px; align-items:center; margin:8px 0; }
+  .row output { text-align:right; font-variant-numeric: tabular-nums; }
+  @media (max-width: 560px) { .row { grid-template-columns: 1fr; gap:2px; } .row output { text-align:left; } }
+  input[type=range] { width:100%; accent-color: var(--accent); }
+  #readout, #challenge, .note { margin-top:10px; padding:10px 12px; background:var(--card); border-radius:8px; border:1px solid var(--line); }
+  #challenge[data-ok="true"] { border-color:var(--good); } #challenge[data-ok="true"] b { color:var(--good); }
+  .note { font-size:.85rem; color:var(--muted); }
+  a { color: var(--accent); }
+</style>
+</head>
+<body>
+<main>
+  <h1>Session 1: follow a payment</h1>
+  <p class="sub">Step through the six messages and watch the three ledger boxes; the graph shows final balances against the amount.</p>
+  <div class="bar" id="graphs" role="group" aria-label="Choose a graph"></div>
+  <div class="scroll"><canvas id="c" width="720" height="420" role="img" aria-label="Session 1: follow a payment: interactive plot"></canvas></div>
+  <div class="bar" id="presets" role="group" aria-label="Presets"></div>
+  <div id="controls"></div>
+  <div class="bar"><button id="reset" type="button">Reset</button></div>
+  <div id="readout"></div>
+  <div id="challenge" hidden></div>
+  <div id="status" class="sr" aria-live="polite"></div>
+  <p class="note">This is a simplified educational model. It is not a validated design tool and must not be used for real structures, electrical installations, vehicles, industrial processes or medical decisions.</p>
+  <p class="sub"><a href="https://github.com/KrunalPanchal1995/pan-iit-oss/tree/main/openupi">Back to the repository</a></p>
+</main>
+<script>
+"use strict";
+const PARAMS = [{"id": "amount", "label": "Payment amount", "min": 10, "max": 1500, "step": 10, "value": 250, "unit": "rupees"}, {"id": "stage", "label": "Step in the flow", "min": 0, "max": 6, "step": 1, "value": 6, "unit": "step"}];
+const GRAPHS = [{"id": "flow", "label": "Message flow", "diagram": true}, {"id": "final", "label": "Final balances versus amount"}];
+const PRESETS = [{"label": "Worked example", "values": {"amount": 250, "stage": 6}}, {"label": "Mid-flight", "values": {"amount": 250, "stage": 4}}, {"label": "Declined", "values": {"amount": 1200, "stage": 6}}];
+const CHALLENGE = "Make the payee end with exactly Rs 900 after the last message.";
+const CHALLENGE_SOLUTION = {"amount": 500, "stage": 6};
+const challengeTest = CHALLENGE ? (p) => (p.stage === 6 && p.amount <= 1000 && 400 + p.amount === 900) : null;
+const cv = document.getElementById("c"), ctx = cv.getContext("2d");
+const W = cv.width, H = cv.height, p = {};
+let graph = GRAPHS.length ? GRAPHS[0].id : "main";
+const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+const fmt = v => (Math.abs(v) >= 1000 || (Math.abs(v) > 0 && Math.abs(v) < 0.01)) ? v.toExponential(2) : String(+v.toPrecision(4));
+function readout(html) {
+  document.getElementById("readout").innerHTML = html;
+  cv.setAttribute("aria-label", document.title + ". " + html.replace(/<[^>]+>/g, " ").replace(/&nbsp;/g, " "));  // screen readers get the numbers
+}
+let lastOk = null;
+// ---- plotting helpers: every graph gets labelled axes with units ----
+function niceTicks(lo, hi, n) {
+  const raw = (hi - lo) / n, mag = Math.pow(10, Math.floor(Math.log10(raw))), f = raw / mag;
+  const step = (f < 1.5 ? 1 : f < 3 ? 2 : f < 7 ? 5 : 10) * mag, out = [];
+  for (let v = Math.ceil(lo / step - 1e-9) * step; v <= hi + 1e-9; v += step) out.push(+v.toPrecision(12));
+  return out;
+}
+function axes(o, C) {
+  const L = 66, R = 16, T = 34, B = 50, w = W - L - R, h = H - T - B;
+  const X = v => L + (v - o.x[0]) / (o.x[1] - o.x[0]) * w, Y = v => T + h - (v - o.y[0]) / (o.y[1] - o.y[0]) * h;
+  ctx.lineWidth = 1; ctx.font = "12px system-ui";
+  for (const xv of niceTicks(o.x[0], o.x[1], 6)) {
+    ctx.strokeStyle = C.line; ctx.beginPath(); ctx.moveTo(X(xv), T); ctx.lineTo(X(xv), T + h); ctx.stroke();
+    ctx.fillStyle = C.muted; ctx.textAlign = "center"; ctx.fillText(fmt(xv), X(xv), T + h + 16);
+  }
+  for (const yv of niceTicks(o.y[0], o.y[1], 5)) {
+    ctx.strokeStyle = C.line; ctx.beginPath(); ctx.moveTo(L, Y(yv)); ctx.lineTo(L + w, Y(yv)); ctx.stroke();
+    ctx.fillStyle = C.muted; ctx.textAlign = "right"; ctx.fillText(fmt(yv), L - 6, Y(yv) + 4);
+  }
+  ctx.strokeStyle = C.fg; ctx.beginPath(); ctx.moveTo(L, T); ctx.lineTo(L, T + h); ctx.lineTo(L + w, T + h); ctx.stroke();
+  ctx.fillStyle = C.fg; ctx.textAlign = "center"; ctx.font = "13px system-ui";
+  ctx.fillText(o.xl, L + w / 2, H - 8);
+  ctx.save(); ctx.translate(14, T + h / 2); ctx.rotate(-Math.PI / 2); ctx.fillText(o.yl, 0, 0); ctx.restore();
+  ctx.font = "bold 13px system-ui"; ctx.fillText(o.title || "", L + w / 2, 20);
+  return { X, Y, L, T, w, h };
+}
+function curve(f, a, color, x0, x1, n) {
+  n = n || 160; ctx.save(); ctx.beginPath(); ctx.rect(a.L, a.T, a.w, a.h); ctx.clip();   // never draw outside the plot area
+  ctx.strokeStyle = color; ctx.lineWidth = 2.5; ctx.beginPath();
+  for (let i = 0; i <= n; i++) { const x = x0 + (x1 - x0) * i / n, y = f(x); i ? ctx.lineTo(a.X(x), a.Y(y)) : ctx.moveTo(a.X(x), a.Y(y)); }
+  ctx.stroke(); ctx.restore();
+}
+function dot(a, x, y, color, label) {
+  ctx.fillStyle = color; ctx.beginPath(); ctx.arc(a.X(x), a.Y(y), 6, 0, 2 * Math.PI); ctx.fill();
+  if (label) { ctx.textAlign = "left"; ctx.font = "12px system-ui"; ctx.fillText(label, a.X(x) + 9, a.Y(y) - 8); }
+}
+function draw() {
+  ctx.clearRect(0, 0, W, H);
+  const C = { fg: css("--fg"), muted: css("--muted"), accent: css("--accent"), line: css("--line"), good: css("--good"), bad: css("--bad") };
+  
+const P0 = 1000, Q0 = 400, amt = p.amount, k = p.stage, dec = amt > P0;
+let payer = P0, fly = 0, payee = Q0;
+if (!dec && k >= 3) { payer = P0 - amt; fly = amt; }
+if (!dec && k >= 5) { fly = 0; payee = Q0 + amt; }
+const finalPayer = dec ? P0 : P0 - amt, finalPayee = dec ? Q0 : Q0 + amt;
+const msgs = ["start: nothing has been sent", "1. payer app to switch: pay Rs " + amt, "2. switch to payer bank: can you debit Rs " + amt + "?",
+  dec ? "3. payer bank to switch: DECLINED (not enough balance)" : "3. payer bank to switch: debited, money now in flight",
+  "4. switch to payee bank: credit Rs " + amt, "5. payee bank to switch: credited", "6. switch to both apps: " + (dec ? "payment failed" : "success")];
+if (graph === "flow") {
+  const box = (cx, cy, w, h, title, sub, hot) => {
+    ctx.fillStyle = hot ? C.accent : C.line; ctx.globalAlpha = hot ? 0.25 : 0.35; ctx.fillRect(cx - w / 2, cy - h / 2, w, h); ctx.globalAlpha = 1;
+    ctx.strokeStyle = hot ? C.accent : C.muted; ctx.lineWidth = hot ? 3 : 1.5; ctx.strokeRect(cx - w / 2, cy - h / 2, w, h);
+    ctx.fillStyle = C.fg; ctx.font = "bold 13px system-ui"; ctx.textAlign = "center"; ctx.fillText(title, cx, cy - 4);
+    ctx.font = "12px system-ui"; ctx.fillStyle = C.muted; ctx.fillText(sub, cx, cy + 14);
+  };
+  const N = { pa: [110, 60], sw: [360, 210], pb: [110, 340], qb: [610, 340], qa: [610, 60] };
+  const pairs = [[null, null], ["pa", "sw"], ["sw", "pb"], ["pb", "sw"], ["sw", "qb"], ["qb", "sw"], ["sw", "qa"]];
+  ctx.strokeStyle = C.line; ctx.lineWidth = 1; ctx.beginPath();
+  [["pa", "sw"], ["sw", "pb"], ["sw", "qb"], ["sw", "qa"]].forEach(e => { ctx.moveTo(N[e[0]][0], N[e[0]][1]); ctx.lineTo(N[e[1]][0], N[e[1]][1]); }); ctx.stroke();
+  if (k >= 1) {
+    const a = N[pairs[k][0]], b = N[pairs[k][1]];
+    ctx.strokeStyle = (dec && k >= 3) ? C.bad : C.accent; ctx.lineWidth = 4; ctx.beginPath(); ctx.moveTo(a[0] + (b[0] - a[0]) * 0.1, a[1] + (b[1] - a[1]) * 0.1);
+    ctx.lineTo(a[0] + (b[0] - a[0]) * 0.9, a[1] + (b[1] - a[1]) * 0.9); ctx.stroke();
+    const e = [a[0] + (b[0] - a[0]) * 0.9, a[1] + (b[1] - a[1]) * 0.9]; ctx.fillStyle = ctx.strokeStyle; ctx.beginPath(); ctx.arc(e[0], e[1], 7, 0, 2 * Math.PI); ctx.fill();
+  }
+  box(N.pa[0], N.pa[1], 170, 56, "Payer app", "holds no money", k === 1);
+  box(N.qa[0], N.qa[1], 170, 56, "Payee app", "holds no money", k === 6);
+  box(N.sw[0], N.sw[1], 190, 70, "Switch", "in flight: Rs " + fly, k >= 2 && k <= 5 && fly > 0);
+  box(N.pb[0], N.pb[1], 190, 70, "Payer bank", "ledger: Rs " + payer, k === 3);
+  box(N.qb[0], N.qb[1], 190, 70, "Payee bank", "ledger: Rs " + payee, k === 5);
+  ctx.fillStyle = C.fg; ctx.font = "13px system-ui"; ctx.textAlign = "center"; ctx.fillText(msgs[k], W / 2, 408);
+  ctx.fillStyle = C.good; ctx.fillText("total in all boxes: Rs " + (payer + fly + payee), W / 2, 130);
+} else {
+  const A = axes({ x: [0, 1500], y: [0, 1600], xl: "payment amount (rupees)", yl: "ledger balance after the payment (rupees)", title: "Final balances against payment amount" }, C);
+  curve(a => a <= P0 ? P0 - a : P0, A, C.accent, 0, 1500, 300);
+  curve(a => a <= P0 ? Q0 + a : Q0, A, C.good, 0, 1500, 300);
+  curve(a => P0 + Q0, A, C.muted, 0, 1500, 2);
+  dot(A, amt, finalPayer, C.accent, "payer"); dot(A, amt, finalPayee, C.good, "payee");
+  ctx.font = "12px system-ui"; ctx.textAlign = "left"; ctx.fillStyle = C.muted; ctx.fillText("grey: total 1400 always", A.L + 8, A.Y(1400) - 6);
+  ctx.fillStyle = C.accent; ctx.fillText("blue: payer after", A.L + 8, A.T + 16); ctx.fillStyle = C.good; ctx.fillText("green: payee after (declined above Rs 1000)", A.L + 8, A.T + 32);
+}
+readout("step " + k + " &nbsp; payer Rs " + payer + " &nbsp; in flight Rs " + fly + " &nbsp; payee Rs " + payee + " &nbsp; total Rs " + (payer + fly + payee) + (dec ? " &nbsp; (declined: " + amt + " is more than 1000)" : ""));
+
+  const ch = document.getElementById("challenge");
+  if (challengeTest) { const ok = !!challengeTest(p); ch.hidden = false; ch.dataset.ok = String(ok);
+    ch.innerHTML = "<b>Challenge:</b> " + CHALLENGE + " &nbsp; " + (ok ? "<b>Done!</b>" : "Not yet.");
+    if (ok !== lastOk) { document.getElementById("status").textContent = ok ? "Challenge done." : "Challenge not yet done."; lastOk = ok; } }
+}
+const box = document.getElementById("controls");
+const inputs = {};
+for (const q of PARAMS) {
+  p[q.id] = q.value;
+  const row = document.createElement("div"); row.className = "row";
+  row.innerHTML = `<label for="${q.id}">${q.label} (${q.unit || "no unit"})</label>` +
+    `<input id="${q.id}" type="range" min="${q.min}" max="${q.max}" step="${q.step}" value="${q.value}">` +
+    `<output for="${q.id}">${q.value}</output>`;
+  const inp = row.querySelector("input"), out = row.querySelector("output");
+  inputs[q.id] = [inp, out];
+  inp.addEventListener("input", () => { p[q.id] = +inp.value; out.textContent = inp.value; draw(); });
+  box.appendChild(row);
+}
+function setAll(vals) { for (const k in vals) { p[k] = vals[k]; if (inputs[k]) { inputs[k][0].value = vals[k]; inputs[k][1].textContent = vals[k]; } } draw(); }
+const DEFAULTS = Object.assign({}, p);
+document.getElementById("reset").addEventListener("click", () => setAll(DEFAULTS));
+for (const g of GRAPHS) {
+  const b = document.createElement("button"); b.type = "button"; b.textContent = g.label;
+  b.setAttribute("aria-pressed", String(g.id === graph));
+  b.addEventListener("click", () => { graph = g.id; for (const x of document.querySelectorAll("#graphs button")) x.setAttribute("aria-pressed", String(x === b)); draw(); });
+  document.getElementById("graphs").appendChild(b);
+}
+for (const pr of PRESETS) {
+  const b = document.createElement("button"); b.type = "button"; b.textContent = pr.label;
+  b.addEventListener("click", () => setAll(pr.values));
+  document.getElementById("presets").appendChild(b);
+}
+matchMedia("(prefers-color-scheme: dark)").addEventListener("change", draw);
+draw();
+</script>
+</body>
+</html>

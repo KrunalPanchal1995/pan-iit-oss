@@ -1,0 +1,11 @@
+[project]
+name = "openupi"
+version = "0.1.0"
+description = "Learn how digital payments move between banks, why retries must not double-charge, and where fraud checks sit: 3 sessions, a toy switch you can break."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+dependencies = ["numpy", "matplotlib"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

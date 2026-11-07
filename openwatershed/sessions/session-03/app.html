@@ -1,0 +1,177 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Session 3: urbanisation and a detention pond</title>
+<style>
+  :root { --bg:#ffffff; --fg:#14181f; --muted:#5b6472; --card:#f3f5f8; --accent:#1f6feb; --good:#1a7f37; --bad:#b42318; --line:#d7dce3; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#0e1116; --fg:#e6e9ee; --muted:#9aa3b2; --card:#171b22; --accent:#58a6ff; --good:#3fb950; --bad:#f97066; --line:#2a313c; } }
+  * { box-sizing: border-box; }
+  body { margin:0; padding:16px; background:var(--bg); color:var(--fg); font:16px/1.5 system-ui, sans-serif; }
+  main { max-width: 780px; margin: 0 auto; }
+  h1 { font-size: 1.3rem; margin: 0 0 4px; }
+  p.sub { margin: 0 0 12px; color: var(--muted); }
+  .scroll { overflow-x:auto; }
+  canvas { width:100%; min-width:560px; height:auto; background:var(--card); border:1px solid var(--line); border-radius:8px; display:block; }
+  .sr { position:absolute; left:-9999px; }
+  .bar { display:flex; flex-wrap:wrap; gap:8px; margin:10px 0; }
+  button { font:inherit; padding:6px 12px; border:1px solid var(--line); background:var(--card); color:var(--fg); border-radius:6px; cursor:pointer; }
+  button[aria-pressed="true"] { border-color:var(--accent); color:var(--accent); font-weight:600; }
+  button:focus-visible, input:focus-visible { outline:3px solid var(--accent); outline-offset:2px; }
+  .row { display:grid; grid-template-columns: 11rem 1fr 6rem; gap:8px; align-items:center; margin:8px 0; }
+  .row output { text-align:right; font-variant-numeric: tabular-nums; }
+  @media (max-width: 560px) { .row { grid-template-columns: 1fr; gap:2px; } .row output { text-align:left; } }
+  input[type=range] { width:100%; accent-color: var(--accent); }
+  #readout, #challenge, .note { margin-top:10px; padding:10px 12px; background:var(--card); border-radius:8px; border:1px solid var(--line); }
+  #challenge[data-ok="true"] { border-color:var(--good); } #challenge[data-ok="true"] b { color:var(--good); }
+  .note { font-size:.85rem; color:var(--muted); }
+  a { color: var(--accent); }
+</style>
+</head>
+<body>
+<main>
+  <h1>Session 3: urbanisation and a detention pond</h1>
+  <p class="sub">Change curve number, Tc and the pond; compare with the valley before development.</p>
+  <div class="bar" id="graphs" role="group" aria-label="Choose a graph"></div>
+  <div class="scroll"><canvas id="c" width="720" height="420" role="img" aria-label="Session 3: urbanisation and a detention pond: interactive plot"></canvas></div>
+  <div class="bar" id="presets" role="group" aria-label="Presets"></div>
+  <div id="controls"></div>
+  <div class="bar"><button id="reset" type="button">Reset</button></div>
+  <div id="readout"></div>
+  <div id="challenge" hidden></div>
+  <div id="status" class="sr" aria-live="polite"></div>
+  <p class="note">This is a simplified educational model. It is not a validated design tool and must not be used for real structures, electrical installations, vehicles, industrial processes or medical decisions.</p>
+  <p class="sub"><a href="https://github.com/KrunalPanchal1995/pan-iit-oss/tree/main/openwatershed">Back to the repository</a></p>
+</main>
+<script>
+"use strict";
+const PARAMS = [{"id": "CN", "label": "Curve number", "min": 50, "max": 98, "step": 1, "value": 70, "unit": ""}, {"id": "Tc", "label": "Time of concentration", "min": 0.5, "max": 4, "step": 0.1, "value": 2.0, "unit": "h"}, {"id": "V", "label": "Pond volume", "min": 0, "max": 600, "step": 25, "value": 0, "unit": "thousand m3"}];
+const GRAPHS = [{"id": "hydro", "label": "Flood hydrograph"}, {"id": "rain", "label": "Rain and effective rain"}];
+const PRESETS = [{"label": "Before", "values": {"CN": 70, "Tc": 2.0, "V": 0}}, {"label": "Paved", "values": {"CN": 90, "Tc": 1.2, "V": 0}}, {"label": "Paved with pond", "values": {"CN": 90, "Tc": 1.2, "V": 475}}];
+const CHALLENGE = "On the paved valley (CN 90, Tc 1.2 h) choose a pond volume between 475 and 500 thousand m3 so that the peak stays at or below the old 32.3 m3/s.";
+const CHALLENGE_SOLUTION = {"CN": 90, "Tc": 1.2, "V": 475};
+const challengeTest = CHALLENGE ? (p) => (p.CN >= 90 && p.Tc <= 1.2 && p.V >= 475 && p.V <= 500) : null;
+const cv = document.getElementById("c"), ctx = cv.getContext("2d");
+const W = cv.width, H = cv.height, p = {};
+let graph = GRAPHS.length ? GRAPHS[0].id : "main";
+const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+const fmt = v => (Math.abs(v) >= 1000 || (Math.abs(v) > 0 && Math.abs(v) < 0.01)) ? v.toExponential(2) : String(+v.toPrecision(4));
+function readout(html) {
+  document.getElementById("readout").innerHTML = html;
+  cv.setAttribute("aria-label", document.title + ". " + html.replace(/<[^>]+>/g, " ").replace(/&nbsp;/g, " "));  // screen readers get the numbers
+}
+let lastOk = null;
+// ---- plotting helpers: every graph gets labelled axes with units ----
+function niceTicks(lo, hi, n) {
+  const raw = (hi - lo) / n, mag = Math.pow(10, Math.floor(Math.log10(raw))), f = raw / mag;
+  const step = (f < 1.5 ? 1 : f < 3 ? 2 : f < 7 ? 5 : 10) * mag, out = [];
+  for (let v = Math.ceil(lo / step - 1e-9) * step; v <= hi + 1e-9; v += step) out.push(+v.toPrecision(12));
+  return out;
+}
+function axes(o, C) {
+  const L = 66, R = 16, T = 34, B = 50, w = W - L - R, h = H - T - B;
+  const X = v => L + (v - o.x[0]) / (o.x[1] - o.x[0]) * w, Y = v => T + h - (v - o.y[0]) / (o.y[1] - o.y[0]) * h;
+  ctx.lineWidth = 1; ctx.font = "12px system-ui";
+  for (const xv of niceTicks(o.x[0], o.x[1], 6)) {
+    ctx.strokeStyle = C.line; ctx.beginPath(); ctx.moveTo(X(xv), T); ctx.lineTo(X(xv), T + h); ctx.stroke();
+    ctx.fillStyle = C.muted; ctx.textAlign = "center"; ctx.fillText(fmt(xv), X(xv), T + h + 16);
+  }
+  for (const yv of niceTicks(o.y[0], o.y[1], 5)) {
+    ctx.strokeStyle = C.line; ctx.beginPath(); ctx.moveTo(L, Y(yv)); ctx.lineTo(L + w, Y(yv)); ctx.stroke();
+    ctx.fillStyle = C.muted; ctx.textAlign = "right"; ctx.fillText(fmt(yv), L - 6, Y(yv) + 4);
+  }
+  ctx.strokeStyle = C.fg; ctx.beginPath(); ctx.moveTo(L, T); ctx.lineTo(L, T + h); ctx.lineTo(L + w, T + h); ctx.stroke();
+  ctx.fillStyle = C.fg; ctx.textAlign = "center"; ctx.font = "13px system-ui";
+  ctx.fillText(o.xl, L + w / 2, H - 8);
+  ctx.save(); ctx.translate(14, T + h / 2); ctx.rotate(-Math.PI / 2); ctx.fillText(o.yl, 0, 0); ctx.restore();
+  ctx.font = "bold 13px system-ui"; ctx.fillText(o.title || "", L + w / 2, 20);
+  return { X, Y, L, T, w, h };
+}
+function curve(f, a, color, x0, x1, n) {
+  n = n || 160; ctx.save(); ctx.beginPath(); ctx.rect(a.L, a.T, a.w, a.h); ctx.clip();   // never draw outside the plot area
+  ctx.strokeStyle = color; ctx.lineWidth = 2.5; ctx.beginPath();
+  for (let i = 0; i <= n; i++) { const x = x0 + (x1 - x0) * i / n, y = f(x); i ? ctx.lineTo(a.X(x), a.Y(y)) : ctx.moveTo(a.X(x), a.Y(y)); }
+  ctx.stroke(); ctx.restore();
+}
+function dot(a, x, y, color, label) {
+  ctx.fillStyle = color; ctx.beginPath(); ctx.arc(a.X(x), a.Y(y), 6, 0, 2 * Math.PI); ctx.fill();
+  if (label) { ctx.textAlign = "left"; ctx.font = "12px system-ui"; ctx.fillText(label, a.X(x) + 9, a.Y(y) - 8); }
+}
+function draw() {
+  ctx.clearRect(0, 0, W, H);
+  const C = { fg: css("--fg"), muted: css("--muted"), accent: css("--accent"), line: css("--line"), good: css("--good"), bad: css("--bad") };
+  
+const dt = 0.5, AR = 12, STORM = [4, 8, 14, 26, 18, 10, 6, 4];
+const runoff = (P, cn) => { const s = 25400 / cn - 254, x = P - 0.2 * s; return x > 0 ? x * x / (x + s) : 0; };
+const excess = cn => { let c = 0, prev = 0; const o = []; for (const r of STORM) { c += r; const q = runoff(c, cn); o.push(q - prev); prev = q; } return o; };
+const uh = Tc => { const Tp = 0.25 + 0.6 * Tc, Qp = 0.208 * AR / Tp, tb = 2.67 * Tp, n = Math.ceil((tb + dt) / dt - 1e-9), u = []; let s = 0;
+  for (let j = 0; j < n; j++) { const t = j * dt, v = t <= Tp ? Qp * t / Tp : Math.max(Qp * (tb - t) / (tb - Tp), 0); u.push(v); s += v; }
+  const k = 1000 * AR / (s * dt * 3600); return u.map(v => v * k); };
+const flow = (cn, Tc) => { const pe = excess(cn), u = uh(Tc), q = new Array(pe.length + u.length - 1).fill(0); pe.forEach((x, k) => u.forEach((v, j) => { q[k + j] += x * v; })); return q; };
+const pond = (q, V, Qmax) => { const H = 2, Ap = V * 1000 / H, c = Qmax / Math.sqrt(H), sub = 40, nst = 28, hs = dt * 3600 / sub;
+  const I = q.concat(new Array(Math.max(nst + 2 - q.length, 0)).fill(0)); let h = 0, hm = 0; const out = [0];
+  const f = (hh, i) => (i - c * Math.sqrt(Math.max(hh, 0))) / Ap;
+  for (let k = 0; k < nst; k++) { for (let s = 0; s < sub; s++) { const a = I[k], b = I[k + 1] - I[k];
+    const k1 = f(h, a + b * s / sub), k2 = f(h + 0.5 * hs * k1, a + b * (s + 0.5) / sub), k3 = f(h + 0.5 * hs * k2, a + b * (s + 0.5) / sub), k4 = f(h + hs * k3, a + b * (s + 1) / sub);
+    h = Math.max(h + hs * (k1 + 2 * k2 + 2 * k3 + k4) / 6, 0); } hm = Math.max(hm, h); out.push(c * Math.sqrt(h)); }
+  return { out, hm }; };
+const arr = a => x => { const k = x / dt, i = Math.floor(k); if (i >= a.length - 1) return i === a.length - 1 ? a[i] : 0; return a[i] + (a[i + 1] - a[i]) * (k - i); };
+const pre = flow(70, 2.0), Qpre = Math.max(...pre), q = flow(p.CN, p.Tc), pe = excess(p.CN);
+const pk = Math.max(...q), tpk = q.indexOf(pk) * dt;
+const pr = p.V > 0 ? pond(q, p.V, Qpre) : null;
+if (graph === "hydro") {
+  const A = axes({ x: [0, 14], y: [0, 150], xl: "time since the storm began (h)", yl: "river flow (m3/s)", title: "Flood hydrograph: before, now, and with a pond" }, C);
+  curve(arr(pre), A, C.muted, 0, 14, 140);
+  curve(arr(q), A, C.accent, 0, 14, 140);
+  if (pr) curve(arr(pr.out), A, C.good, 0, 14, 140);
+  dot(A, tpk, pk, C.accent, "peak");
+  ctx.font = "12px system-ui"; ctx.textAlign = "left";
+  ctx.fillStyle = C.muted; ctx.fillText("grey: before development (CN 70, Tc 2 h)", A.L + 10, A.T + 16);
+  ctx.fillStyle = C.accent; ctx.fillText("blue: now", A.L + 10, A.T + 32);
+  ctx.fillStyle = C.good; ctx.fillText("green: with pond", A.L + 10, A.T + 48);
+} else {
+  const A = axes({ x: [0, 4], y: [0, 30], xl: "time since the storm began (h)", yl: "rain per 0.5 h burst (mm)", title: "Rain and the part that runs off" }, C);
+  STORM.forEach((r, k) => { const xa = A.X(k * dt), xb = A.X((k + 1) * dt);
+    ctx.fillStyle = C.line; ctx.fillRect(xa + 1, A.Y(r), xb - xa - 2, A.Y(0) - A.Y(r));
+    ctx.fillStyle = C.accent; ctx.fillRect(xa + 1, A.Y(pe[k]), xb - xa - 2, A.Y(0) - A.Y(pe[k])); });
+}
+readout("effective rain " + pe.reduce((a, b) => a + b, 0).toFixed(1) + " mm &nbsp; peak " + pk.toFixed(1) + " m3/s at " + tpk.toFixed(1) + " h (before: " + Qpre.toFixed(1) + " m3/s at 4.0 h)" + (pr ? " &nbsp; with pond: outflow peak " + Math.max(...pr.out).toFixed(1) + " m3/s, stage " + pr.hm.toFixed(2) + " m" + (pr.hm > 2.001 ? " (overtops)" : "") : ""));
+
+  const ch = document.getElementById("challenge");
+  if (challengeTest) { const ok = !!challengeTest(p); ch.hidden = false; ch.dataset.ok = String(ok);
+    ch.innerHTML = "<b>Challenge:</b> " + CHALLENGE + " &nbsp; " + (ok ? "<b>Done!</b>" : "Not yet.");
+    if (ok !== lastOk) { document.getElementById("status").textContent = ok ? "Challenge done." : "Challenge not yet done."; lastOk = ok; } }
+}
+const box = document.getElementById("controls");
+const inputs = {};
+for (const q of PARAMS) {
+  p[q.id] = q.value;
+  const row = document.createElement("div"); row.className = "row";
+  row.innerHTML = `<label for="${q.id}">${q.label} (${q.unit || "no unit"})</label>` +
+    `<input id="${q.id}" type="range" min="${q.min}" max="${q.max}" step="${q.step}" value="${q.value}">` +
+    `<output for="${q.id}">${q.value}</output>`;
+  const inp = row.querySelector("input"), out = row.querySelector("output");
+  inputs[q.id] = [inp, out];
+  inp.addEventListener("input", () => { p[q.id] = +inp.value; out.textContent = inp.value; draw(); });
+  box.appendChild(row);
+}
+function setAll(vals) { for (const k in vals) { p[k] = vals[k]; if (inputs[k]) { inputs[k][0].value = vals[k]; inputs[k][1].textContent = vals[k]; } } draw(); }
+const DEFAULTS = Object.assign({}, p);
+document.getElementById("reset").addEventListener("click", () => setAll(DEFAULTS));
+for (const g of GRAPHS) {
+  const b = document.createElement("button"); b.type = "button"; b.textContent = g.label;
+  b.setAttribute("aria-pressed", String(g.id === graph));
+  b.addEventListener("click", () => { graph = g.id; for (const x of document.querySelectorAll("#graphs button")) x.setAttribute("aria-pressed", String(x === b)); draw(); });
+  document.getElementById("graphs").appendChild(b);
+}
+for (const pr of PRESETS) {
+  const b = document.createElement("button"); b.type = "button"; b.textContent = pr.label;
+  b.addEventListener("click", () => setAll(pr.values));
+  document.getElementById("presets").appendChild(b);
+}
+matchMedia("(prefers-color-scheme: dark)").addEventListener("change", draw);
+draw();
+</script>
+</body>
+</html>
