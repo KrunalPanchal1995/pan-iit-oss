@@ -1,0 +1,194 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Session 1: heat the pot and find the boiling curve</title>
+<style>
+  :root { --bg:#ffffff; --fg:#14181f; --muted:#5b6472; --card:#f3f5f8; --accent:#003f7f; --good:#c86a00; --bad:#d81b60; --line:#d7dce3; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#0e1116; --fg:#e6e9ee; --muted:#9aa3b2; --card:#171b22; --accent:#3b8fe0; --good:#ffc857; --bad:#e0457b; --line:#2a313c; } }
+  * { box-sizing: border-box; }
+  body { margin:0; padding:16px; background:var(--bg); color:var(--fg); font:16px/1.5 system-ui, sans-serif; }
+  main { max-width: 780px; margin: 0 auto; }
+  h1 { font-size: 1.3rem; margin: 0 0 4px; }
+  p.sub { margin: 0 0 12px; color: var(--muted); }
+  .scroll { overflow-x:auto; }
+  canvas { width:100%; min-width:560px; height:auto; background:var(--card); border:1px solid var(--line); border-radius:8px; display:block; }
+  .sr { position:absolute; left:-9999px; }
+  .bar { display:flex; flex-wrap:wrap; gap:8px; margin:10px 0; }
+  button { font:inherit; padding:6px 12px; border:1px solid var(--line); background:var(--card); color:var(--fg); border-radius:6px; cursor:pointer; }
+  button[aria-pressed="true"] { border-color:var(--accent); color:var(--accent); font-weight:600; }
+  button:focus-visible, input:focus-visible { outline:3px solid var(--accent); outline-offset:2px; }
+  .row { display:grid; grid-template-columns: 11rem 1fr 6rem; gap:8px; align-items:center; margin:8px 0; }
+  .row output { text-align:right; font-variant-numeric: tabular-nums; }
+  @media (max-width: 560px) { .row { grid-template-columns: 1fr; gap:2px; } .row output { text-align:left; } }
+  input[type=range] { width:100%; accent-color: var(--accent); }
+  #readout, #challenge, .note { margin-top:10px; padding:10px 12px; background:var(--card); border-radius:8px; border:1px solid var(--line); }
+  #challenge[data-ok="true"] { border-color:var(--good); } #challenge[data-ok="true"] b { color:var(--good); }
+  .note { font-size:.85rem; color:var(--muted); }
+  a { color: var(--accent); }
+</style>
+</head>
+<body>
+<main>
+  <h1>Session 1: heat the pot and find the boiling curve</h1>
+  <p class="sub">Set the heater and the time; then slide along the boiling curve.</p>
+  <div class="bar" id="graphs" role="group" aria-label="Choose a graph"></div>
+  <div class="scroll"><canvas id="c" width="720" height="420" role="img" aria-label="Session 1: heat the pot and find the boiling curve: interactive plot"></canvas></div>
+  <div class="bar" id="presets" role="group" aria-label="Presets"></div>
+  <div id="controls"></div>
+  <div class="bar"><button id="reset" type="button">Reset</button></div>
+  <div id="readout"></div>
+  <div id="challenge" hidden></div>
+  <div id="status" class="sr" aria-live="polite"></div>
+  <p class="note">This is a simplified educational model. It is not a validated design tool and must not be used for real structures, electrical installations, vehicles, industrial processes or medical decisions.</p>
+  <p class="sub"><a href="https://github.com/KrunalPanchal1995/pan-iit-oss/tree/main/openboiling">Back to the repository</a></p>
+</main>
+<script>
+"use strict";
+const PARAMS = [{"id": "power", "label": "Heater power", "min": 500, "max": 3000, "step": 100, "value": 1500, "unit": "W"}, {"id": "mass", "label": "Water mass", "min": 0.5, "max": 2.0, "step": 0.1, "value": 1.5, "unit": "kg"}, {"id": "time", "label": "Heating time", "min": 0, "max": 12, "step": 0.5, "value": 2, "unit": "minutes"}, {"id": "dT", "label": "Surface above boiling", "min": 0, "max": 200, "step": 5, "value": 10, "unit": "K"}];
+const GRAPHS = [{"id": "pot", "label": "Pot picture", "diagram": true}, {"id": "temp", "label": "Temperature versus time"}, {"id": "curve", "label": "Boiling curve"}];
+const PRESETS = [{"label": "Worked example", "values": {"power": 2000, "mass": 1.0, "time": 8, "dT": 10}}, {"label": "Slow start", "values": {"power": 800, "mass": 2.0, "time": 6, "dT": 10}}, {"label": "Hot surface", "values": {"power": 2000, "mass": 1.0, "time": 8, "dT": 150}}];
+const CHALLENGE = "Get the water boiling within 3 minutes of heating and keep heating until at least 50 g has boiled away.";
+const CHALLENGE_SOLUTION = {"power": 2500, "mass": 1.0, "time": 5, "dT": 10};
+const challengeTest = CHALLENGE ? (p) => ((p.mass*4186*80/(0.85*p.power) <= 180) && (0.85*p.power*(p.time*60 - p.mass*4186*80/(0.85*p.power))/2.257e6 >= 0.05)) : null;
+const cv = document.getElementById("c"), ctx = cv.getContext("2d");
+const W = cv.width, H = cv.height, p = {};
+let graph = GRAPHS.length ? GRAPHS[0].id : "main";
+const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+const fmt = v => (Math.abs(v) >= 1000 || (Math.abs(v) > 0 && Math.abs(v) < 0.01)) ? v.toExponential(2) : String(+v.toPrecision(4));
+function readout(html) {
+  document.getElementById("readout").innerHTML = html;
+  cv.setAttribute("aria-label", document.title + ". " + html.replace(/<[^>]+>/g, " ").replace(/&nbsp;/g, " "));  // screen readers get the numbers
+}
+let lastOk = null;
+// ---- plotting helpers: every graph gets labelled axes with units ----
+function niceTicks(lo, hi, n) {
+  const raw = (hi - lo) / n, mag = Math.pow(10, Math.floor(Math.log10(raw))), f = raw / mag;
+  const step = (f < 1.5 ? 1 : f < 3 ? 2 : f < 7 ? 5 : 10) * mag, out = [];
+  for (let v = Math.ceil(lo / step - 1e-9) * step; v <= hi + 1e-9; v += step) out.push(+v.toPrecision(12));
+  return out;
+}
+function axes(o, C) {
+  const L = 66, R = 16, T = 34, B = 50, w = W - L - R, h = H - T - B;
+  const X = v => L + (v - o.x[0]) / (o.x[1] - o.x[0]) * w, Y = v => T + h - (v - o.y[0]) / (o.y[1] - o.y[0]) * h;
+  ctx.lineWidth = 1; ctx.font = "12px system-ui";
+  for (const xv of niceTicks(o.x[0], o.x[1], 6)) {
+    ctx.strokeStyle = C.line; ctx.beginPath(); ctx.moveTo(X(xv), T); ctx.lineTo(X(xv), T + h); ctx.stroke();
+    ctx.fillStyle = C.muted; ctx.textAlign = "center"; ctx.fillText(fmt(xv), X(xv), T + h + 16);
+  }
+  for (const yv of niceTicks(o.y[0], o.y[1], 5)) {
+    ctx.strokeStyle = C.line; ctx.beginPath(); ctx.moveTo(L, Y(yv)); ctx.lineTo(L + w, Y(yv)); ctx.stroke();
+    ctx.fillStyle = C.muted; ctx.textAlign = "right"; ctx.fillText(fmt(yv), L - 6, Y(yv) + 4);
+  }
+  ctx.strokeStyle = C.fg; ctx.beginPath(); ctx.moveTo(L, T); ctx.lineTo(L, T + h); ctx.lineTo(L + w, T + h); ctx.stroke();
+  ctx.fillStyle = C.fg; ctx.textAlign = "center"; ctx.font = "13px system-ui";
+  ctx.fillText(o.xl, L + w / 2, H - 8);
+  ctx.save(); ctx.translate(14, T + h / 2); ctx.rotate(-Math.PI / 2); ctx.fillText(o.yl, 0, 0); ctx.restore();
+  ctx.font = "bold 13px system-ui"; ctx.fillText(o.title || "", L + w / 2, 20);
+  return { X, Y, L, T, w, h };
+}
+function curve(f, a, color, x0, x1, n) {
+  n = n || 160; ctx.save(); ctx.beginPath(); ctx.rect(a.L, a.T, a.w, a.h); ctx.clip();   // never draw outside the plot area
+  ctx.strokeStyle = color; ctx.lineWidth = 2.5; ctx.beginPath();
+  for (let i = 0; i <= n; i++) { const x = x0 + (x1 - x0) * i / n, y = f(x); i ? ctx.lineTo(a.X(x), a.Y(y)) : ctx.moveTo(a.X(x), a.Y(y)); }
+  ctx.stroke(); ctx.restore();
+}
+function dot(a, x, y, color, label) {
+  ctx.fillStyle = color; ctx.beginPath(); ctx.arc(a.X(x), a.Y(y), 6, 0, 2 * Math.PI); ctx.fill();
+  if (label) { ctx.textAlign = "left"; ctx.font = "12px system-ui"; ctx.fillText(label, a.X(x) + 9, a.Y(y) - 8); }
+}
+function draw() {
+  ctx.clearRect(0, 0, W, H);
+  const C = { fg: css("--fg"), muted: css("--muted"), accent: css("--accent"), line: css("--line"), good: css("--good"), bad: css("--bad") };
+  
+const EFF = 0.85, CP = 4186, LAT = 2.257e6;
+const tb = p.mass * CP * 80 / (EFF * p.power);
+const tsec = p.time * 60;
+const temp = Math.min(100, 20 + EFF * p.power * tsec / (p.mass * CP));
+const boiled = tsec <= tb ? 0 : EFF * p.power * (tsec - tb) / LAT;
+const PTS = [[0, 0], [5, 5e3], [10, 4.07e4], [20, 3.26e5], [30, 1.1e6], [120, 2.5e4], [300, 6.25e4]];
+const qc = d => {
+  if (d < 5) return 5e3 * d / 5;
+  for (let i = 2; i < PTS.length; i++) {
+    if (d <= PTS[i][0]) { const a = PTS[i - 1], b = PTS[i], f = (d - a[0]) / (b[0] - a[0]); return Math.exp(Math.log(a[1]) + f * (Math.log(b[1]) - Math.log(a[1]))); }
+  }
+  return PTS[PTS.length - 1][1];
+};
+const stage = d => d < 5 ? "natural convection" : d <= 30 ? "nucleate boiling" : d <= 120 ? "transition boiling" : "film boiling";
+if (graph === "pot") {
+  const left = 190, right = 530, bottom = 350, topY = 130;
+  const lvl = 200 * Math.max(0.05, (p.mass - boiled) / 2.0);
+  const hot = (temp - 20) / 80;
+  ctx.fillStyle = "rgba(" + Math.round(60 + 180 * hot) + "," + Math.round(140 - 40 * hot) + "," + Math.round(230 - 170 * hot) + ",0.55)";
+  ctx.fillRect(left + 2, bottom - lvl, right - left - 4, lvl - 1);
+  ctx.strokeStyle = C.fg; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(left, topY); ctx.lineTo(left, bottom); ctx.lineTo(right, bottom); ctx.lineTo(right, topY); ctx.stroke();
+  ctx.fillStyle = C.bad; ctx.fillRect(left, bottom + 6, right - left, 10);
+  ctx.lineWidth = 1.5; ctx.strokeStyle = C.fg;
+  const boiling = temp >= 100 - 1e-9;
+  const nb = boiling ? Math.min(40, Math.round(p.power / 60)) : (temp >= 60 ? 6 : 0);
+  for (let i = 0; i < nb; i++) {
+    const x = left + 20 + ((i * 97) % (right - left - 40)), y = bottom - 12 - ((i * 53) % Math.max(20, lvl - 20)), r = boiling ? 3 + (i % 4) : 2;
+    ctx.beginPath(); ctx.arc(x, y, r, 0, 2 * Math.PI); ctx.stroke();
+  }
+  if (boiling) {
+    ctx.strokeStyle = C.muted;
+    for (let k = 0; k < 5; k++) { const x = left + 40 + k * 65, y0 = bottom - lvl - 8; ctx.beginPath(); ctx.moveTo(x, y0); ctx.quadraticCurveTo(x + 10, y0 - 12, x, y0 - 24); ctx.stroke(); }
+  }
+  ctx.fillStyle = C.fg; ctx.font = "13px system-ui"; ctx.textAlign = "left";
+  ctx.fillText("heater: " + p.power + " W", left, bottom + 36);
+  ctx.fillText("water " + temp.toFixed(1) + " C, " + p.mass + " kg", left, topY - 12);
+  ctx.fillStyle = C.muted; ctx.font = "12px system-ui";
+  ctx.fillText(boiling ? "boiling: steam leaves, temperature stays at 100 C" : (temp >= 60 ? "a few tiny air bubbles, but not boiling yet" : "no bubbles yet"), 10, H - 10);
+} else if (graph === "temp") {
+  const A = axes({ x: [0, 12], y: [0, 110], xl: "heating time (minutes)", yl: "water temperature (C)", title: "Warm, then stuck at 100 C" }, C);
+  curve(m => Math.min(100, 20 + EFF * p.power * m * 60 / (p.mass * CP)), A, C.accent, 0, 12);
+  ctx.strokeStyle = C.muted; ctx.setLineDash([4, 4]); const xb = A.X(Math.min(12, tb / 60)); ctx.beginPath(); ctx.moveTo(xb, A.T); ctx.lineTo(xb, A.T + A.h); ctx.stroke(); ctx.setLineDash([]);
+  dot(A, p.time, temp, C.bad, "now");
+  ctx.fillStyle = C.muted; ctx.font = "12px system-ui"; ctx.textAlign = "left"; ctx.fillText("dashed line: bubbles start", A.L + 8, A.T + 16);
+} else {
+  const A = axes({ x: [0, 200], y: [0, 1400], xl: "surface temperature above boiling, dT (K)", yl: "heat flux q (kW/m2)", title: "The boiling curve (illustrative)" }, C);
+  curve(d => qc(d) / 1e3, A, C.accent, 0, 200, 300);
+  dot(A, p.dT, qc(p.dT) / 1e3, C.bad, stage(p.dT));
+  ctx.fillStyle = C.muted; ctx.font = "12px system-ui"; ctx.textAlign = "left";
+  ctx.fillText("peak at 30 K: critical heat flux 1100 kW/m2", A.L + 80, A.T + 14);
+}
+readout("water " + temp.toFixed(1) + " C, boiled away " + (boiled * 1000).toFixed(0) + " g, boils after " + tb.toFixed(0) + " s &nbsp;|&nbsp; surface " + p.dT + " K above boiling: " + stage(p.dT) + ", q = " + (qc(p.dT) / 1e3).toFixed(1) + " kW/m2");
+
+  const ch = document.getElementById("challenge");
+  if (challengeTest) { const ok = !!challengeTest(p); ch.hidden = false; ch.dataset.ok = String(ok);
+    ch.innerHTML = "<b>Challenge:</b> " + CHALLENGE + " &nbsp; " + (ok ? "<b>Done!</b>" : "Not yet.");
+    if (ok !== lastOk) { document.getElementById("status").textContent = ok ? "Challenge done." : "Challenge not yet done."; lastOk = ok; } }
+}
+const box = document.getElementById("controls");
+const inputs = {};
+for (const q of PARAMS) {
+  p[q.id] = q.value;
+  const row = document.createElement("div"); row.className = "row";
+  row.innerHTML = `<label for="${q.id}">${q.label} (${q.unit || "no unit"})</label>` +
+    `<input id="${q.id}" type="range" min="${q.min}" max="${q.max}" step="${q.step}" value="${q.value}">` +
+    `<output for="${q.id}">${q.value}</output>`;
+  const inp = row.querySelector("input"), out = row.querySelector("output");
+  inputs[q.id] = [inp, out];
+  inp.addEventListener("input", () => { p[q.id] = +inp.value; out.textContent = inp.value; draw(); });
+  box.appendChild(row);
+}
+function setAll(vals) { for (const k in vals) { p[k] = vals[k]; if (inputs[k]) { inputs[k][0].value = vals[k]; inputs[k][1].textContent = vals[k]; } } draw(); }
+const DEFAULTS = Object.assign({}, p);
+document.getElementById("reset").addEventListener("click", () => setAll(DEFAULTS));
+for (const g of GRAPHS) {
+  const b = document.createElement("button"); b.type = "button"; b.textContent = g.label;
+  b.setAttribute("aria-pressed", String(g.id === graph));
+  b.addEventListener("click", () => { graph = g.id; for (const x of document.querySelectorAll("#graphs button")) x.setAttribute("aria-pressed", String(x === b)); draw(); });
+  document.getElementById("graphs").appendChild(b);
+}
+for (const pr of PRESETS) {
+  const b = document.createElement("button"); b.type = "button"; b.textContent = pr.label;
+  b.addEventListener("click", () => setAll(pr.values));
+  document.getElementById("presets").appendChild(b);
+}
+matchMedia("(prefers-color-scheme: dark)").addEventListener("change", draw);
+draw();
+</script>
+</body>
+</html>

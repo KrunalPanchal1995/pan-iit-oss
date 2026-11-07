@@ -1,0 +1,197 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Session 1: the lemonade stall</title>
+<style>
+  :root { --bg:#ffffff; --fg:#14181f; --muted:#5b6472; --card:#f3f5f8; --accent:#003f7f; --good:#c86a00; --bad:#d81b60; --line:#d7dce3; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#0e1116; --fg:#e6e9ee; --muted:#9aa3b2; --card:#171b22; --accent:#3b8fe0; --good:#ffc857; --bad:#e0457b; --line:#2a313c; } }
+  * { box-sizing: border-box; }
+  body { margin:0; padding:16px; background:var(--bg); color:var(--fg); font:16px/1.5 system-ui, sans-serif; }
+  main { max-width: 780px; margin: 0 auto; }
+  h1 { font-size: 1.3rem; margin: 0 0 4px; }
+  p.sub { margin: 0 0 12px; color: var(--muted); }
+  .scroll { overflow-x:auto; }
+  canvas { width:100%; min-width:560px; height:auto; background:var(--card); border:1px solid var(--line); border-radius:8px; display:block; }
+  .sr { position:absolute; left:-9999px; }
+  .bar { display:flex; flex-wrap:wrap; gap:8px; margin:10px 0; }
+  button { font:inherit; padding:6px 12px; border:1px solid var(--line); background:var(--card); color:var(--fg); border-radius:6px; cursor:pointer; }
+  button[aria-pressed="true"] { border-color:var(--accent); color:var(--accent); font-weight:600; }
+  button:focus-visible, input:focus-visible { outline:3px solid var(--accent); outline-offset:2px; }
+  .row { display:grid; grid-template-columns: 11rem 1fr 6rem; gap:8px; align-items:center; margin:8px 0; }
+  .row output { text-align:right; font-variant-numeric: tabular-nums; }
+  @media (max-width: 560px) { .row { grid-template-columns: 1fr; gap:2px; } .row output { text-align:left; } }
+  input[type=range] { width:100%; accent-color: var(--accent); }
+  #readout, #challenge, .note { margin-top:10px; padding:10px 12px; background:var(--card); border-radius:8px; border:1px solid var(--line); }
+  #challenge[data-ok="true"] { border-color:var(--good); } #challenge[data-ok="true"] b { color:var(--good); }
+  .note { font-size:.85rem; color:var(--muted); }
+  a { color: var(--accent); }
+</style>
+</head>
+<body>
+<main>
+  <h1>Session 1: the lemonade stall</h1>
+  <p class="sub">Money out and money in; the graph shows where the lines meet. Both businesses and all their numbers are made up.</p>
+  <div class="bar" id="biz" role="group" aria-label="Choose a business"></div>
+  <div class="bar" id="graphs" role="group" aria-label="Choose a graph"></div>
+  <div class="scroll"><canvas id="c" width="720" height="420" role="img" aria-label="Session 1: the lemonade stall: interactive plot"></canvas></div>
+  <div class="bar" id="presets" role="group" aria-label="Presets"></div>
+  <div id="controls"></div>
+  <div class="bar"><button id="reset" type="button">Reset</button></div>
+  <div id="readout"></div>
+  <div id="challenge" hidden></div>
+  <div id="status" class="sr" aria-live="polite"></div>
+  <p class="note">This is a simplified educational model. It is not a validated design tool and must not be used for real structures, electrical installations, vehicles, industrial processes or medical decisions.</p>
+  <p class="sub"><a href="https://github.com/KrunalPanchal1995/pan-iit-oss/tree/main/openbreakeven">Back to the repository</a></p>
+</main>
+<script>
+"use strict";
+const PARAMS = [{"id": "price", "label": "Price of a cup", "min": 0.5, "max": 4, "step": 0.1, "value": 2, "unit": "dollars"}, {"id": "vc", "label": "Cost of making a cup", "min": 0.1, "max": 2, "step": 0.1, "value": 0.5, "unit": "dollars"}, {"id": "fixed", "label": "Fixed cost", "min": 10, "max": 150, "step": 5, "value": 60, "unit": "dollars"}, {"id": "cups", "label": "Cups sold", "min": 0, "max": 120, "step": 1, "value": 25, "unit": "cups"}];
+const GRAPHS = [{"id": "stall", "label": "Money out and money in", "diagram": true}, {"id": "lines", "label": "Cost and income against sales"}];
+const PRESETS = [{"label": "The stall", "values": {"price": 2, "vc": 0.5, "fixed": 60, "cups": 25}, "biz": 0}, {"label": "Cheap lemonade", "values": {"price": 1, "vc": 0.5, "fixed": 60, "cups": 25}, "biz": 0}, {"label": "Price = cost", "values": {"price": 0.5, "vc": 0.5, "fixed": 60, "cups": 25}, "biz": 0}, {"label": "Repair stand", "biz": 1, "values": {"price": 12, "vc": 4, "fixed": 400, "cups": 30}}, {"label": "Repair stand, busy day", "biz": 1, "values": {"price": 12, "vc": 4, "fixed": 400, "cups": 90}}, {"label": "Repair stand, price = cost", "biz": 1, "values": {"price": 4, "vc": 4, "fixed": 400, "cups": 30}}];
+const CHALLENGE = "Make the stall break even within 30 cups.";
+const CHALLENGE_SOLUTION = {"price": 2, "vc": 0.5, "fixed": 45, "cups": 25};
+const challengeTest = CHALLENGE ? (p) => (biz === 0 && p.price > p.vc && p.fixed / (p.price - p.vc) <= 30.0001) : null;
+const cv = document.getElementById("c"), ctx = cv.getContext("2d");
+const W = cv.width, H = cv.height, p = {};
+let graph = GRAPHS.length ? GRAPHS[0].id : "main";
+const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+const fmt = v => (Math.abs(v) >= 1000 || (Math.abs(v) > 0 && Math.abs(v) < 0.01)) ? v.toExponential(2) : String(+v.toPrecision(4));
+function readout(html) {
+  document.getElementById("readout").innerHTML = html;
+  cv.setAttribute("aria-label", document.title + ". " + html.replace(/<[^>]+>/g, " ").replace(/&nbsp;/g, " "));  // screen readers get the numbers
+}
+let lastOk = null;
+// ---- plotting helpers: every graph gets labelled axes with units ----
+function niceTicks(lo, hi, n) {
+  const raw = (hi - lo) / n, mag = Math.pow(10, Math.floor(Math.log10(raw))), f = raw / mag;
+  const step = (f < 1.5 ? 1 : f < 3 ? 2 : f < 7 ? 5 : 10) * mag, out = [];
+  for (let v = Math.ceil(lo / step - 1e-9) * step; v <= hi + 1e-9; v += step) out.push(+v.toPrecision(12));
+  return out;
+}
+function axes(o, C) {
+  const L = 66, R = 16, T = 34, B = 50, w = W - L - R, h = H - T - B;
+  const X = v => L + (v - o.x[0]) / (o.x[1] - o.x[0]) * w, Y = v => T + h - (v - o.y[0]) / (o.y[1] - o.y[0]) * h;
+  ctx.lineWidth = 1; ctx.font = "12px system-ui";
+  for (const xv of niceTicks(o.x[0], o.x[1], 6)) {
+    ctx.strokeStyle = C.line; ctx.beginPath(); ctx.moveTo(X(xv), T); ctx.lineTo(X(xv), T + h); ctx.stroke();
+    ctx.fillStyle = C.muted; ctx.textAlign = "center"; ctx.fillText(fmt(xv), X(xv), T + h + 16);
+  }
+  for (const yv of niceTicks(o.y[0], o.y[1], 5)) {
+    ctx.strokeStyle = C.line; ctx.beginPath(); ctx.moveTo(L, Y(yv)); ctx.lineTo(L + w, Y(yv)); ctx.stroke();
+    ctx.fillStyle = C.muted; ctx.textAlign = "right"; ctx.fillText(fmt(yv), L - 6, Y(yv) + 4);
+  }
+  ctx.strokeStyle = C.fg; ctx.beginPath(); ctx.moveTo(L, T); ctx.lineTo(L, T + h); ctx.lineTo(L + w, T + h); ctx.stroke();
+  ctx.fillStyle = C.fg; ctx.textAlign = "center"; ctx.font = "13px system-ui";
+  ctx.fillText(o.xl, L + w / 2, H - 8);
+  ctx.save(); ctx.translate(14, T + h / 2); ctx.rotate(-Math.PI / 2); ctx.fillText(o.yl, 0, 0); ctx.restore();
+  ctx.font = "bold 13px system-ui"; ctx.fillText(o.title || "", L + w / 2, 20);
+  return { X, Y, L, T, w, h };
+}
+function curve(f, a, color, x0, x1, n) {
+  n = n || 160; ctx.save(); ctx.beginPath(); ctx.rect(a.L, a.T, a.w, a.h); ctx.clip();   // never draw outside the plot area
+  ctx.strokeStyle = color; ctx.lineWidth = 2.5; ctx.beginPath();
+  for (let i = 0; i <= n; i++) { const x = x0 + (x1 - x0) * i / n, y = f(x); i ? ctx.lineTo(a.X(x), a.Y(y)) : ctx.moveTo(a.X(x), a.Y(y)); }
+  ctx.stroke(); ctx.restore();
+}
+function dot(a, x, y, color, label) {
+  ctx.fillStyle = color; ctx.beginPath(); ctx.arc(a.X(x), a.Y(y), 6, 0, 2 * Math.PI); ctx.fill();
+  if (label) { ctx.textAlign = "left"; ctx.font = "12px system-ui"; ctx.fillText(label, a.X(x) + 9, a.Y(y) - 8); }
+}
+function draw() {
+  ctx.clearRect(0, 0, W, H);
+  const C = { fg: css("--fg"), muted: css("--muted"), accent: css("--accent"), line: css("--line"), good: css("--good"), bad: css("--bad") };
+  
+const B = BIZ[biz], cups = p.cups, cost = p.fixed + p.vc * cups, inc = p.price * cups, prof = inc - cost;
+const earn = p.price - p.vc, be = earn > 0 ? p.fixed / earn : null;
+if (graph === "stall") {
+  const mx = Math.max(cost, inc, 1), S = 560 / mx, x0 = 80;
+  ctx.font = "13px system-ui"; ctx.textAlign = "left"; ctx.fillStyle = C.fg;
+  ctx.fillText("Money out: what the " + B.noun + " has cost so far", x0, 70);
+  ctx.fillStyle = C.bad; ctx.globalAlpha = 0.9; ctx.fillRect(x0, 80, S * p.fixed, 40);
+  ctx.globalAlpha = 0.45; ctx.fillRect(x0 + S * p.fixed, 80, S * p.vc * cups, 40); ctx.globalAlpha = 1;
+  ctx.fillStyle = C.fg; ctx.fillText("Money in: what the " + B.many + " have earned", x0, 175);
+  ctx.fillStyle = C.good; ctx.fillRect(x0, 185, S * inc, 40);
+  ctx.fillStyle = C.muted; ctx.font = "12px system-ui";
+  ctx.fillText("dark red: fixed cost (paid before the first " + B.one + "); light red: cost of the " + B.many + "", x0, 140);
+  ctx.fillText("bars share one scale; the longer bar is ahead", x0, 245);
+  ctx.font = "16px system-ui"; ctx.fillStyle = prof >= 0 ? C.good : C.bad;
+  ctx.fillText(prof >= 0 ? "Caught up: profit $" + prof.toFixed(2) : "Not yet: loss $" + (-prof).toFixed(2), x0, 300);
+  ctx.font = "12px system-ui"; ctx.fillStyle = C.muted;
+  ctx.fillText(be === null ? "Each " + B.one + " earns nothing, so income never catches up." : "Break-even is at " + be.toFixed(1) + " " + B.many + "; you have " + (biz ? "done " : "sold ") + cups + ".", x0, 330);
+} else {
+  const top = Math.max(p.fixed + p.vc * 120, p.price * 120) * 1.05;
+  const A = axes({ x: [0, 120], y: [0, top], xl: B.many + (biz ? " done (" : " sold (") + B.many + ")", yl: "money (dollars)", title: "Income catches up with cost" }, C);
+  curve(c => p.fixed + p.vc * c, A, C.bad, 0, 120);
+  curve(c => p.price * c, A, C.good, 0, 120);
+  if (be !== null && be <= 120) dot(A, be, p.price * be, C.fg, "break-even");
+  dot(A, cups, inc, C.accent, "now");
+  ctx.font = "12px system-ui"; ctx.textAlign = "left"; ctx.fillStyle = C.bad; ctx.fillText("red: total cost", A.L + 10, A.T + 16);
+  ctx.fillStyle = C.good; ctx.fillText("orange: income", A.L + 10, A.T + 32);
+}
+readout("cost $" + cost.toFixed(2) + " &nbsp; income $" + inc.toFixed(2) + " &nbsp; " + (prof >= 0 ? "profit $" + prof.toFixed(2) : "loss $" + (-prof).toFixed(2)) + " &nbsp;|&nbsp; each " + B.one + " earns $" + earn.toFixed(2) + " &nbsp; " + (be === null ? "no break-even: the price does not cover the cost of a " + B.one + "" : "break-even = " + be.toFixed(1) + " " + B.many));
+
+  const ch = document.getElementById("challenge");
+  if (challengeTest) { const ok = !!challengeTest(p); ch.hidden = biz !== 0; ch.dataset.ok = String(ok);
+    ch.innerHTML = "<b>Challenge:</b> " + CHALLENGE + " &nbsp; " + (ok ? "<b>Done!</b>" : "Not yet.");
+    if (ok !== lastOk) { document.getElementById("status").textContent = ok ? "Challenge done." : "Challenge not yet done."; lastOk = ok; } }
+}
+const box = document.getElementById("controls");
+const inputs = {};
+for (const q of PARAMS) {
+  p[q.id] = q.value;
+  const row = document.createElement("div"); row.className = "row";
+  row.innerHTML = `<label for="${q.id}">${q.label} (${q.unit || "no unit"})</label>` +
+    `<input id="${q.id}" type="range" min="${q.min}" max="${q.max}" step="${q.step}" value="${q.value}">` +
+    `<output for="${q.id}">${q.value}</output>`;
+  const inp = row.querySelector("input"), out = row.querySelector("output");
+  inputs[q.id] = [inp, out];
+  inp.addEventListener("input", () => { p[q.id] = +inp.value; out.textContent = inp.value; draw(); });
+  box.appendChild(row);
+}
+function setAll(vals) { for (const k in vals) { p[k] = vals[k]; if (inputs[k]) { inputs[k][0].value = vals[k]; inputs[k][1].textContent = vals[k]; } } draw(); }
+// ---- two made-up businesses: words and slider ranges change, the model does not ----
+const BIZ = [
+  { title: "the lemonade stall", noun: "stall", one: "cup", many: "cups",
+    labels: { price: "Price of a cup", vc: "Cost of making a cup", fixed: "Fixed cost", cups: "Cups sold" },
+    range: { price: [0.5, 4, 0.1, 2], vc: [0.1, 2, 0.1, 0.5], fixed: [10, 150, 5, 60], cups: [0, 120, 1, 25] } },
+  { title: "the bicycle repair stand", noun: "stand", one: "repair", many: "repairs",
+    labels: { price: "Price of a repair", vc: "Cost of one repair (parts and time)", fixed: "Fixed cost (tools and stand)", cups: "Repairs done" },
+    range: { price: [5, 40, 1, 12], vc: [1, 20, 1, 4], fixed: [100, 1000, 50, 400], cups: [0, 120, 1, 30] } }
+];
+let biz = 0;
+function applyBiz(i) {
+  biz = i; const B = BIZ[i];
+  for (const id in B.range) {
+    const [mn, mx, st, v] = B.range[id], inp = inputs[id][0];
+    inp.min = mn; inp.max = mx; inp.step = st; inp.value = v; p[id] = v; inputs[id][1].textContent = v;
+    document.querySelector('label[for="' + id + '"]').textContent = B.labels[id] + " (" + (id === "cups" ? B.many : "dollars") + ")";
+  }
+  document.querySelector("main h1").textContent = "Session 1: " + B.title;
+  for (const b of document.querySelectorAll("#biz button")) b.setAttribute("aria-pressed", String(+b.dataset.biz === i));
+}
+const DEFAULTS = Object.assign({}, p);
+document.getElementById("reset").addEventListener("click", () => { applyBiz(0); setAll(DEFAULTS); });
+for (const [i, b0] of BIZ.entries()) {
+  const b = document.createElement("button"); b.type = "button"; b.textContent = b0.title.replace("the ", "").replace(/^./, c => c.toUpperCase()); b.dataset.biz = String(i);
+  b.setAttribute("aria-pressed", String(i === 0));
+  b.addEventListener("click", () => { applyBiz(i); draw(); });
+  document.getElementById("biz").appendChild(b);
+}
+for (const g of GRAPHS) {
+  const b = document.createElement("button"); b.type = "button"; b.textContent = g.label;
+  b.setAttribute("aria-pressed", String(g.id === graph));
+  b.addEventListener("click", () => { graph = g.id; for (const x of document.querySelectorAll("#graphs button")) x.setAttribute("aria-pressed", String(x === b)); draw(); });
+  document.getElementById("graphs").appendChild(b);
+}
+for (const pr of PRESETS) {
+  const b = document.createElement("button"); b.type = "button"; b.textContent = pr.label;
+  b.addEventListener("click", () => { if (pr.biz !== undefined && pr.biz !== biz) applyBiz(pr.biz); setAll(pr.values); });
+  document.getElementById("presets").appendChild(b);
+}
+matchMedia("(prefers-color-scheme: dark)").addEventListener("change", draw);
+draw();
+</script>
+</body>
+</html>

@@ -1,0 +1,187 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Session 2: flat and banked curves</title>
+<style>
+  :root { --bg:#ffffff; --fg:#14181f; --muted:#5b6472; --card:#f3f5f8; --accent:#003f7f; --good:#c86a00; --bad:#d81b60; --line:#d7dce3; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#0e1116; --fg:#e6e9ee; --muted:#9aa3b2; --card:#171b22; --accent:#3b8fe0; --good:#ffc857; --bad:#e0457b; --line:#2a313c; } }
+  * { box-sizing: border-box; }
+  body { margin:0; padding:16px; background:var(--bg); color:var(--fg); font:16px/1.5 system-ui, sans-serif; }
+  main { max-width: 780px; margin: 0 auto; }
+  h1 { font-size: 1.3rem; margin: 0 0 4px; }
+  p.sub { margin: 0 0 12px; color: var(--muted); }
+  .scroll { overflow-x:auto; }
+  canvas { width:100%; min-width:560px; height:auto; background:var(--card); border:1px solid var(--line); border-radius:8px; display:block; }
+  .sr { position:absolute; left:-9999px; }
+  .bar { display:flex; flex-wrap:wrap; gap:8px; margin:10px 0; }
+  button { font:inherit; padding:6px 12px; border:1px solid var(--line); background:var(--card); color:var(--fg); border-radius:6px; cursor:pointer; }
+  button[aria-pressed="true"] { border-color:var(--accent); color:var(--accent); font-weight:600; }
+  button:focus-visible, input:focus-visible { outline:3px solid var(--accent); outline-offset:2px; }
+  .row { display:grid; grid-template-columns: 11rem 1fr 6rem; gap:8px; align-items:center; margin:8px 0; }
+  .row output { text-align:right; font-variant-numeric: tabular-nums; }
+  @media (max-width: 560px) { .row { grid-template-columns: 1fr; gap:2px; } .row output { text-align:left; } }
+  input[type=range] { width:100%; accent-color: var(--accent); }
+  #readout, #challenge, .note { margin-top:10px; padding:10px 12px; background:var(--card); border-radius:8px; border:1px solid var(--line); }
+  #challenge[data-ok="true"] { border-color:var(--good); } #challenge[data-ok="true"] b { color:var(--good); }
+  .note { font-size:.85rem; color:var(--muted); }
+  a { color: var(--accent); }
+</style>
+</head>
+<body>
+<main>
+  <h1>Session 2: flat and banked curves</h1>
+  <p class="sub">Forces on a car in a banked curve; the graph shows the safe speed window against bank angle.</p>
+  <div class="bar" id="graphs" role="group" aria-label="Choose a graph"></div>
+  <div class="scroll"><canvas id="c" width="720" height="420" role="img" aria-label="Session 2: flat and banked curves: interactive plot"></canvas></div>
+  <div class="bar" id="presets" role="group" aria-label="Presets"></div>
+  <div id="controls"></div>
+  <div class="bar"><button id="reset" type="button">Reset</button></div>
+  <div id="readout"></div>
+  <div id="challenge" hidden></div>
+  <div id="status" class="sr" aria-live="polite"></div>
+  <p class="note">This is a simplified educational model. It is not a validated design tool and must not be used for real structures, electrical installations, vehicles, industrial processes or medical decisions.</p>
+  <p class="sub"><a href="https://github.com/KrunalPanchal1995/pan-iit-oss/tree/main/opencentripetal">Back to the repository</a></p>
+</main>
+<script>
+"use strict";
+const PARAMS = [{"id": "theta", "label": "Bank angle", "min": 0, "max": 40, "step": 1, "value": 10, "unit": "degrees"}, {"id": "mu", "label": "Friction coefficient", "min": 0, "max": 1, "step": 0.05, "value": 0.7, "unit": ""}, {"id": "r", "label": "Radius", "min": 30, "max": 200, "step": 10, "value": 100, "unit": "m"}, {"id": "v", "label": "Speed", "min": 0, "max": 150, "step": 5, "value": 80, "unit": "km/h"}];
+const GRAPHS = [{"id": "cross", "label": "Road cross-section", "diagram": true}, {"id": "window", "label": "Safe speed window"}];
+const PRESETS = [{"label": "Dry flat", "values": {"theta": 0, "mu": 0.7, "r": 100, "v": 80}}, {"label": "Ideal bank 26.7", "values": {"theta": 27, "mu": 0.4, "r": 100, "v": 80}}, {"label": "Wet, too fast", "values": {"theta": 5, "mu": 0.3, "r": 100, "v": 80}}];
+const CHALLENGE = "On a wet road with mu 0.3 or less, radius at most 100 m and speed at least 80 km/h, find a bank angle that makes the car safe.";
+const CHALLENGE_SOLUTION = {"theta": 12, "mu": 0.3, "r": 100, "v": 80};
+const challengeTest = CHALLENGE ? (p) => ((() => { const th = p.theta * Math.PI / 180, w = Math.pow(p.v / 3.6, 2) / p.r; return p.mu <= 0.3 && p.v >= 80 && p.r <= 100 && Math.abs(w * Math.cos(th) - 9.81 * Math.sin(th)) <= p.mu * (9.81 * Math.cos(th) + w * Math.sin(th)); })()) : null;
+const cv = document.getElementById("c"), ctx = cv.getContext("2d");
+const W = cv.width, H = cv.height, p = {};
+let graph = GRAPHS.length ? GRAPHS[0].id : "main";
+const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+const fmt = v => (Math.abs(v) >= 1000 || (Math.abs(v) > 0 && Math.abs(v) < 0.01)) ? v.toExponential(2) : String(+v.toPrecision(4));
+function readout(html) {
+  document.getElementById("readout").innerHTML = html;
+  cv.setAttribute("aria-label", document.title + ". " + html.replace(/<[^>]+>/g, " ").replace(/&nbsp;/g, " "));  // screen readers get the numbers
+}
+let lastOk = null;
+// ---- plotting helpers: every graph gets labelled axes with units ----
+function niceTicks(lo, hi, n) {
+  const raw = (hi - lo) / n, mag = Math.pow(10, Math.floor(Math.log10(raw))), f = raw / mag;
+  const step = (f < 1.5 ? 1 : f < 3 ? 2 : f < 7 ? 5 : 10) * mag, out = [];
+  for (let v = Math.ceil(lo / step - 1e-9) * step; v <= hi + 1e-9; v += step) out.push(+v.toPrecision(12));
+  return out;
+}
+function axes(o, C) {
+  const L = 66, R = 16, T = 34, B = 50, w = W - L - R, h = H - T - B;
+  const X = v => L + (v - o.x[0]) / (o.x[1] - o.x[0]) * w, Y = v => T + h - (v - o.y[0]) / (o.y[1] - o.y[0]) * h;
+  ctx.lineWidth = 1; ctx.font = "12px system-ui";
+  for (const xv of niceTicks(o.x[0], o.x[1], 6)) {
+    ctx.strokeStyle = C.line; ctx.beginPath(); ctx.moveTo(X(xv), T); ctx.lineTo(X(xv), T + h); ctx.stroke();
+    ctx.fillStyle = C.muted; ctx.textAlign = "center"; ctx.fillText(fmt(xv), X(xv), T + h + 16);
+  }
+  for (const yv of niceTicks(o.y[0], o.y[1], 5)) {
+    ctx.strokeStyle = C.line; ctx.beginPath(); ctx.moveTo(L, Y(yv)); ctx.lineTo(L + w, Y(yv)); ctx.stroke();
+    ctx.fillStyle = C.muted; ctx.textAlign = "right"; ctx.fillText(fmt(yv), L - 6, Y(yv) + 4);
+  }
+  ctx.strokeStyle = C.fg; ctx.beginPath(); ctx.moveTo(L, T); ctx.lineTo(L, T + h); ctx.lineTo(L + w, T + h); ctx.stroke();
+  ctx.fillStyle = C.fg; ctx.textAlign = "center"; ctx.font = "13px system-ui";
+  ctx.fillText(o.xl, L + w / 2, H - 8);
+  ctx.save(); ctx.translate(14, T + h / 2); ctx.rotate(-Math.PI / 2); ctx.fillText(o.yl, 0, 0); ctx.restore();
+  ctx.font = "bold 13px system-ui"; ctx.fillText(o.title || "", L + w / 2, 20);
+  return { X, Y, L, T, w, h };
+}
+function curve(f, a, color, x0, x1, n) {
+  n = n || 160; ctx.save(); ctx.beginPath(); ctx.rect(a.L, a.T, a.w, a.h); ctx.clip();   // never draw outside the plot area
+  ctx.strokeStyle = color; ctx.lineWidth = 2.5; ctx.beginPath();
+  for (let i = 0; i <= n; i++) { const x = x0 + (x1 - x0) * i / n, y = f(x); i ? ctx.lineTo(a.X(x), a.Y(y)) : ctx.moveTo(a.X(x), a.Y(y)); }
+  ctx.stroke(); ctx.restore();
+}
+function dot(a, x, y, color, label) {
+  ctx.fillStyle = color; ctx.beginPath(); ctx.arc(a.X(x), a.Y(y), 6, 0, 2 * Math.PI); ctx.fill();
+  if (label) { ctx.textAlign = "left"; ctx.font = "12px system-ui"; ctx.fillText(label, a.X(x) + 9, a.Y(y) - 8); }
+}
+function draw() {
+  ctx.clearRect(0, 0, W, H);
+  const C = { fg: css("--fg"), muted: css("--muted"), accent: css("--accent"), line: css("--line"), good: css("--good"), bad: css("--bad") };
+  
+const g = 9.81, th = p.theta * Math.PI / 180, t = Math.tan(th), v = p.v / 3.6, w = v * v / p.r;
+const N = g * Math.cos(th) + w * Math.sin(th), f = w * Math.cos(th) - g * Math.sin(th);
+const vmax2 = th2 => { const tt = Math.tan(th2 * Math.PI / 180); return p.mu * tt < 1 ? g * p.r * (tt + p.mu) / (1 - p.mu * tt) : 1e5; };
+const vmin2 = th2 => { const tt = Math.tan(th2 * Math.PI / 180); return Math.max(0, g * p.r * (tt - p.mu) / (1 + p.mu * tt)); };
+const hi = Math.sqrt(vmax2(p.theta)), lo = Math.sqrt(vmin2(p.theta));
+const grip = Math.abs(f) <= p.mu * N;
+const state = grip ? "safe: friction is enough" : (f > 0 ? "SLIDES OUTWARD (too fast)" : "SLIDES INWARD (too slow)");
+if (graph === "cross") {
+  const arrow = (x0, y0, x1, y1, col) => {
+    ctx.strokeStyle = col; ctx.fillStyle = col; ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.moveTo(x0, y0); ctx.lineTo(x1, y1); ctx.stroke();
+    const ang = Math.atan2(y1 - y0, x1 - x0);
+    ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x1 - 10 * Math.cos(ang - 0.4), y1 - 10 * Math.sin(ang - 0.4)); ctx.lineTo(x1 - 10 * Math.cos(ang + 0.4), y1 - 10 * Math.sin(ang + 0.4)); ctx.closePath(); ctx.fill();
+  };
+  const c = [360, 235], u = [Math.cos(th), -Math.sin(th)];
+  ctx.strokeStyle = C.fg; ctx.lineWidth = 6; ctx.beginPath(); ctx.moveTo(c[0] - 250 * u[0], c[1] - 250 * u[1]); ctx.lineTo(c[0] + 250 * u[0], c[1] + 250 * u[1]); ctx.stroke();
+  const toW = (lx, ly) => [c[0] + lx * Math.cos(th) + ly * Math.sin(th), c[1] - lx * Math.sin(th) + ly * Math.cos(th)];
+  ctx.fillStyle = C.accent; ctx.beginPath();
+  [[-32, -4], [32, -4], [32, -26], [-32, -26]].forEach((q, i) => { const z = toW(q[0], q[1]); i ? ctx.lineTo(z[0], z[1]) : ctx.moveTo(z[0], z[1]); });
+  ctx.closePath(); ctx.fill();
+  const cg = toW(0, -15), cap = x => Math.min(140, x);
+  arrow(cg[0], cg[1], cg[0], cg[1] + 60, C.muted);
+  const nl = cap(60 * N / g); arrow(cg[0], cg[1], cg[0] - nl * Math.sin(th), cg[1] - nl * Math.cos(th), C.good);
+  const fl = cap(60 * Math.abs(f) / g), sgn = f > 0 ? -1 : 1;
+  if (fl > 2) arrow(cg[0], cg[1], cg[0] + sgn * fl * Math.cos(th), cg[1] - sgn * fl * Math.sin(th), C.bad);
+  ctx.strokeStyle = C.fg; ctx.lineWidth = 1.5; ctx.setLineDash([5, 4]);
+  const hl = cap(60 * w / g); ctx.beginPath(); ctx.moveTo(cg[0], cg[1] - 4); ctx.lineTo(cg[0] - hl, cg[1] - 4); ctx.stroke(); ctx.setLineDash([]);
+  ctx.font = "12px system-ui"; ctx.textAlign = "left";
+  ctx.fillStyle = C.muted; ctx.fillText("grey: weight m g", 10, 24);
+  ctx.fillStyle = C.good; ctx.fillText("orange: normal force N (perpendicular to the road)", 10, 42);
+  ctx.fillStyle = C.bad; ctx.fillText("red: friction along the road (down the slope = too fast, up = too slow)", 10, 60);
+  ctx.fillStyle = C.fg; ctx.fillText("dashed black: the inward push m v^2 / r needed, towards the curve centre (left)", 10, 78);
+  ctx.fillStyle = C.muted; ctx.fillText("cross-section; centre of the curve is to the left; arrows capped at 140 px", 10, H - 10);
+} else {
+  const A = axes({ x: [0, 40], y: [0, 320], xl: "bank angle (degrees)", yl: "speed (km/h)", title: "Safe speed window for r = " + p.r + " m, mu = " + p.mu }, C);
+  curve(x => 3.6 * Math.sqrt(vmax2(x)), A, C.bad, 0, 40);
+  curve(x => 3.6 * Math.sqrt(vmin2(x)), A, C.accent, 0, 40);
+  curve(x => 3.6 * Math.sqrt(g * p.r * Math.tan(x * Math.PI / 180)), A, C.muted, 0, 40);
+  dot(A, p.theta, Math.min(p.v, 315), grip ? C.good : C.bad, "car");
+  ctx.font = "12px system-ui"; ctx.textAlign = "left";
+  ctx.fillStyle = C.bad; ctx.fillText("red: top speed (above it the car slides out)", A.L + 10, A.T + 16);
+  ctx.fillStyle = C.accent; ctx.fillText("blue: lowest speed (below it the car slides in)", A.L + 10, A.T + 32);
+  ctx.fillStyle = C.muted; ctx.fillText("grey: ideal speed with no friction", A.L + 10, A.T + 48);
+}
+readout("v = " + v.toFixed(2) + " m/s &nbsp; N / (m g) = " + (N / g).toFixed(2) + " &nbsp; friction needed f / (m g) = " + (f / g).toFixed(2) + " (limit " + (p.mu * N / g).toFixed(2) + ") &nbsp; safe range " + (3.6 * lo).toFixed(1) + " to " + (3.6 * Math.min(hi, 999)).toFixed(1) + " km/h &nbsp; ideal angle for this speed = " + (Math.atan(w / g) * 180 / Math.PI).toFixed(1) + " deg &nbsp; <b>" + state + "</b>");
+
+  const ch = document.getElementById("challenge");
+  if (challengeTest) { const ok = !!challengeTest(p); ch.hidden = false; ch.dataset.ok = String(ok);
+    ch.innerHTML = "<b>Challenge:</b> " + CHALLENGE + " &nbsp; " + (ok ? "<b>Done!</b>" : "Not yet.");
+    if (ok !== lastOk) { document.getElementById("status").textContent = ok ? "Challenge done." : "Challenge not yet done."; lastOk = ok; } }
+}
+const box = document.getElementById("controls");
+const inputs = {};
+for (const q of PARAMS) {
+  p[q.id] = q.value;
+  const row = document.createElement("div"); row.className = "row";
+  row.innerHTML = `<label for="${q.id}">${q.label} (${q.unit || "no unit"})</label>` +
+    `<input id="${q.id}" type="range" min="${q.min}" max="${q.max}" step="${q.step}" value="${q.value}">` +
+    `<output for="${q.id}">${q.value}</output>`;
+  const inp = row.querySelector("input"), out = row.querySelector("output");
+  inputs[q.id] = [inp, out];
+  inp.addEventListener("input", () => { p[q.id] = +inp.value; out.textContent = inp.value; draw(); });
+  box.appendChild(row);
+}
+function setAll(vals) { for (const k in vals) { p[k] = vals[k]; if (inputs[k]) { inputs[k][0].value = vals[k]; inputs[k][1].textContent = vals[k]; } } draw(); }
+const DEFAULTS = Object.assign({}, p);
+document.getElementById("reset").addEventListener("click", () => setAll(DEFAULTS));
+for (const g of GRAPHS) {
+  const b = document.createElement("button"); b.type = "button"; b.textContent = g.label;
+  b.setAttribute("aria-pressed", String(g.id === graph));
+  b.addEventListener("click", () => { graph = g.id; for (const x of document.querySelectorAll("#graphs button")) x.setAttribute("aria-pressed", String(x === b)); draw(); });
+  document.getElementById("graphs").appendChild(b);
+}
+for (const pr of PRESETS) {
+  const b = document.createElement("button"); b.type = "button"; b.textContent = pr.label;
+  b.addEventListener("click", () => setAll(pr.values));
+  document.getElementById("presets").appendChild(b);
+}
+matchMedia("(prefers-color-scheme: dark)").addEventListener("change", draw);
+draw();
+</script>
+</body>
+</html>

@@ -1,0 +1,190 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Session 5: a threshold for each group</title>
+<style>
+  :root { --bg:#ffffff; --fg:#14181f; --muted:#5b6472; --card:#f3f5f8; --accent:#003f7f; --good:#c86a00; --bad:#d81b60; --line:#d7dce3; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#0e1116; --fg:#e6e9ee; --muted:#9aa3b2; --card:#171b22; --accent:#3b8fe0; --good:#ffc857; --bad:#e0457b; --line:#2a313c; } }
+  * { box-sizing: border-box; }
+  body { margin:0; padding:16px; background:var(--bg); color:var(--fg); font:16px/1.5 system-ui, sans-serif; }
+  main { max-width: 780px; margin: 0 auto; }
+  h1 { font-size: 1.3rem; margin: 0 0 4px; }
+  p.sub { margin: 0 0 12px; color: var(--muted); }
+  .scroll { overflow-x:auto; }
+  canvas { width:100%; min-width:560px; height:auto; background:var(--card); border:1px solid var(--line); border-radius:8px; display:block; }
+  .sr { position:absolute; left:-9999px; }
+  .bar { display:flex; flex-wrap:wrap; gap:8px; margin:10px 0; }
+  button { font:inherit; padding:6px 12px; border:1px solid var(--line); background:var(--card); color:var(--fg); border-radius:6px; cursor:pointer; }
+  button[aria-pressed="true"] { border-color:var(--accent); color:var(--accent); font-weight:600; }
+  button:focus-visible, input:focus-visible { outline:3px solid var(--accent); outline-offset:2px; }
+  .row { display:grid; grid-template-columns: 11rem 1fr 6rem; gap:8px; align-items:center; margin:8px 0; }
+  .row output { text-align:right; font-variant-numeric: tabular-nums; }
+  @media (max-width: 560px) { .row { grid-template-columns: 1fr; gap:2px; } .row output { text-align:left; } }
+  input[type=range] { width:100%; accent-color: var(--accent); }
+  #readout, #challenge, .note { margin-top:10px; padding:10px 12px; background:var(--card); border-radius:8px; border:1px solid var(--line); }
+  #challenge[data-ok="true"] { border-color:var(--good); } #challenge[data-ok="true"] b { color:var(--good); }
+  .note { font-size:.85rem; color:var(--muted); }
+  a { color: var(--accent); }
+</style>
+</head>
+<body>
+<main>
+  <h1>Session 5: a threshold for each group</h1>
+  <p class="sub">Equalise the false-positive rates with one threshold per group, then see what it costs when the groups differ in how common the condition is or in how good the instrument is.</p>
+  <div class="bar" id="graphs" role="group" aria-label="Choose a graph"></div>
+  <div class="scroll"><canvas id="c" width="720" height="420" role="img" aria-label="Session 5: a threshold for each group: interactive plot"></canvas></div>
+  <div class="bar" id="presets" role="group" aria-label="Presets"></div>
+  <div id="controls"></div>
+  <div class="bar"><button id="reset" type="button">Reset</button></div>
+  <div id="readout"></div>
+  <div id="challenge" hidden></div>
+  <div id="status" class="sr" aria-live="polite"></div>
+  <p class="note">This is a simplified educational model. It is not a validated design tool and must not be used for real structures, electrical installations, vehicles, industrial processes or medical decisions.</p>
+  <p class="sub"><a href="https://github.com/KrunalPanchal1995/pan-iit-oss/tree/main/openclassifier">Back to the repository</a></p>
+</main>
+<script>
+"use strict";
+const PARAMS = [{"id": "policy", "label": "Policy: 0 = one threshold, 1 = one per group, 2 = one per group with TPR floor", "min": 0, "max": 2, "step": 1, "value": 0, "unit": "switch"}, {"id": "t", "label": "Threshold t (sets the target false-positive rate)", "min": -1, "max": 3, "step": 0.1, "value": 1, "unit": "score units"}, {"id": "prevB", "label": "Group B: share of positives", "min": 0.1, "max": 0.7, "step": 0.05, "value": 0.3, "unit": "fraction"}, {"id": "dB", "label": "Group B: instrument quality d", "min": 0.5, "max": 2.5, "step": 0.1, "value": 1.5, "unit": "score units"}, {"id": "shiftB", "label": "Group B: instrument reads too high by", "min": 0, "max": 1.5, "step": 0.1, "value": 0.5, "unit": "score units"}];
+const GRAPHS = [{"id": "rates", "label": "Error rates of both groups"}, {"id": "roc", "label": "ROC curves"}, {"id": "cost", "label": "Total errors per policy"}];
+const PRESETS = [{"label": "Session 3: one threshold", "values": {"policy": 0, "t": 1, "prevB": 0.3, "dB": 1.5, "shiftB": 0.5}}, {"label": "Repair: one per group", "values": {"policy": 1, "t": 1, "prevB": 0.3, "dB": 1.5, "shiftB": 0.5}}, {"label": "B has 50% positives", "values": {"policy": 1, "t": 1, "prevB": 0.5, "dB": 1.5, "shiftB": 0.5}}, {"label": "Weaker instrument for B", "values": {"policy": 1, "t": 1, "prevB": 0.3, "dB": 1.0, "shiftB": 0.5}}, {"label": "Weaker, with the floor", "values": {"policy": 2, "t": 1, "prevB": 0.3, "dB": 1.0, "shiftB": 0.5}}];
+const CHALLENGE = "With one threshold per group (policy 1), choose the settings of group B so that the false-positive rates agree but the PPV of the two groups differs by at least 0.15.";
+const CHALLENGE_SOLUTION = {"policy": 1, "t": 1, "prevB": 0.5, "dB": 1.5, "shiftB": 0.5};
+const erf = x => { const s = x < 0 ? -1 : 1, z = Math.abs(x), u = 1 / (1 + 0.3275911 * z); return s * (1 - (((((1.061405429 * u - 1.453152027) * u) + 1.421413741) * u - 0.284496736) * u + 0.254829592) * u * Math.exp(-z * z)); };
+const Phi = x => 0.5 * (1 + erf(x / Math.SQRT2));
+function invPhi(q) { let lo = -12, hi = 12; for (let i = 0; i < 80; i++) { const m = 0.5 * (lo + hi); if (Phi(m) < q) lo = m; else hi = m; } return 0.5 * (lo + hi); }
+const GA = { prev: 0.3, d: 1.5, shift: 0 };
+function rates(g, t) {
+  const fpr = 1 - Phi(t - g.shift), tpr = 1 - Phi(t - g.shift - g.d), fl = g.prev * tpr + (1 - g.prev) * fpr;
+  return { fpr, tpr, flagged: fl, ppv: fl > 1e-300 ? g.prev * tpr / fl : NaN, errors: g.prev * (1 - tpr) + (1 - g.prev) * fpr };
+}
+const fprNeeded = (g, floor) => 1 - Phi(g.d + invPhi(1 - floor));
+function policyResult(p) {
+  const GB = { prev: p.prevB, d: p.dB, shift: p.shiftB }, target = 1 - Phi(p.t - GA.shift);
+  let tA, tB, common = target;
+  if (p.policy === 0) { tA = p.t; tB = p.t; }
+  else {
+    if (p.policy === 2) common = Math.max(target, fprNeeded(GA, 0.6), fprNeeded(GB, 0.6));
+    tA = GA.shift + invPhi(1 - common); tB = GB.shift + invPhi(1 - common);
+  }
+  return { GB, tA, tB, common, rA: rates(GA, tA), rB: rates(GB, tB) };
+}
+window.R = { Phi, invPhi, rates, policyResult, fprNeeded };
+const challengeTest = CHALLENGE ? (p) => { if (p.policy !== 1) return false; const P = policyResult(p); return Math.abs(P.rA.ppv - P.rB.ppv) >= 0.15 - 1e-9; } : null;
+const cv = document.getElementById("c"), ctx = cv.getContext("2d");
+const W = cv.width, H = cv.height, p = {};
+let graph = GRAPHS.length ? GRAPHS[0].id : "main";
+const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+const fmt = v => (Math.abs(v) >= 1000 || (Math.abs(v) > 0 && Math.abs(v) < 0.01)) ? v.toExponential(2) : String(+v.toPrecision(4));
+function readout(html) {
+  document.getElementById("readout").innerHTML = html;
+  cv.setAttribute("aria-label", document.title + ". " + html.replace(/<[^>]+>/g, " ").replace(/&nbsp;/g, " "));  // screen readers get the numbers
+}
+let lastOk = null;
+// ---- plotting helpers: every graph gets labelled axes with units ----
+function niceTicks(lo, hi, n) {
+  const raw = (hi - lo) / n, mag = Math.pow(10, Math.floor(Math.log10(raw))), f = raw / mag;
+  const step = (f < 1.5 ? 1 : f < 3 ? 2 : f < 7 ? 5 : 10) * mag, out = [];
+  for (let v = Math.ceil(lo / step - 1e-9) * step; v <= hi + 1e-9; v += step) out.push(+v.toPrecision(12));
+  return out;
+}
+function axes(o, C) {
+  const L = 66, R = 16, T = 34, B = 50, w = W - L - R, h = H - T - B;
+  const X = v => L + (v - o.x[0]) / (o.x[1] - o.x[0]) * w, Y = v => T + h - (v - o.y[0]) / (o.y[1] - o.y[0]) * h;
+  ctx.lineWidth = 1; ctx.font = "12px system-ui";
+  for (const xv of niceTicks(o.x[0], o.x[1], 6)) {
+    ctx.strokeStyle = C.line; ctx.beginPath(); ctx.moveTo(X(xv), T); ctx.lineTo(X(xv), T + h); ctx.stroke();
+    ctx.fillStyle = C.muted; ctx.textAlign = "center"; ctx.fillText(fmt(xv), X(xv), T + h + 16);
+  }
+  for (const yv of niceTicks(o.y[0], o.y[1], 5)) {
+    ctx.strokeStyle = C.line; ctx.beginPath(); ctx.moveTo(L, Y(yv)); ctx.lineTo(L + w, Y(yv)); ctx.stroke();
+    ctx.fillStyle = C.muted; ctx.textAlign = "right"; ctx.fillText(fmt(yv), L - 6, Y(yv) + 4);
+  }
+  ctx.strokeStyle = C.fg; ctx.beginPath(); ctx.moveTo(L, T); ctx.lineTo(L, T + h); ctx.lineTo(L + w, T + h); ctx.stroke();
+  ctx.fillStyle = C.fg; ctx.textAlign = "center"; ctx.font = "13px system-ui";
+  ctx.fillText(o.xl, L + w / 2, H - 8);
+  ctx.save(); ctx.translate(14, T + h / 2); ctx.rotate(-Math.PI / 2); ctx.fillText(o.yl, 0, 0); ctx.restore();
+  ctx.font = "bold 13px system-ui"; ctx.fillText(o.title || "", L + w / 2, 20);
+  return { X, Y, L, T, w, h };
+}
+function curve(f, a, color, x0, x1, n) {
+  n = n || 160; ctx.save(); ctx.beginPath(); ctx.rect(a.L, a.T, a.w, a.h); ctx.clip();   // never draw outside the plot area
+  ctx.strokeStyle = color; ctx.lineWidth = 2.5; ctx.beginPath();
+  for (let i = 0; i <= n; i++) { const x = x0 + (x1 - x0) * i / n, y = f(x); i ? ctx.lineTo(a.X(x), a.Y(y)) : ctx.moveTo(a.X(x), a.Y(y)); }
+  ctx.stroke(); ctx.restore();
+}
+function dot(a, x, y, color, label) {
+  ctx.fillStyle = color; ctx.beginPath(); ctx.arc(a.X(x), a.Y(y), 6, 0, 2 * Math.PI); ctx.fill();
+  if (label) { ctx.textAlign = "left"; ctx.font = "12px system-ui"; ctx.fillText(label, a.X(x) + 9, a.Y(y) - 8); }
+}
+function draw() {
+  ctx.clearRect(0, 0, W, H);
+  const C = { fg: css("--fg"), muted: css("--muted"), accent: css("--accent"), line: css("--line"), good: css("--good"), bad: css("--bad") };
+const POL = ["one threshold for both groups", "one threshold per group (equal false-positive rate)", "one per group, with the true-positive-rate floor 0.6"];
+const P = policyResult(p), ra = P.rA, rb = P.rB, GB = P.GB, pol = POL[p.policy];
+const nz = v => Number.isNaN(v) ? 0 : v, f3 = v => Number.isNaN(v) ? "n/a" : v.toFixed(3);
+const legend = (A, y0) => { ctx.font = "12px system-ui"; ctx.textAlign = "left"; ctx.fillStyle = C.accent; ctx.fillText("blue: group A", A.L + 10, A.T + y0); ctx.fillStyle = C.good; ctx.fillText("orange: group B", A.L + 10, A.T + y0 + 16); };
+const floorLine = (A, x0, x1) => { ctx.save(); ctx.setLineDash([5, 4]); ctx.strokeStyle = C.bad; ctx.beginPath(); ctx.moveTo(A.X(x0), A.Y(0.6)); ctx.lineTo(A.X(x1), A.Y(0.6)); ctx.stroke(); ctx.restore(); ctx.fillStyle = C.bad; ctx.textAlign = "left"; ctx.font = "12px system-ui"; ctx.fillText("floor 0.6", A.X(x1) - 62, A.Y(0.6) - 5); };
+if (graph === "rates") {
+  const A = axes({ x: [0, 3], y: [0, 1], xl: "", yl: "rate", title: "Error rates, policy: " + ["one threshold", "one per group", "one per group + floor"][p.policy] }, C);
+  [["FPR", ra.fpr, rb.fpr], ["TPR", ra.tpr, rb.tpr], ["PPV", ra.ppv, rb.ppv]].forEach((m, i) => {
+    [[m[1], C.accent, 0.1, 0.48], [m[2], C.good, 0.52, 0.9]].forEach(b => { const v = nz(b[0]), x0 = A.X(i + b[2]), x1 = A.X(i + b[3]); ctx.fillStyle = b[1]; ctx.fillRect(x0, A.Y(v), x1 - x0, A.Y(0) - A.Y(v)); ctx.fillStyle = C.fg; ctx.textAlign = "center"; ctx.font = "12px system-ui"; ctx.fillText(f3(b[0]), (x0 + x1) / 2, A.Y(v) - 6); });
+    ctx.fillStyle = C.fg; ctx.textAlign = "center"; ctx.font = "13px system-ui"; ctx.fillText(m[0], A.X(i + 0.5), A.Y(0) + 34);
+  });
+  floorLine(A, 0, 3); legend(A, 16);
+} else if (graph === "roc") {
+  const A = axes({ x: [0, 1], y: [0, 1], xl: "false-positive rate", yl: "true-positive rate", title: "ROC curves and the chosen operating points" }, C);
+  const roc = g => x => { const q = Math.min(Math.max(x, 1e-9), 1 - 1e-9); return 1 - Phi(invPhi(1 - q) - g.d); };
+  curve(x => x, A, C.line, 0, 1, 2); curve(roc(GA), A, C.accent, 0, 1, 120); curve(roc(GB), A, C.good, 0, 1, 120);
+  dot(A, ra.fpr, ra.tpr, C.accent, "A"); dot(A, rb.fpr, rb.tpr, C.good, "B"); floorLine(A, 0, 1); legend(A, 16);
+  ctx.fillStyle = C.muted; ctx.textAlign = "left"; ctx.font = "12px system-ui"; ctx.fillText("AUC: A " + Phi(GA.d / Math.SQRT2).toFixed(3) + ", B " + Phi(GB.d / Math.SQRT2).toFixed(3), A.L + 150, A.T + A.h - 14);
+} else {
+  const A = axes({ x: [0, 3], y: [0, 0.4], xl: "", yl: "errors per person (misses + false alarms)", title: "What each policy costs in total errors (same settings)" }, C);
+  ["one threshold", "one per group", "per group + floor"].forEach((nm, i) => {
+    const Q = policyResult(Object.assign({}, p, { policy: i }));
+    [[Q.rA.errors, C.accent, 0.1, 0.48], [Q.rB.errors, C.good, 0.52, 0.9]].forEach(b => { const x0 = A.X(i + b[2]), x1 = A.X(i + b[3]); ctx.fillStyle = b[1]; ctx.fillRect(x0, A.Y(b[0]), x1 - x0, A.Y(0) - A.Y(b[0])); ctx.fillStyle = C.fg; ctx.textAlign = "center"; ctx.font = "12px system-ui"; ctx.fillText(b[0].toFixed(3), (x0 + x1) / 2, A.Y(b[0]) - 6); });
+    ctx.fillStyle = C.fg; ctx.textAlign = "center"; ctx.font = "13px system-ui"; ctx.fillText(nm, A.X(i + 0.5), A.Y(0) + 34);
+  });
+  legend(A, 16);
+}
+const gapF = Math.abs(ra.fpr - rb.fpr), gapP = Math.abs(nz(ra.ppv) - nz(rb.ppv));
+readout("Policy: " + pol + ". Thresholds A " + P.tA.toFixed(2) + ", B " + P.tB.toFixed(2) + ". A: FPR " + f3(ra.fpr) + ", TPR " + f3(ra.tpr) + ", PPV " + f3(ra.ppv) + " &nbsp; B: FPR " + f3(rb.fpr) + ", TPR " + f3(rb.tpr) + ", PPV " + f3(rb.ppv) + ". FPR gap " + gapF.toFixed(3) + ", PPV gap " + gapP.toFixed(3) + ". Errors per 1000 people: A " + (1000 * ra.errors).toFixed(0) + ", B " + (1000 * rb.errors).toFixed(0) + ". " + (Math.min(ra.tpr, rb.tpr) >= 0.6 - 1e-9 ? "Both TPR are at least 0.6." : "A TPR is below the floor 0.6."));
+
+  const ch = document.getElementById("challenge");
+  if (challengeTest) { const ok = !!challengeTest(p); ch.hidden = false; ch.dataset.ok = String(ok);
+    ch.innerHTML = "<b>Challenge:</b> " + CHALLENGE + " &nbsp; " + (ok ? "<b>Done!</b>" : "Not yet.");
+    if (ok !== lastOk) { document.getElementById("status").textContent = ok ? "Challenge done." : "Challenge not yet done."; lastOk = ok; } }
+}
+const box = document.getElementById("controls");
+const inputs = {};
+for (const q of PARAMS) {
+  p[q.id] = q.value;
+  const row = document.createElement("div"); row.className = "row";
+  row.innerHTML = `<label for="${q.id}">${q.label} (${q.unit || "no unit"})</label>` +
+    `<input id="${q.id}" type="range" min="${q.min}" max="${q.max}" step="${q.step}" value="${q.value}">` +
+    `<output for="${q.id}">${q.value}</output>`;
+  const inp = row.querySelector("input"), out = row.querySelector("output");
+  inputs[q.id] = [inp, out];
+  inp.addEventListener("input", () => { p[q.id] = +inp.value; out.textContent = inp.value; draw(); });
+  box.appendChild(row);
+}
+function setAll(vals) { for (const k in vals) { p[k] = vals[k]; if (inputs[k]) { inputs[k][0].value = vals[k]; inputs[k][1].textContent = vals[k]; } } draw(); }
+const DEFAULTS = Object.assign({}, p);
+document.getElementById("reset").addEventListener("click", () => setAll(DEFAULTS));
+for (const g of GRAPHS) {
+  const b = document.createElement("button"); b.type = "button"; b.textContent = g.label;
+  b.setAttribute("aria-pressed", String(g.id === graph));
+  b.addEventListener("click", () => { graph = g.id; for (const x of document.querySelectorAll("#graphs button")) x.setAttribute("aria-pressed", String(x === b)); draw(); });
+  document.getElementById("graphs").appendChild(b);
+}
+for (const pr of PRESETS) {
+  const b = document.createElement("button"); b.type = "button"; b.textContent = pr.label;
+  b.addEventListener("click", () => setAll(pr.values));
+  document.getElementById("presets").appendChild(b);
+}
+matchMedia("(prefers-color-scheme: dark)").addEventListener("change", draw);
+draw();
+</script>
+</body>
+</html>

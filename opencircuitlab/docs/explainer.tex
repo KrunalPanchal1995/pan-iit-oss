@@ -1,0 +1,364 @@
+\documentclass[11pt,a4paper]{article}
+\usepackage[T1]{fontenc}
+\usepackage[margin=2.3cm]{geometry}
+\usepackage{amsmath,amssymb}
+\usepackage{graphicx}
+\usepackage[dvipsnames]{xcolor}
+\usepackage{enumitem}
+\usepackage[colorlinks=true,linkcolor=blue,urlcolor=blue]{hyperref}
+\setlength{\parskip}{0.6em}
+\setlength{\parindent}{0pt}
+\begin{document}
+
+\begin{center}{\LARGE\bfseries opencircuitlab}\\[0.4em]{\large Build series and parallel circuits and solve them with Kirchhoff's laws.}\\[0.2em]\small PAN IIT OSS explainer \textbullet{} secondary school to diploma / undergraduate (levels 3-5)\end{center}
+
+\section*{Why this exists}
+Every circuit, from a torch to a sensor board, obeys two simple conservation laws. This explainer shows how they turn into one matrix equation, so that any resistor network can be solved by a few lines of Python.
+
+\section*{The end goal}
+Build series and parallel circuits and solve them with Kirchhoff's laws. The end goal is to build series and parallel circuits and solve them with Kirchhoff's laws: by hand for small circuits, and with a nodal-analysis solver for any network, validated against hand results and against energy conservation. The same method sits inside circuit simulators used throughout electronics.
+
+\section*{How the five sessions build up}
+\begin{enumerate}[nosep]
+\item \textbf{Session 1: A battery, a switch and bulbs: series and parallel} (Level 1, conceptual interactive model, 60 min).
+\item \textbf{Session 2: Kirchhoff's laws, dividers and the loading effect} (Level 2, mathematical engineering model, 80 min).
+\item \textbf{Session 3: Nodal analysis by matrix, Thevenin and the sensor bridge} (Level 3, simulation and validation, 90 min).
+\item \textbf{Session 4: Read a netlist: text in, voltages out} (Level 3, simulation and validation, 90 min).
+\item \textbf{Session 5: A nonlinear part: the diode and Newton's method} (Level 3, simulation and validation, 90 min).
+\end{enumerate}
+
+\section{Session 1: A battery, a switch and bulbs: series and parallel}
+
+\subsection*{A. Real-world problem}
+Old festival lights were wired in one long chain: when one bulb burned out, the whole string went dark, and when you added more bulbs, all of them got dimmer. A torch with two bulbs on the same battery behaves differently. Why does the same battery make bulbs glow dim in one wiring and bright in another, and what does the battery pay for the brightness? (Low-voltage educational circuits only: never experiment with mains electricity.)
+
+\subsection*{B. Concept and theory}
+A battery pushes charge round a closed loop. In a series chain there is only one path, so the same current passes through every bulb, one after another; the resistances add up and the battery voltage is shared between the bulbs. In a parallel bank every bulb is connected straight across the battery, so each gets the full voltage and carries its own current; the battery has to supply all those currents together. Power in a bulb is P = V I = I\textasciicircum{}2 R = V\textasciicircum{}2 / R, and we take brightness to be proportional to it. A switch is just a gap: open means no loop and no current.
+
+\begin{itemize}[nosep]
+\item V: battery voltage (V)
+\item R: resistance of one bulb (model value 10) (ohm)
+\item N: number of identical bulbs (no unit)
+\item I: current drawn from the battery (A)
+\item P: power in one bulb (heat and light) (W)
+\end{itemize}
+
+\begin{equation*}
+I=\frac{V}{R}\qquad P=VI=I^2R=\frac{V^2}{R}
+\end{equation*}
+
+\begin{equation*}
+\text{series: } R_{\mathrm{tot}}=NR,\quad I=\frac{V}{NR},\quad V_{\mathrm{bulb}}=\frac{V}{N},\quad P_{\mathrm{bulb}}=\frac{V^2}{N^2R}
+\end{equation*}
+
+\begin{equation*}
+\text{parallel: } R_{\mathrm{tot}}=\frac{R}{N},\quad I=\frac{NV}{R},\quad V_{\mathrm{bulb}}=V,\quad P_{\mathrm{bulb}}=\frac{V^2}{R}
+\end{equation*}
+
+\begin{center}\includegraphics[width=0.85\linewidth]{figures/s01_bulbs_compare.png}\\\small Each bulb's power and the battery current for 1 to 6 bulbs on 6 V, in series and in parallel.\end{center}
+
+\subsection*{E. Worked example}
+A 6 V battery feeds three bulbs of 10 ohm each. Find the current, the voltage across each bulb and its power for (a) the series wiring and (b) the parallel wiring.
+\begin{enumerate}[nosep]
+\item Series: R\_total = 3 * 10 = 30 ohm, so I = 6 / 30 = 0.2 A, the same in every bulb.
+\item Voltage across each bulb = I R = 0.2 * 10 = 2 V (three of them add to 6 V, as they must).
+\item Power in each bulb = V I = 2 * 0.2 = 0.4 W; total 1.2 W, which equals battery voltage times current, 6 * 0.2.
+\item Parallel: each bulb sees 6 V, so its current is 6 / 10 = 0.6 A and its power is 6 * 0.6 = 3.6 W.
+\item The battery supplies 3 * 0.6 = 1.8 A and 10.8 W in total. Parallel gives each bulb 9 times the power of series, since the voltage is 3 times larger and power goes with the square.
+\end{enumerate}
+\textbf{Answer.} Series: 0.2 A, 2 V and 0.4 W per bulb. Parallel: 1.8 A from the battery, 6 V and 3.6 W per bulb.
+
+\subsection*{F. Questions}
+\begin{enumerate}[nosep]
+\item \textbf{Conceptual.} In a series string of festival bulbs, one bulb fails by breaking its filament. Why do all the other bulbs go out, and why would they stay lit in a parallel string?
+\item \textbf{Numerical.} A 9 V battery feeds three 10 ohm bulbs. Find the current and the power in each bulb for the series wiring and for the parallel wiring.
+\item \textbf{Graph and simulation interpretation.} On the brightness graph at 6 V, how many times dimmer is each bulb for 4 bulbs in series than for 4 bulbs in parallel? Read the two values from the curves.
+\item \textbf{Design and optimisation challenge.} Design: a small 6 V battery can supply at most 1 A. You must light three 10 ohm bulbs and want each to get at least 0.3 W. Compare three wirings: all series, all parallel, and one bulb in series with a parallel pair. Which are allowed, and which would you choose?
+\end{enumerate}
+
+\section{Session 2: Kirchhoff's laws, dividers and the loading effect}
+
+\subsection*{A. Real-world problem}
+A microcontroller board runs on 3.3 V, but your battery pack gives 5 V. Two resistors can drop the voltage, and they do it perfectly until you connect the sensor: then the output sags to 2.7 V and the board misbehaves. And what if a second battery is connected to the same circuit, and the current in it flows the 'wrong' way? You need two laws that always hold, and a design method. (Low-voltage educational circuits only; this is a simplified model, not a design for real equipment.)
+
+\subsection*{B. Concept and theory}
+Kirchhoff's current law: at any node (a point where wires meet) the currents flowing in equal the currents flowing out, because charge does not pile up. Kirchhoff's voltage law: going once round any closed loop, the voltage rises and drops add up to zero, because energy is conserved. A voltage divider is two resistors in series across V\_in: the same current I = V\_in / (R1 + R2) flows through both, so V\_out across R2 is V\_in R2 / (R1 + R2). A current divider splits a total current between two parallel branches: the smaller resistor takes the larger share. A load R\_L across R2 puts R\_L in parallel with it, which lowers the lower resistance and so lowers V\_out: this is the loading effect. For a circuit with two loops, write KVL for each loop with the loop currents as unknowns and solve the two equations together; a negative answer means the current really flows the other way. For a design, work backwards: the loaded lower resistance must equal R1 V\_target / (V\_in - V\_target), and R2 is found from R2 \textbar{}\textbar{} R\_L.
+
+\begin{itemize}[nosep]
+\item V\_in: input voltage (5) (V)
+\item V\_out: voltage across the lower resistor and the load (V)
+\item R1, R2: upper and lower divider resistors (ohm)
+\item R\_L: load resistance connected across R2 (ohm)
+\item I1, I2: currents delivered by battery 1 and battery 2 (A)
+\item V\_A: voltage of the node where both batteries and R3 meet (V)
+\end{itemize}
+
+\begin{equation*}
+\sum I_{\mathrm{in}}=\sum I_{\mathrm{out}}\ \text{(KCL)}\qquad \sum V_{\mathrm{loop}}=0\ \text{(KVL)}
+\end{equation*}
+
+\begin{equation*}
+V_{\mathrm{out}}=V_{\mathrm{in}}\frac{R_2}{R_1+R_2}\qquad I_1=I_t\frac{R_2}{R_1+R_2}
+\end{equation*}
+
+\begin{equation*}
+V_{\mathrm{out}}=V_{\mathrm{in}}\frac{R_2\parallel R_L}{R_1+R_2\parallel R_L},\qquad R_2\parallel R_L=\frac{R_2R_L}{R_2+R_L}
+\end{equation*}
+
+\begin{equation*}
+\begin{pmatrix}R_1+R_3 & R_3\\ R_3 & R_2+R_3\end{pmatrix}\begin{pmatrix}I_1\\ I_2\end{pmatrix}=\begin{pmatrix}V_1\\ V_2\end{pmatrix}
+\end{equation*}
+
+\begin{equation*}
+\frac{1}{R_2}=\frac{1}{R_{\mathrm{low}}}-\frac{1}{R_L},\qquad R_{\mathrm{low}}=\frac{R_1V_{\mathrm{target}}}{V_{\mathrm{in}}-V_{\mathrm{target}}}
+\end{equation*}
+
+\begin{center}\includegraphics[width=0.85\linewidth]{figures/s02_divider_loading.png}\\\small Output of a 5 V divider against the load resistance: a divider is only 'stiff' for light loads.\end{center}
+
+\subsection*{E. Worked example}
+Battery 1 (V1 = 10 V) with R1 = 100 ohm and battery 2 (V2 = 4 V) with R2 = 200 ohm both feed node A; R3 = 300 ohm connects A to ground. Find I1, I2, the voltage V\_A, and check with KCL, KVL and power.
+\begin{enumerate}[nosep]
+\item Let I1 and I2 flow from the batteries towards A, so R3 carries I1 + I2. KVL on loop 1: 10 = 100 I1 + 300 (I1 + I2), that is 400 I1 + 300 I2 = 10.
+\item KVL on loop 2: 4 = 200 I2 + 300 (I1 + I2), that is 300 I1 + 500 I2 = 4.
+\item Determinant = 400 * 500 - 300 * 300 = 110000. I1 = (10 * 500 - 300 * 4) / 110000 = 3800 / 110000 = 0.034545 A. I2 = (400 * 4 - 300 * 10) / 110000 = -1400 / 110000 = -0.012727 A.
+\item R3 carries I1 + I2 = 0.021818 A, so V\_A = 300 * 0.021818 = 6.545 V. I2 is negative: battery 2 (4 V) is being charged by battery 1 because V\_A is above 4 V.
+\item Checks. KVL loop 2: 4 - 200 * (-0.012727) - 6.545 = 4 + 2.545 - 6.545 = 0. Power supplied: 10 * 0.034545 + 4 * (-0.012727) = 0.29455 W; dissipated: 0.11934 + 0.03240 + 0.14281 = 0.29455 W.
+\end{enumerate}
+\textbf{Answer.} I1 = 34.55 mA, I2 = -12.73 mA (battery 2 is charged), V\_A = 6.545 V; the power balance is 294.5 mW supplied and 294.5 mW dissipated.
+
+\subsection*{F. Questions}
+\begin{enumerate}[nosep]
+\item \textbf{Conceptual.} Why does connecting a load always lower the output of a voltage divider, and when can you safely ignore the load?
+\item \textbf{Numerical.} A 9 V source feeds R1 = 2 kohm in series with R2 = 1 kohm. Find the unloaded output, then the output with a 1 kohm load across R2. Check both with KVL.
+\item \textbf{Graph and simulation interpretation.} In the loading graph for R1 = 1700 ohm and R2 = 3300 ohm, at roughly what load resistance does the output fall to 3.0 V (about 9 percent below the target)? Which direction does the curve move if R2 is made smaller?
+\item \textbf{Design and optimisation challenge.} Design: the output must be exactly 3.3 V from 5 V with a 4.7 kohm load. Compare R1 = 220 ohm, 470 ohm and 1000 ohm. For each, find R2, the source current and the error if the load is later unplugged. Which do you choose and why?
+\end{enumerate}
+
+\section{Session 3: Nodal analysis by matrix, Thevenin and the sensor bridge}
+
+\subsection*{A. Real-world problem}
+A temperature sensor on a board is a resistor whose value changes by a fraction of a percent per degree. A Wheatstone bridge turns that tiny change into a measurable voltage, but every other resistor in the bridge is only guaranteed to 5 percent. Hand solving is already painful for three loops; real boards have hundreds of nodes. How do we let the computer solve any network, trust the answer, and predict how badly component tolerance spoils a measurement? (Low-voltage educational circuits only; this is a simplified model, not a design tool for real equipment.)
+
+\subsection*{B. Concept and theory}
+Number the nodes and choose one as the 0 V reference. A resistor R between nodes a and b carries g (v\_a - v\_b) with the conductance g = 1 / R. KCL at node a says the sum of these currents leaving the node equals the current injected into it: one row of the matrix equation G v = i. Each resistor adds a 'stamp' to G: +g on the two diagonal entries and -g on the two off-diagonal entries (rows and columns of the reference node are dropped). An ideal voltage source adds one unknown (its current) and one equation (v\_p - v\_m = V): this is modified nodal analysis. numpy.linalg.solve then finds all voltages in one call. Once solved, every branch current follows from (v\_a - v\_b)/R, and energy conservation (power supplied equals power dissipated) is a strong test of the answer. Seen from two terminals, any linear network equals a Thevenin source V\_th in series with R\_th (V\_th: open-circuit voltage; R\_th: the resistance with all sources switched off). A load R\_L takes the power V\_th\textasciicircum{}2 R\_L / (R\_th + R\_L)\textasciicircum{}2, which peaks at R\_L = R\_th with value V\_th\textasciicircum{}2 / (4 R\_th); at that point the Thevenin source wastes as much as it delivers. A Wheatstone bridge is two dividers side by side; its output is zero (balanced) when R1 R4 = R2 R3, and near balance it is about V\_s/4 times the fractional change of one arm. Component tolerances add up as random changes of all four arms, so a bridge built from 5 percent parts is never balanced exactly. If a node has no path to the reference, or two ideal sources disagree, the matrix is singular and there is no unique answer; a short circuit gives a perfectly valid but dangerous huge current.
+
+\begin{itemize}[nosep]
+\item G: conductance matrix (S (siemens, 1/ohm))
+\item v: vector of node voltages (V)
+\item i: vector of injected currents (A)
+\item g: conductance of one resistor, 1/R (S)
+\item V\_th, R\_th: Thevenin voltage and resistance (V and ohm)
+\item V\_s: bridge supply voltage (V)
+\item tol: resistor tolerance (0.05 for 5 percent) (no unit)
+\end{itemize}
+
+\begin{equation*}
+G\,\mathbf v=\mathbf i,\qquad \text{stamp of } R_{ab}:\ G_{aa}\mathrel{+}=g,\ G_{bb}\mathrel{+}=g,\ G_{ab},G_{ba}\mathrel{-}=g,\quad g=\frac1R
+\end{equation*}
+
+\begin{equation*}
+\sum P_{\mathrm{supplied}}=\sum_k \frac{(v_a-v_b)^2}{R_k}\quad\text{(power balance)}
+\end{equation*}
+
+\begin{equation*}
+P_L=\frac{V_{\mathrm{th}}^2R_L}{(R_{\mathrm{th}}+R_L)^2},\qquad P_{\max}=\frac{V_{\mathrm{th}}^2}{4R_{\mathrm{th}}}\ \text{at}\ R_L=R_{\mathrm{th}}
+\end{equation*}
+
+\begin{equation*}
+V_{\mathrm{out}}=V_s\left(\frac{R_3}{R_1+R_3}-\frac{R_4}{R_2+R_4}\right),\qquad \text{balanced when } R_1R_4=R_2R_3
+\end{equation*}
+
+\begin{equation*}
+\sigma_{V_{\mathrm{out}}}\approx\frac{V_s}{4}\cdot\frac{2\,\mathrm{tol}}{\sqrt3}\quad\text{(four equal resistors, uniform tolerance)}
+\end{equation*}
+
+\begin{center}\includegraphics[width=0.85\linewidth]{figures/s03_bridge_tolerance.png}\\\small Output of 20000 nominally balanced bridges with 5 percent resistors on 5 V.\end{center}
+
+\subsection*{E. Worked example}
+A 12 V source feeds R1 = 1 kohm in series with R2 = 2 kohm to ground. Find the Thevenin equivalent seen across R2, then the current, voltage and power in a 1 kohm load, and compare with the maximum power the network can ever deliver. Verify with one nodal equation.
+\begin{enumerate}[nosep]
+\item V\_th = open-circuit voltage across R2 = 12 * 2 / (1 + 2) = 8 V.
+\item R\_th: switch the source off (replace by a wire); R1 and R2 are then in parallel: 1000 * 2000 / 3000 = 666.7 ohm.
+\item With a 1 kohm load: I = 8 / (666.7 + 1000) = 4.8 mA, V\_load = 4.8 mA * 1 kohm = 4.8 V, P = 4.8 * 4.8 mA = 23.04 mW.
+\item Maximum power: P\_max = 8\textasciicircum{}2 / (4 * 666.7) = 24.0 mW, at R\_L = 666.7 ohm. The 1 kohm load gets 96 percent of that.
+\item Nodal check with the node between the resistors: (v - 12)/1000 + v/2000 + v/1000 = 0, so v * 0.0025 = 0.012 and v = 4.8 V. It agrees with V\_load.
+\end{enumerate}
+\textbf{Answer.} V\_th = 8 V, R\_th = 666.7 ohm; the 1 kohm load gets 4.8 V, 4.8 mA and 23.04 mW; the maximum possible is 24.0 mW at R\_L = 666.7 ohm.
+
+\subsection*{F. Questions}
+\begin{enumerate}[nosep]
+\item \textbf{Conceptual.} Why does a circuit with a node that is not connected to the reference node (a floating node) make G singular, and what does the error mean physically?
+\item \textbf{Numerical.} For the 12 V, 1 kohm and 2 kohm network of Section E find the load that would receive 20 mW. Is there more than one answer? Check against P\_max.
+\item \textbf{Graph and simulation interpretation.} In the histogram of 20000 bridges with 5 percent resistors on 5 V, the standard deviation is 72 mV. A 1 percent change of one arm gives a signal of 12.4 mV. What does this tell you about using 5 percent resistors for a sensor, and what would change with 1 percent resistors?
+\item \textbf{Design and optimisation challenge.} Design: the Pt1000 bridge needs at least 100 mV at 100 degrees C and at most 1 mW in the sensor, with three fixed 1 kohm resistors. Choose the supply voltage, justify it, and say what limits the accuracy at 5 percent tolerance.
+\end{enumerate}
+
+\section{Session 4: Read a netlist: text in, voltages out}
+
+\subsection*{A. Real-world problem}
+Every circuit in Sessions 1 to 3 was a Python list of tuples. Real circuit simulators read a *netlist*, a text file with one line per part, such as \texttt{R1 top1 A 100}: resistor R1 between the nodes top1 and A, 100 ohm. Text is easy to write, to share by e-mail and to keep with a project, and it is easy to get wrong. A technician sends the file of the Pt1000 bridge with the words 'it does not work'. One letter in it (\texttt{1M} instead of \texttt{1meg} or \texttt{1k}) makes a resistor a thousand million times too small, and the simulator may solve the file without a murmur. How do we read a file reliably, and how do we find every mistake in it, not only the first? (Low-voltage educational circuits only; this is a simplified model, not a design tool for real equipment.)
+
+\subsection*{B. Concept and theory}
+A netlist line has four fields: a name whose first letter gives the kind of part (R resistor, V voltage source, I current source), two nodes, and a value. The node \texttt{0} (or \texttt{gnd}) is the reference; other nodes may have any name, and the reader numbers them 1, 2, 3 in the order they first appear. Values use the scale letters of SPICE: t, g, meg, k, m, u, n, p, f for 10\textasciicircum{}12, 10\textasciicircum{}9, 10\textasciicircum{}6, 10\textasciicircum{}3, 10\textasciicircum{}-3, 10\textasciicircum{}-6, 10\textasciicircum{}-9, 10\textasciicircum{}-12 and 10\textasciicircum{}-15. They are not case sensitive, so \textbf{M also means milli}: for a million write \texttt{meg}. Letters after the scale are a unit and are ignored (\texttt{5V}, \texttt{2mA}, \texttt{1kohm}), and \texttt{1F} is one femto because f is a scale letter. A line starting with \texttt{*} is a comment, \texttt{;} starts a comment at the end of a line, and \texttt{.end} stops the reading. Reading means three jobs: split the line into fields, convert the value with one regular expression (a number, then letters), and put the part in the right list for the Session 3 solver. A reader should refuse what it does not understand and say where: \texttt{line 7: the name 'R2' is already used}. A good reader and writer are inverses: writing a circuit as text and reading it back must give the same circuit, which we test on random networks (the round trip). A checker (a *lint*) is a second program that reads the whole file without stopping and lists every problem, sorted into errors (the file cannot be solved: unreadable value, repeated name, both ends of a part on one node, no ground, a floating group of nodes) and warnings (the file is valid but suspicious: a resistor below 0.1 ohm or above 100 megohm). A solver cannot tell a wrong value from a right one, so the checker and a hand estimate are the only protection. Finally a meter has its own resistance R\_m, so it reads V\_th R\_m / (R\_th + R\_m) instead of V\_th: the meter *loads* the circuit.
+
+\begin{itemize}[nosep]
+\item name: first letter gives the kind: R, V or I (no unit)
+\item node: a point where parts meet; 0 or gnd is the reference (no unit)
+\item value: a number with an optional scale letter, e.g. 4.7k (ohm, V or A)
+\item meg, k, m, u: scale letters: 10\textasciicircum{}6, 10\textasciicircum{}3, 10\textasciicircum{}-3, 10\textasciicircum{}-6 (no unit)
+\item R\_th, V\_th: Thevenin resistance and voltage of the circuit seen by the meter (ohm and V)
+\item R\_m: input resistance of the meter (ohm)
+\end{itemize}
+
+\begin{equation*}
+\text{value}=\text{number}\times 10^{e},\quad e=3\ (\texttt{k}),\ 6\ (\texttt{meg}),\ -3\ (\texttt{m}\ \text{or}\ \texttt{M}),\ -6\ (\texttt{u})
+\end{equation*}
+
+\begin{equation*}
+\text{parse\_netlist}(\text{to\_netlist}(\text{circuit}))=\text{circuit}\quad\text{(round trip)}
+\end{equation*}
+
+\begin{equation*}
+V_{\mathrm{read}}=V_{\mathrm{th}}\,\frac{R_m}{R_{\mathrm{th}}+R_m},\qquad \text{loading error}=\frac{R_{\mathrm{th}}}{R_{\mathrm{th}}+R_m}
+\end{equation*}
+
+\begin{center}\includegraphics[width=0.7\linewidth]{figures/s04_value_suffixes.png}\\\small The same digits with different suffixes: 1m and 1M agree, 1meg is a million times larger.\end{center}
+
+\begin{center}\includegraphics[width=0.7\linewidth]{figures/s04_typo_effect.png}\\\small V(A) of the two-loop circuit against R3, with the same digits typed with four suffixes.\end{center}
+
+\begin{center}\includegraphics[width=0.7\linewidth]{figures/s04_bridge_from_text.png}\\\small Bridge output against temperature: the formula and files read and solved.\end{center}
+
+\subsection*{E. Worked example}
+A student writes the file \texttt{V1 in 0 12}, \texttt{R1 in out 10k}, \texttt{R2 out 0 1M} and expects a divider that gives about 12 V at \texttt{out}. Read the file by hand, give V(out) and the current of V1 as written, then the same for the intended 1meg, and say what the checker reports.
+\begin{enumerate}[nosep]
+\item Values: \texttt{12} is 12 V, \texttt{10k} is 10 000 ohm and \texttt{1M} is 0.001 ohm, because M means milli. The intended 1 megohm is \texttt{1meg}.
+\item Nodes: \texttt{0} is the reference, \texttt{in} becomes node 1 and \texttt{out} node 2 (order of appearance).
+\item As written the divider is V(out) = 12 x 0.001 / (10 000 + 0.001) = 1.2e-6 V (1.2 microvolt) and the source supplies 12 / 10 000.001 = 1.2 mA.
+\item With \texttt{1meg}: V(out) = 12 x 1 000 000 / 1 010 000 = 11.88 V and the current is 12 / 1 010 000 = 11.88 microampere.
+\item The checker reports one warning on line 3: R2 is only 1m ohm (M means milli; for mega write meg). The file is valid, so it is a warning and not an error.
+\end{enumerate}
+\textbf{Answer.} As written: 1.2 microvolt and 1.2 mA. As intended: 11.88 V and 11.88 microampere. The checker warns about line 3.
+
+\subsection*{F. Questions}
+\begin{enumerate}[nosep]
+\item \textbf{Conceptual.} The checker reports the line \texttt{R4 b 0 1M} (1 milliohm) as a warning, not an error, although it is almost certainly a typo for \texttt{1meg}. Why is a warning the right level, and give one real part that has a resistance of about a milliohm?
+\item \textbf{Numerical.} The repaired bridge has V\_th = 403.56 mV and R\_th = 1080.7 ohm as seen by the meter. A meter should take away at most 0.5 percent of the reading. What input resistance does it need, and which meter from the list 1k, 2k, 5k, ... 100meg is the smallest that works? Give a sanity check.
+\item \textbf{Graph and simulation interpretation.} In Figure 2 the same digits 300 give V(A) = 0.036 V with the suffix m, 6.545 V with no suffix and 7.998 V with k. Both wrong suffixes are one letter away from the intended file. Which typo is more dangerous, and why?
+\item \textbf{Design and optimisation challenge.} Design: you have to write the checker for a classroom where students type netlists by hand. Choose five rules, say which are errors and which are warnings, and name one mistake your checker can never find.
+\end{enumerate}
+
+\section{Session 5: A nonlinear part: the diode and Newton's method}
+
+\subsection*{A. Real-world problem}
+Every part so far obeyed Ohm's law, so one matrix equation G v = i solved the whole circuit. A diode does not: its current grows exponentially with the voltage across it, so there is no single conductance to put into G. Yet a 5 V supply, a 1 kohm resistor and a diode is the simplest indicator circuit there is. How much current flows and what voltage does the diode drop? We keep the linear solver of Session 3 and put a loop around it: at each pass replace the diode by the resistor and current source that match it at the present voltage, solve, and repeat until Kirchhoff's current law holds. That is Newton's method, and it sits inside every circuit simulator. (Low-voltage educational circuits only; this is a simplified model, not a design tool for real equipment.)
+
+\subsection*{B. Concept and theory}
+A silicon diode follows the Shockley law I = I\_s (exp(V / (n V\_T)) - 1) for the voltage V from anode to cathode. Here I\_s = 1e-12 A is the leakage current, n = 1 an ideality factor and V\_T = 25.852 mV the thermal voltage at 300 K. Below 0.4 V almost nothing flows, and every 60 mV more multiplies the current by ten. The slope g = dI/dV = (I + I\_s) / (n V\_T) is the conductance at that voltage. The tangent line at V\_0 is I = g V + i\_eq with i\_eq = I(V\_0) - g V\_0: a resistor 1/g in parallel with a current source i\_eq. This is the companion model of the diode, and it is linear, so \texttt{solve\_network} can use it. One pass is: linearise every diode at its working voltage, solve, and measure the KCL residual of the solution with the true diode law (the sum of the currents leaving each node; zero when KCL holds). If the residual is below 1e-9 A and every diode voltage agrees with the one it was linearised at, stop; otherwise the solution becomes the next working voltage. For a diode in series with R the unknown is one voltage, and a pass is V\_new = (V\_s / R - i\_eq) / (1 / R + g). The loop has a trap. At 0 V the diode is almost an open circuit, so the first solve puts nearly all of V\_s across it; the next pass linearises at 5 V, where g is about 1e61 S, and the solver reports a singular matrix. The cure used by circuit simulators is a limiter: a rising step dV in the working voltage is shortened to n V\_T ln(1 + dV / (n V\_T)). To check the answer by a second method the series circuit can be solved by bisection (halve an interval in which the sign of the current mismatch changes), which shares no code with the Newton loop.
+
+\begin{itemize}[nosep]
+\item I, V: diode current and voltage (anode to cathode) (A and V)
+\item I\_s: saturation (leakage) current, 1e-12 A (A)
+\item n V\_T: ideality factor times thermal voltage, 25.852 mV (V)
+\item g: slope of the diode curve at a voltage (S)
+\item i\_eq: current of the companion source (A)
+\item V\_0: working voltage where the diode is linearised (V)
+\item residual: amount by which KCL fails at a node (A)
+\end{itemize}
+
+\begin{equation*}
+I=I_s\left(e^{V/(nV_T)}-1\right),\qquad g=\frac{dI}{dV}=\frac{I+I_s}{nV_T},\qquad i_{\mathrm{eq}}=I(V_0)-g\,V_0
+\end{equation*}
+
+\begin{equation*}
+V_{\mathrm{new}}=\frac{V_s/R-i_{\mathrm{eq}}}{1/R+g}\quad\text{(one Newton step, diode in series with R)}
+\end{equation*}
+
+\begin{equation*}
+\Delta V_{\mathrm{limited}}=nV_T\ln\!\left(1+\frac{\Delta V}{nV_T}\right)\quad\text{(rising steps only)}
+\end{equation*}
+
+\begin{center}\includegraphics[width=0.7\linewidth]{figures/s05_load_line.png}\\\small Load line and diode curve with the working voltages of the Newton passes.\end{center}
+
+\begin{center}\includegraphics[width=0.7\linewidth]{figures/s05_residual.png}\\\small Residual of each pass with and without the limiter.\end{center}
+
+\begin{center}\includegraphics[width=0.7\linewidth]{figures/s05_diode_voltage.png}\\\small Diode voltage against the supply voltage for three resistors, and the 0.7 V rule.\end{center}
+
+\subsection*{E. Worked example}
+For the 5 V, 1 kohm and diode circuit, make one Newton step by hand from the starting guess V\_0 = 0.6 V. Find the tangent (g and i\_eq), the new diode voltage, and the KCL residual before and after. Compare with the exact answer.
+\begin{enumerate}[nosep]
+\item The current at 0.6 V: I = 1e-12 (exp(0.6 / 0.025852) - 1) = 12.01 mA.
+\item The slope there: g = (I + I\_s) / (n V\_T) = 0.01201 / 0.025852 = 0.4646 S.
+\item The companion source: i\_eq = I - g V\_0 = 0.01201 - 0.4646 x 0.6 = -0.2667 A.
+\item The new voltage: V = (V\_s / R - i\_eq) / (1 / R + g) = (0.005 + 0.2667) / (0.001 + 0.4646) = 0.5837 V.
+\item The residual before is (0.6 - 5) / 1000 + 12.01 mA = +7.61 mA; after the step it is (0.5837 - 5) / 1000 + I(0.5837) = +1.97 mA. The exact answer (bisection) is 0.5742 V: the step cut the error from 25.8 mV to 9.5 mV, and the loop converges in 5 passes from 0.6 V.
+\end{enumerate}
+\textbf{Answer.} g = 0.4646 S, i\_eq = -0.2667 A, new voltage 0.5837 V (exact 0.5742 V); the residual falls from 7.61 mA to 1.97 mA.
+
+\subsection*{F. Questions}
+\begin{enumerate}[nosep]
+\item \textbf{Conceptual.} Why can the diode not be put into the matrix equation G v = i of Session 3 with a fixed conductance, and what exactly does the companion model (a resistor and a current source) replace at each pass?
+\item \textbf{Numerical.} Do one plain Newton step for the 5 V, 1 kohm circuit from the starting guess 0.5 V instead of 0.6 V. Give g, i\_eq, the new diode voltage and the KCL residual before and after. What do you notice, and what does it predict for the number of passes?
+\item \textbf{Graph and simulation interpretation.} In Figure 2 the residual of the first four passes is above 1e71 A and only the fifth is below 1 A, yet the loop ends after 7 passes at 4e-16 A. Does this mean the first passes were wrong? What does the residual measure and what is the limiter doing?
+\item \textbf{Design and optimisation challenge.} Design: a colleague's simulator uses plain Newton from 0 V and reports 'singular matrix' for the 5 V, 1 kohm diode circuit. Propose two repairs, say how you would test them, and name a risk of each.
+\end{enumerate}
+
+\section{Real-world mini-project}
+\textbf{Design a Pt1000 temperature-sensor bridge.} A Pt1000 sensor has the resistance 1000 (1 + 0.00385 T) ohm for a temperature T in degrees Celsius (a straight-line approximation). Put it in one arm of a Wheatstone bridge whose other three resistors are 1000 ohm, so the bridge is balanced at 0 degrees C. You choose only the supply voltage in steps of 0.1 V between 1.0 V and 5.0 V. Requirements: the output at 100 degrees C must be at least 100 mV, and the heat in the sensor at 100 degrees C must not exceed 1 mW (more heat warms the sensor and falsifies the reading). Use \texttt{sensor\_bridge\_out}, \texttt{sensor\_power} and \texttt{monte\_carlo\_bridge} from Session 3.
+
+\textbf{Debug the technician's bridge file.} The technician's file of the Pt1000 bridge at 100 degrees C (5 V supply, Pt1000 = 1385 ohm) is the string \texttt{TECH\_NETLIST} in the lesson. It has three mistakes. Use \texttt{check\_netlist}, \texttt{corrected\_bridge}, \texttt{bridge\_output}, \texttt{loading\_error} and \texttt{smallest\_meter} from the lesson. \textbf{Deliverable:} A script that prints every problem of the technician's file with its line number and level; solves the repaired bridge from text and compares it with the closed formula; shows what the output would have been with the typo left in; and prints the reading and the loading error for meters of 1k, 10k, 100k and 1meg and the smallest meter from the 1-2-5 list that loses at most 1 percent. It also saves a graph of the bridge output against temperature made from files. \textbf{Success looks like:} The checker finds the warning on line 6 (R4 = 1M is 1 milliohm) and the errors on line 7 (name R2 used twice) and line 8 (nodes c and d floating). The repaired bridge gives 403.56 mV, the same as the formula. With the typo node b is at 0 V, not 2.5 V. A 10 kohm meter reads 364.20 mV (a 9.8 percent loading error), a 100 kohm meter loses 1.07 percent, and the smallest meter that loses at most 1 percent is 200 kohm.
+
+\textbf{Choose the resistor of a diode indicator.} A 5 V supply that may be anywhere from 4.5 V to 5.5 V lights a diode (an indicator) through a series resistor from the E12 series (1.0, 1.2, 1.5, 1.8, 2.2, 2.7, 3.3, 3.9, 4.7, 5.6, 6.8, 8.2 times a power of ten). The current must be at least 3 mA at 4.5 V (so that it is visible) and at most 10 mA at 5.5 V (so that it is safe). Among the resistors that work, take the largest: it wastes the least power. Use \texttt{indicator\_table}, \texttt{choose\_indicator\_resistor}, \texttt{series\_diode\_exact} and \texttt{constant\_drop\_error} from the lesson. \textbf{Deliverable:} A script that prints, for every E12 resistor from 10 ohm to 82 kohm, the current at 4.5 V and at 5.5 V, the diode voltage and the power in the resistor at 5.5 V, marks which resistors pass, picks the largest passing one, compares its currents with the 0.7 V rule, and saves a graph of the diode voltage against the supply. \textbf{Success looks like:} The passing resistors are 560, 680, 820 and 1000 ohm and 1.2 kohm; 470 ohm fails the 10 mA limit (10.43 mA) and 1.5 kohm fails the 3 mA limit (2.63 mA). The choice is 1.2 kohm: 3.28 mA at 4.5 V, 4.11 mA at 5.5 V and 20 mW in the resistor. The 0.7 V rule would predict 3.17 mA and 4.00 mA, about 3 percent too low.
+
+\section{The path ahead}
+\begin{enumerate}[nosep]
+\item \textbf{Session 6: An amplifier from a controlled source.} A controlled-source stamp and an inverting amplifier built with it.
+\item \textbf{Session 7: Sensitivity without Monte Carlo.} A function returning dVout/dR for every resistor of any network.
+\item \textbf{Session 8: Time enters: the RC circuit.} A transient solver for a resistor and a capacitor on a step input.
+\end{enumerate}
+
+\section{Answers and hints}
+
+\subsection*{Session 1}
+\begin{enumerate}[nosep]
+\item \textbf{Conceptual.} Hint: A current needs a closed loop. How many loops are there in each wiring? Solution: In a series string there is only one path for the current. A broken filament is a gap in that path, so the current is zero everywhere and every bulb goes dark. In a parallel string each bulb has its own path straight across the battery. A gap in one path does not affect the others, so they keep their full voltage and stay lit (the battery just supplies a little less current).
+\item \textbf{Numerical.} Hint: Series: R\_total = N R. Parallel: each bulb has the full 9 V. Then P = V I. Solution: Series: R\_total = 30 ohm, I = 9 / 30 = 0.3 A, each bulb gets 3 V and P = 3 * 0.3 = 0.9 W. Parallel: each bulb gets 9 V, I per bulb = 0.9 A, P = 9 * 0.9 = 8.1 W, battery current 2.7 A. Sanity check: parallel is 9 times brighter than series for 3 bulbs (N\textasciicircum{}2 = 9), and 0.9 * 9 = 8.1.
+\item \textbf{Graph and simulation interpretation.} Hint: Find the blue and green curves at N = 4. Solution: At N = 4 the green (parallel) curve is at 3.6 W and the blue (series) curve at 0.225 W. The ratio is 3.6 / 0.225 = 16 = N\textasciicircum{}2. The blue curve falls like 1 / N\textasciicircum{}2, the green one is flat.
+\item \textbf{Design and optimisation challenge.} Hint: Compute the battery current and the power in each bulb for each wiring. Solution: All series: I = 0.2 A, 0.4 W per bulb: allowed. All parallel: I = 1.8 A, which is above the 1 A limit: not allowed. One bulb in series with a pair in parallel: R = 10 + 5 = 15 ohm, I = 0.4 A; the lone bulb gets 4 V and 1.6 W, each bulb of the pair 2 V and 0.4 W: allowed, and brighter overall, but unevenly. All series is the simplest and gives equal brightness; the mixed wiring gives more light at the cost of unequal bulbs and a failure of the lone bulb putting the whole circuit out. Assumption: ideal battery and fixed bulb resistance.
+\end{enumerate}
+
+\subsection*{Session 2}
+\begin{enumerate}[nosep]
+\item \textbf{Conceptual.} Hint: What happens to the resistance of the lower part when a load is put across it? Solution: The load is in parallel with R2, and a parallel combination is always smaller than either part: R2 \textbar{}\textbar{} R\_L \textless{} R2. A smaller lower resistance takes a smaller share of the input voltage, so V\_out falls. The load can be ignored when R\_L is much larger than R2 (a common rule is at least 10 times larger): then R2 \textbar{}\textbar{} R\_L is only slightly smaller than R2.
+\item \textbf{Numerical.} Hint: With the load, the lower resistance is 1 kohm \textbar{}\textbar{} 1 kohm. Solution: Unloaded: 9 * 1 / (2 + 1) = 3.0 V. With the load: the lower part is 0.5 kohm, so V\_out = 9 * 0.5 / (2 + 0.5) = 1.8 V. KVL check: the current is 9 / 2.5 kohm = 3.6 mA, drop across R1 = 3.6 mA * 2 kohm = 7.2 V, and 7.2 + 1.8 = 9 V. The load took 40 percent of the output voltage away.
+\item \textbf{Graph and simulation interpretation.} Hint: The curve crosses 3.0 V between the readings at 10 kohm (2.967 V) and 47 kohm (3.223 V). Solution: The output is 3.0 V when the lower part is 2550 ohm, which needs R\_L = 2550 * 3300 / (3300 - 2550) = 11.2 kohm: the curve crosses 3.0 V between 10 and 47 kohm, at about 11 kohm. Making R2 smaller lowers the whole curve (the unloaded value falls) but flattens it, since a smaller R2 is less disturbed by the same load. Reading the units: the x axis is ohm, the y axis volts.
+\item \textbf{Design and optimisation challenge.} Hint: Use R\_low = R1 * 3.3 / 1.7 and then 1 / R2 = 1 / R\_low - 1 / R\_L, or call design\_r2 and stiffness\_table in lesson.py. Solution: R1 = 220: R2 = 469.7 ohm, source current 7.73 mA, unplugging the load raises the output by 0.105 V. R1 = 470: R2 = 1132 ohm, 3.62 mA, +0.233 V. R1 = 1000: R2 = 3307 ohm, 1.70 mA, +0.539 V. Small resistors give a stiff divider (little change with the load) but waste current and heat; large resistors save current but change a lot if the load changes. A reasonable compromise is R1 = 470 or 1000 ohm depending on the battery budget; with a fixed load, R1 = 1000 and the standard 3.3 kohm (output 3.299 V, 1.7 mA) is within 0.1 percent. R1 = 4700 is impossible: the load alone would pull the output below the target.
+\end{enumerate}
+
+\subsection*{Session 3}
+\begin{enumerate}[nosep]
+\item \textbf{Conceptual.} Hint: What fixes the voltage of a node? What happens to all voltages if you add 1 V to every node of the floating part? Solution: Only voltage differences matter to resistors. If a group of nodes has no path to the 0 V reference, adding the same voltage to all of them changes no current, so the equations cannot fix their absolute voltage: G has a zero eigenvalue, it is singular, and there are infinitely many solutions. Physically the floating part has no defined voltage: connect it to the reference (or add a reference resistor) to make it solvable. Two different ideal sources across the same two nodes are also singular: they demand two voltages at once.
+\item \textbf{Numerical.} Hint: Solve V\_th\textasciicircum{}2 R\_L / (R\_th + R\_L)\textasciicircum{}2 = 0.020 with V\_th = 8 V and R\_th = 666.7 ohm; it is a quadratic in R\_L. Solution: 64 R\_L = 0.020 (R\_th + R\_L)\textasciicircum{}2 gives R\_L\textasciicircum{}2 + (2 R\_th - 3200) R\_L + R\_th\textasciicircum{}2 = 0, that is R\_L\textasciicircum{}2 - 1866.7 R\_L + 444444 = 0. The roots are R\_L = (1866.7 +- sqrt(1866.7\textasciicircum{}2 - 4 * 444444)) / 2 = (1866.7 +- 1306.4)/2 = 280.2 ohm and 1586.5 ohm. Two answers, one on each side of R\_th = 666.7, since 20 mW is less than P\_max = 24 mW. A target above 24 mW would have no solution.
+\item \textbf{Graph and simulation interpretation.} Hint: Compare the spread with the signal. The spread scales with the tolerance. Solution: The offset error (72 mV, one standard deviation) is about six times larger than the signal from a 1 percent change in the sensor: the unadjusted bridge cannot resolve small changes, and only about 11 percent of bridges are within 10 mV of zero. With 1 percent resistors the spread shrinks 5 times to about 14 mV. In practice the zero offset is measured once and subtracted (calibration), or one arm is trimmed with a potentiometer.
+\item \textbf{Design and optimisation challenge.} Hint: Use sensor\_bridge\_out(vs, 100) and sensor\_power(vs, 100) for supply voltages in steps of 0.1 V, then run monte\_carlo\_bridge. Solution: The output is 80.7 mV per volt of supply, so 100 mV needs at least 1.3 V; the sensor heat grows as Vs squared (0.244 mW per V squared), so 1 mW allows at most 2.0 V. Any supply from 1.3 V to 2.0 V works; 2.0 V gives the largest signal (161 mV at 100 degrees C, 0.97 mW), while 1.5 V gives 121 mV and 0.55 mW with a safer margin on self-heating. The limit is the tolerance: at 2.0 V the 5 percent resistors give a zero offset of 29 mV (about 15 degrees C of equivalent error), 1 percent parts about 5.8 mV (about 3 degrees C). Trade-off: higher supply, more signal, more self-heating; tighter parts cost more. Assumption: linear Pt1000 model and no amplifier noise.
+\end{enumerate}
+
+\subsection*{Session 4}
+\begin{enumerate}[nosep]
+\item \textbf{Conceptual.} Hint: What does the program know about what you meant? Which resistors in a real circuit carry a lot of current? Solution: A resistor of 1 milliohm is a perfectly legal circuit: the file can be solved and the answer is correct for what was written. The program cannot know the intention, only that the value is unusual, so it says so and lets the person decide. An error is for a file that cannot be solved or has no meaning (unreadable value, floating node, repeated name). Real milliohm resistors exist: a current-sense shunt of 1 to 10 milliohm is placed in the path of a large current so that the tiny voltage across it can be measured. A checker that refused them would be wrong for a motor driver.
+\item \textbf{Numerical.} Hint: The meter reads V\_th R\_m / (R\_th + R\_m). The fraction lost is R\_th / (R\_th + R\_m). Solution: Fraction lost = R\_th / (R\_th + R\_m) \textless{}= 0.005, so R\_m \textgreater{}= 199 R\_th = 199 x 1080.7 = 215 kohm. From the list, 200k loses 0.54 percent (just too much) and 500k loses 0.22 percent, so 500 kohm is the smallest that works. Sanity check: \texttt{loading\_error(500e3)} gives 0.0022 and \texttt{smallest\_meter(0.005)} returns 500000. Real handheld meters have 10 Mohm, far above this, but a cheap analogue meter at 20 kohm per volt on a 5 V range (100 kohm) would already lose about 1 percent.
+\item \textbf{Graph and simulation interpretation.} Hint: Which of the two results would you notice as wrong without any tool? Solution: 300k is more dangerous. A reading of 0.036 V from a circuit built on 10 V and 4 V sources looks absurd and is noticed at once, but 7.998 V looks plausible: it is only 22 percent away from the right answer and lies between the two sources' voltages. An error you cannot see by eye needs a tool (a checker that flags unusual values, a second reading by someone else, a comparison with a hand calculation). The solver gives no warning in either case, because both files are valid circuits.
+\item \textbf{Design and optimisation challenge.} Hint: Ask of every rule: can the file still be solved? Is the file still a possible circuit that someone might want? Solution: Errors (the file cannot be solved or has no meaning): an unreadable value; a repeated part name; a part with both ends on the same node; a floating group of nodes; no ground node. Warnings (valid but suspicious): a resistor below 0.1 ohm or above 100 megohm (the 1M trap); a voltage source over, say, 50 V in a low-voltage course; two sources in parallel with the same value. Report every problem in one run, with the line number, so the student fixes ten mistakes in one go. What no checker can find is a plausible wrong value: 330 typed instead of 220 gives a valid circuit and a believable answer. The remedy is a hand estimate of the expected result before running, and a second pair of eyes. Assumption: the course uses ideal parts and DC only.
+\end{enumerate}
+
+\subsection*{Session 5}
+\begin{enumerate}[nosep]
+\item \textbf{Conceptual.} Hint: What is the conductance of a resistor, and what is the conductance (slope of I against V) of a diode at 0.3 V and at 0.6 V? Solution: A resistor has one conductance g = 1/R whatever the voltage, so its stamp is a fixed entry of G. The slope of the diode curve is not fixed: it is about 1e-9 S at 0.3 V and 0.46 S at 0.6 V, a factor of 1e8. The equation for the unknown voltages is not linear, so one solve of G v = i cannot give the answer. The companion model replaces the diode, at the present working voltage V0, by the tangent line of its curve: a resistor 1/g with g = dI/dV at V0, in parallel with a current source i\_eq = I(V0) - g V0. That pair is linear, so the Session 3 solver can handle it; the answer is only as good as the tangent, so the process is repeated at the new voltage until KCL holds with the true diode law.
+\item \textbf{Numerical.} Hint: I(0.5 V) = 1e-12 (exp(0.5 / 0.025852) - 1). Use Vd = (Vs/R - i\_eq) / (1/R + g). Solution: I(0.5) = 0.251 mA and g = 0.2510 mA / 25.852 mV = 9.708 mS, so i\_eq = 0.251 mA - 9.708 mS x 0.5 V = -4.603 mA. Then Vd = (5 mA + 4.603 mA) / (1 mS + 9.708 mS) = 0.897 V. The residual before is (0.5 - 5) / 1000 + 0.251 mA = -4.25 mA; after the step the true current at 0.897 V is 1163 A, so the residual is +1163 A: the step overshoots wildly. The exponential curve is convex, so its tangent lies below the curve and meets the load line beyond the true solution. From above the loop can only lower the voltage by about VT = 26 mV per pass, so it needs many more passes: 18 in all from 0.5 V (against 5 from 0.6 V), as the lesson's table shows.
+\item \textbf{Graph and simulation interpretation.} Hint: Which voltage does the linear solve of pass 1 put across the diode, and what does the true diode law say about the current at that voltage? Solution: The residual is measured on the solution the linear solve proposes, using the true diode law. At pass 1 the diode is linearised at 0 V, where it is almost an open circuit, so the proposed solution has nearly 5 V across the diode, at which the true current would be 1e72 A: KCL is violated enormously. The limiter refuses to believe the proposal: the next working point is only 0.136 V. The passes are not wrong, they are cautious steps up the curve (the numbers on the dots in the first graph of the app). Once the working point is near the knee (pass 5, 0.5346 V) the tangent is a good model and the residual collapses quadratically: 3e-2, 3e-7, 4e-16 A.
+\item \textbf{Design and optimisation challenge.} Hint: Use the lesson's table of starting points, and think about what the diode voltage is for most circuits. Solution: Repair 1, the limiter of this session: never move the working voltage up by more than n VT ln(1 + dv / n VT). It converges from every start tried (0, 0.3, 0.7, 1.0, -2 V; 7 passes from 0 V) and it works for any circuit with junctions. Risk: from a start above the solution it is slow (21 passes from 1.0 V) and for strange circuits it can crawl. Repair 2, a better start: begin at 0.6 V, where the tangent is good; plain Newton then needs 5 passes. Risk: it depends on a guess that suits a silicon diode, not an LED (about 1.8 V) and the plain loop from 0.3 V still fails, so a poor guess brings the failure back. A third idea, not built here, is to ramp the supply from 0 to 5 V in steps and use each answer as the next start. Test: compare with the bisection answer for supplies 0.5 to 24 V and resistors 100 ohm to 10 kohm (seven cases in the checkpoint), and watch the pass count. Assumption: one diode with the model Is = 1e-12 A and n = 1.
+\end{enumerate}
+
+\section{How to join}
+Read \texttt{CONTRIBUTING.md} in the repository, then pick an issue labelled \texttt{good first issue}. Repository: \url{https://github.com/KrunalPanchal1995/pan-iit-oss/tree/main/opencircuitlab}
+
+\end{document}

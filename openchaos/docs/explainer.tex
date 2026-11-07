@@ -1,0 +1,372 @@
+\documentclass[11pt,a4paper]{article}
+\usepackage[T1]{fontenc}
+\usepackage[margin=2.3cm]{geometry}
+\usepackage{amsmath,amssymb}
+\usepackage{graphicx}
+\usepackage[dvipsnames]{xcolor}
+\usepackage{enumitem}
+\usepackage[colorlinks=true,linkcolor=blue,urlcolor=blue]{hyperref}
+\setlength{\parskip}{0.6em}
+\setlength{\parindent}{0pt}
+\begin{document}
+
+\begin{center}{\LARGE\bfseries openchaos}\\[0.4em]{\large See chaos in a double pendulum, in five sessions.}\\[0.2em]\small PAN IIT OSS explainer \textbullet{} secondary school to diploma / undergraduate (levels 3-5)\end{center}
+
+\section*{Why this exists}
+A double pendulum obeys exact equations, yet two starts a hundred-millionth of a radian apart end up in completely different places within about fifteen seconds. This explainer shows the mathematics behind that: the equations of motion, the energy checks that prove a simulation right, and the Lyapunov exponent that says how fast errors grow.
+
+\section*{The end goal}
+See chaos in a double pendulum. The end goal is to see chaos in a double pendulum: to watch two almost identical motions diverge, to measure the rate of divergence, and to say honestly how long a forecast can be trusted. The same ideas limit weather forecasts, orbit predictions and the control of robot arms.
+
+\section*{How the five sessions build up}
+\begin{enumerate}[nosep]
+\item \textbf{Session 1: Two almost identical starts drift apart} (Level 1, conceptual interactive model, 60 min).
+\item \textbf{Session 2: Equations, energy and a trustworthy simulation} (Level 2, mathematical engineering model, 75 min).
+\item \textbf{Session 3: Measuring chaos and the limits of forecasting} (Level 3, simulation and validation, 90 min).
+\item \textbf{Session 4: A fourth-order symplectic solver} (Level 3, simulation and validation, 90 min).
+\item \textbf{Session 5: Ensemble forecasts: probabilities instead of paths} (Level 3, simulation and validation, 90 min).
+\end{enumerate}
+
+\section{Session 1: Two almost identical starts drift apart}
+
+\subsection*{A. Real-world problem}
+A grandfather clock swings the same way every time: if you know how it starts, you know where it will be in an hour. Hang a second pendulum from the end of the first and the motion looks random. Is it really random, or does it follow rules we simply cannot follow far enough? Release two double pendulums with starting angles that differ by one hundred-millionth of a radian and see for yourself.
+
+\subsection*{B. Concept and theory}
+A pendulum is a ball on a rod that swings under gravity. Its angle theta, measured from straight down, obeys theta'' = -(g / L) sin(theta): the pull of gravity back towards the bottom is proportional to sin(theta). For small swings sin(theta) is about theta and the swing time is T = 2 pi sqrt(L / g). A double pendulum has a second rod hung from the first ball, so two angles (theta1 for the upper rod, theta2 for the lower rod) and two angular speeds describe it; the lower ball is pulled by gravity and by the motion of the upper one. The rule is exact and has no randomness: the same start always gives the same motion. What changes is the sensitivity: we run two copies whose start differs by a tiny amount and track the gap between them. In the single pendulum the gap stays tiny. In the double pendulum it grows by roughly the same factor in every equal time interval, so it explodes after a few seconds. This is called sensitive dependence on initial conditions.
+
+\begin{itemize}[nosep]
+\item theta: angle from straight down (rad)
+\item omega: angular speed, the rate of change of theta (rad/s)
+\item L: rod length (1 m here) (m)
+\item g: gravity (m/s\textasciicircum{}2)
+\item T: swing time of a small swing (s)
+\item delta: difference between the two starting angles (rad)
+\item gap: absolute difference between the two angles at time t (rad)
+\end{itemize}
+
+\begin{equation*}
+\ddot\theta=-\frac{g}{L}\sin\theta,\qquad T\approx 2\pi\sqrt{\frac{L}{g}}\ \text{(small swings)}
+\end{equation*}
+
+\begin{equation*}
+\text{gap}(t)=\left|\theta_2^{B}(t)-\theta_2^{A}(t)\right|,\qquad \text{gap}(t)\approx \delta\,e^{\lambda t}\ \text{while the gap is small (chaotic case)}
+\end{equation*}
+
+\begin{center}\includegraphics[width=0.85\linewidth]{figures/s01_gap_growth.png}\\\small Angle gap on a log axis: flat for the single pendulum, an explosion for the double pendulum.\end{center}
+
+\subsection*{E. Worked example}
+A 1 m pendulum swings through a small angle. Find its swing time from the formula and compare it with the simulation.
+\begin{enumerate}[nosep]
+\item The formula is T = 2 pi sqrt(L / g) with L = 1 m and g = 9.81 m/s\textasciicircum{}2.
+\item L / g = 1 / 9.81 = 0.10194 s\textasciicircum{}2, and its square root is 0.31928 s.
+\item T = 2 pi x 0.31928 = 2.0061 s.
+\item The simulation with a 2 degree release, measured from the time the pendulum returns to its release point, gives 2.006 s.
+\item Sanity check: a pendulum about one metre long ticks roughly once every two seconds, as in a grandfather clock (a 'seconds pendulum' beats seconds, so one full swing there takes 2 s).
+\end{enumerate}
+\textbf{Answer.} T = 2.006 s from the formula and 2.006 s from the simulation.
+
+\subsection*{F. Questions}
+\begin{enumerate}[nosep]
+\item \textbf{Conceptual.} A friend says: the double pendulum moves randomly, so no equation can describe it. Explain what is right and what is wrong in that sentence.
+\item \textbf{Numerical.} Find the swing time of a pendulum 0.25 m long with the formula T = 2 pi sqrt(L / g). Is it more or less than the 1 m pendulum, and by what factor?
+\item \textbf{Graph and simulation interpretation.} On the gap graph, the double pendulum's gap grows from 3.2e-4 rad at 10 s to 0.62 rad at 15 s. By what factor does it grow in those 5 s, and what is the growth rate per second?
+\item \textbf{Design and optimisation challenge.} Design: you may measure the starting angle with a protractor of precision 1e-3 rad. Using a growth rate of 1.5 per second, how long can you forecast to within 0.1 rad? What precision would 10 s need? State your assumption.
+\end{enumerate}
+
+\section{Session 2: Equations, energy and a trustworthy simulation}
+
+\subsection*{A. Real-world problem}
+Before anyone believes your simulation you must be able to check it. For a double pendulum there is no formula for the motion, but two things are certain: with no friction the total energy (movement plus height) must stay constant, and for tiny swings the motion must reduce to two simple patterns whose frequencies can be calculated by hand. A weather office or a robot-arm maker runs exactly such tests before trusting a model. Which time step is small enough, and how do we know?
+
+\subsection*{B. Concept and theory}
+Take two point masses m1 and m2 on rods of lengths l1 and l2, with angles theta1 and theta2 from straight down. The Lagrangian method (kinetic energy minus potential energy, with the angles as coordinates) gives two coupled equations for the angular accelerations; they are written out below and also in matrix form, M(theta) theta'' = force terms, which we use as an independent check. The total energy E = T + V is constant. For small angles sin x is about x and cos x about 1, so the equations become linear, M theta'' = -K theta, and the motion is a sum of two normal modes: patterns in which both rods swing at one common frequency w. The frequencies satisfy det(K - w\textasciicircum{}2 M) = 0. For equal masses and rods w\textasciicircum{}2 = (g / l)(2 -/+ sqrt 2), that is 2.397 rad/s (rods swing in the same direction, the lower one 1.414 times as far) and 5.787 rad/s (rods swing in opposite directions). To advance the motion in time we use RK4 with step h; its error per unit time is proportional to h\textasciicircum{}4, so halving h should cut an error by about 16.
+
+\begin{itemize}[nosep]
+\item theta1, theta2: angles of the upper and lower rod from straight down (rad)
+\item omega1, omega2: angular speeds (rad/s)
+\item m1, m2: masses of the two balls (kg)
+\item l1, l2: lengths of the two rods (m)
+\item g: gravity (9.81) (m/s\textasciicircum{}2)
+\item T, V, E: kinetic, potential and total energy (height measured from the pivot) (J)
+\item E\_ref: energy scale (m1 + m2) g l1 + m2 g l2 (J)
+\item h: time step of the solver (s)
+\item w: normal-mode frequency of small swings (rad/s)
+\end{itemize}
+
+\begin{equation*}
+\ddot\theta_1=\frac{-g(2m_1+m_2)\sin\theta_1-m_2g\sin(\theta_1-2\theta_2)-2\sin(\theta_1-\theta_2)\,m_2\left(\dot\theta_2^{2}l_2+\dot\theta_1^{2}l_1\cos(\theta_1-\theta_2)\right)}{l_1\left(2m_1+m_2-m_2\cos(2\theta_1-2\theta_2)\right)}
+\end{equation*}
+
+\begin{equation*}
+\ddot\theta_2=\frac{2\sin(\theta_1-\theta_2)\left(\dot\theta_1^{2}l_1(m_1+m_2)+g(m_1+m_2)\cos\theta_1+\dot\theta_2^{2}l_2m_2\cos(\theta_1-\theta_2)\right)}{l_2\left(2m_1+m_2-m_2\cos(2\theta_1-2\theta_2)\right)}
+\end{equation*}
+
+\begin{equation*}
+T=\tfrac12(m_1+m_2)l_1^2\dot\theta_1^2+\tfrac12m_2l_2^2\dot\theta_2^2+m_2l_1l_2\dot\theta_1\dot\theta_2\cos(\theta_1-\theta_2),\qquad V=-(m_1+m_2)gl_1\cos\theta_1-m_2gl_2\cos\theta_2
+\end{equation*}
+
+\begin{equation*}
+\det(K-\omega^{2}M)=0,\quad M=\begin{pmatrix}(m_1+m_2)l_1^2 & m_2l_1l_2\\ m_2l_1l_2 & m_2l_2^2\end{pmatrix},\ K=\begin{pmatrix}(m_1+m_2)gl_1 & 0\\ 0 & m_2gl_2\end{pmatrix}
+\end{equation*}
+
+\begin{equation*}
+\omega^{2}=\frac{g}{l}\left(2\mp\sqrt{2}\right)\quad\text{(equal masses and rods)}
+\end{equation*}
+
+\begin{center}\includegraphics[width=0.85\linewidth]{figures/s02_drift_vs_step.png}\\\small Energy drift over 20 s against step size: close to the slope-4 line of a fourth-order method.\end{center}
+
+\subsection*{E. Worked example}
+For equal masses (1 kg) and equal rods (1 m), find the two small-swing frequencies and periods, and check them against a simulation of amplitude 0.001 rad.
+\begin{enumerate}[nosep]
+\item For equal masses and rods w\textasciicircum{}2 = (g / l)(2 -/+ sqrt 2) with g / l = 9.81 s\textasciicircum{}-2 and sqrt 2 = 1.4142.
+\item Slow mode: w\textasciicircum{}2 = 9.81 x 0.5858 = 5.747 s\textasciicircum{}-2, so w = 2.397 rad/s and the period is 2 pi / 2.397 = 2.621 s.
+\item Fast mode: w\textasciicircum{}2 = 9.81 x 3.4142 = 33.49 s\textasciicircum{}-2, so w = 5.787 rad/s and the period is 2 pi / 5.787 = 1.086 s.
+\item Mode shapes: theta2 / theta1 = +1.414 for the slow mode and -1.414 for the fast mode.
+\item Start the simulation at rest with theta1 = 0.001 rad and theta2 = 0.001414 rad (slow mode): over 3 s the largest difference from 0.001 cos(2.397 t) is 8.9e-10 rad; for the fast mode it is 4.5e-8 rad. The nonlinear model agrees with the hand result to far better than 1e-6 rad.
+\end{enumerate}
+\textbf{Answer.} Frequencies 2.397 and 5.787 rad/s (periods 2.621 s and 1.086 s); the simulation matches to better than 1e-7 rad.
+
+\subsection*{F. Questions}
+\begin{enumerate}[nosep]
+\item \textbf{Conceptual.} If a simulation keeps the total energy constant to 1e-9, does that prove it is correct? What else would you test?
+\item \textbf{Numerical.} Find the total energy of a double pendulum with m1 = m2 = 1 kg, l1 = l2 = 1 m, released from rest with both rods at 60 degrees. Then repeat for 90 degrees. Give units and say whether the signs make sense.
+\item \textbf{Graph and simulation interpretation.} On the drift-versus-step graph, which of the tested steps keeps the energy error below 1e-5 over 20 s, and by about what factor does the error fall when you halve h from 0.01 s to 0.005 s?
+\item \textbf{Design and optimisation challenge.} Design: choose a step for a 20 s run released at 120 degrees with energy error below 1e-6. Compare the cost with the step that gives 1e-5. State the trade-off.
+\end{enumerate}
+
+\section{Session 3: Measuring chaos and the limits of forecasting}
+
+\subsection*{A. Real-world problem}
+Weather models, satellite orbits and robot arms all meet the same wall: a tiny error in the starting measurement grows until the forecast is useless. The double pendulum shows it on a table top. Today we ask the quantitative questions. How fast does a tiny error grow? For which starts is the motion regular and for which chaotic? And if a lab can measure the start to 1e-6 rad, for how many seconds can the forecast be trusted?
+
+\subsection*{B. Concept and theory}
+Two solvers are compared. RK4 is very accurate over a short time but leaks energy steadily. The implicit midpoint rule, applied to the Hamiltonian form with positions and momenta, is symplectic: its energy error does not grow however long we run, though it is larger at first (it is only second order). For sensitivity, start two copies delta0 apart and track the distance d(t) between them in the four-dimensional space of angles and angular speeds. While d is small, d(t) is about delta0 exp(lambda t), so ln d is a straight line against t whose slope is the largest Lyapunov exponent lambda (units 1/s). A positive lambda means chaos. The line stops when d is as large as the motion itself (saturation), so we fit only between d = 1e-6 and 1e-2. The Benettin method pulls the twin back to distance delta0 every 0.1 s and averages the logarithm of the growth. Both estimates belong to one start only: lambda depends on the initial condition, and near zero it cannot be told from zero in a finite run. The flip-time map releases the pendulum from rest on a grid of (theta1, theta2) and records when the outer rod first goes over the top; stripes and speckles mark chaos. Validation by energy: kinetic energy is never negative, so the outer rod can reach the top only if the energy E = -2 g cos(theta1) - g cos(theta2) is at least -g, so any start with 2 cos(theta1) + cos(theta2) \textgreater{} 1 can never flip. Finally, if the start error is delta0 and we accept an error Delta, the forecast fails at t = ln(Delta / delta0) / lambda.
+
+\begin{itemize}[nosep]
+\item delta0: size of the start error (rad (or mixed rad and rad/s))
+\item d(t): distance between the two runs in angle and angular-speed space (mixed rad and rad/s)
+\item lambda: largest Lyapunov exponent (1/s)
+\item Delta: largest forecast error we accept (0.1) (rad)
+\item t\_h: predictability horizon (s)
+\item h: time step (s)
+\item E: total energy, equal to -2 g cos(theta1) - g cos(theta2) for a rest start (J)
+\item q, p: positions (angles) and momenta of the Hamiltonian form (rad, kg m\textasciicircum{}2/s)
+\end{itemize}
+
+\begin{equation*}
+d(t)\approx\delta_0\,e^{\lambda t}\ \Longleftrightarrow\ \ln d(t)=\ln\delta_0+\lambda t
+\end{equation*}
+
+\begin{equation*}
+\lambda\approx\frac1T\sum_{k}\ln\frac{d_k}{\delta_0}\quad\text{(Benettin: the gap is reset to }\delta_0\text{ after each interval)}
+\end{equation*}
+
+\begin{equation*}
+z_{n+1}=z_n+h\,F\!\left(\tfrac12(z_n+z_{n+1})\right),\qquad \dot q=M^{-1}p,\ \ \dot p=-\partial_qH
+\end{equation*}
+
+\begin{equation*}
+2\cos\theta_1+\cos\theta_2>1\ \Longrightarrow\ E<-g\ \Longrightarrow\ \text{the outer rod cannot flip}
+\end{equation*}
+
+\begin{equation*}
+t_h=\frac{1}{\lambda}\ln\frac{\Delta}{\delta_0}
+\end{equation*}
+
+\begin{center}\includegraphics[width=0.85\linewidth]{figures/s03_flip_time_map.png}\\\small Flip-time map of 80 x 80 rest starts; the cyan outline marks where energy forbids a flip.\end{center}
+
+\subsection*{E. Worked example}
+A lab measures the starting angles of a double pendulum to 1e-6 rad. If lambda = 1.4 per second and we accept an error of 0.1 rad, how long is the forecast good? How much longer if the measurement is a thousand times better?
+\begin{enumerate}[nosep]
+\item t\_h = ln(Delta / delta0) / lambda = ln(0.1 / 1e-6) / 1.4 = ln(100000) / 1.4.
+\item ln(100000) = 11.513, so t\_h = 11.513 / 1.4 = 8.22 s.
+\item With delta0 = 1e-9: ln(1e8) = 18.421, so t\_h = 18.421 / 1.4 = 13.16 s.
+\item The gain is ln(1000) / 1.4 = 6.908 / 1.4 = 4.93 s: a thousand times better instruments buy about five seconds.
+\item Check with the simulation for the 120 degree release: the Benettin lambda is 1.43 per second, so the formula gives 8.05 s, and a forecast started 1e-6 rad off in theta1 fails (0.1 rad) at 10.2 s. The median over random error directions is 10.3 s, a factor 1.3 longer than the formula; with 1e-9 the median is 16.8 s (gain 6.5 s).
+\end{enumerate}
+\textbf{Answer.} About 8.2 s with 1e-6 rad (formula; 10 s measured for this start) and only about 5 to 7 s more with a thousand times better measurement.
+
+\subsection*{F. Questions}
+\begin{enumerate}[nosep]
+\item \textbf{Conceptual.} A colleague proposes to forecast a chaotic system for twice as long by buying a measuring device twice as precise. Explain why this does not work and what would be needed instead.
+\item \textbf{Numerical.} For lambda = 1.2 per second, a start error of 1e-8 rad and an accepted error of 0.5 rad, find the predictability horizon. Give the units and a sanity check.
+\item \textbf{Graph and simulation interpretation.} In Figure 2 the straight segment rises from d = 1e-6 at 3.7 s to d = 1e-2 at 10.3 s, while the least-squares fit over that window gives lambda = 1.21 per second and the Benettin method 1.43 per second. Estimate lambda from the two end points, and explain why the three numbers differ.
+\item \textbf{Design and optimisation challenge.} Design: you want a 15 s forecast within 0.1 rad for the 120 degree release (lambda about 1.43 per second). What start precision does the formula demand? Is it realistic for a rotary encoder of 1e-5 rad resolution? What would you do instead?
+\end{enumerate}
+
+\section{Session 4: A fourth-order symplectic solver}
+
+\subsection*{A. Real-world problem}
+Satellite orbits, molecules and planets are simulated for billions of steps, so the solver must not leak energy and must also be accurate. In Session 3 the implicit midpoint rule kept the energy error of the double pendulum bounded, but with h = 0.02 s that error still reaches a few percent of the energy scale. Can we do better without making the step tiny? Today we build a fourth-order symplectic solver from the midpoint rule, check that it really is fourth order, count what it costs, and find out where it stops working.
+
+\subsection*{B. Concept and theory}
+The implicit midpoint rule is symplectic and symmetric (a step forward by h followed by a step back by h returns to the start), and its error per step starts with an h\textasciicircum{}3 term, which makes it second order. A \textbf{composition} applies it several times with different step sizes: three steps of sizes gamma1 h, gamma0 h and gamma1 h in a row. The result is still symplectic (a chain of symplectic steps is symplectic) and still symmetric. Two conditions fix the sizes: they must add up to one step, 2 gamma1 + gamma0 = 1, and the h\textasciicircum{}3 error terms must cancel, 2 gamma1\textasciicircum{}3 + gamma0\textasciicircum{}3 = 0. The solution is gamma1 = 1 / (2 - 2\textasciicircum{}(1/3)) = 1.3512 and gamma0 = -2\textasciicircum{}(1/3) / (2 - 2\textasciicircum{}(1/3)) = -1.7024, so one step goes forward 1.35 h, \textbf{backward} 1.70 h, then forward 1.35 h. The sub-steps are a mathematical device, not moments of physical time. With the h\textasciicircum{}3 term gone the method is fourth order: halving h should divide the error by 16 instead of 4. The price is work: one step is three midpoint solves, and each solve repeats a substitution until it settles. That substitution only settles when h times the fastest rate of change is small, and the middle solve uses the largest step (1.70 h), so the composition stops working at a smaller h than the midpoint rule. We count work as the number of evaluations of the rate function, and because this pendulum is chaotic we report the typical largest energy error: the median, over five starts nudged by about 1e-9, of the largest |E - E0| / E\_ref.
+
+\begin{itemize}[nosep]
+\item h: time step (s)
+\item gamma1, gamma0: relative sizes of the three sub-steps (none)
+\item p: order of the method (error shrinks like h\textasciicircum{}p) (none)
+\item E, E0: energy now and at the start (J)
+\item E\_ref: energy scale 3 g, equal to 29.43 J (J)
+\item work: number of evaluations of the rate function (none)
+\end{itemize}
+
+\begin{equation*}
+2\gamma_1+\gamma_0=1,\qquad 2\gamma_1^3+\gamma_0^3=0\ \Longrightarrow\ \gamma_1=\frac{1}{2-2^{1/3}},\ \ \gamma_0=-\frac{2^{1/3}}{2-2^{1/3}}
+\end{equation*}
+
+\begin{equation*}
+\Phi_h=\Phi^{(2)}_{\gamma_1 h}\circ\Phi^{(2)}_{\gamma_0 h}\circ\Phi^{(2)}_{\gamma_1 h}\quad\text{(order 4 and symplectic)}
+\end{equation*}
+
+\begin{equation*}
+\text{error}\approx C h^p\ \Longrightarrow\ p\approx\log_2\frac{\text{error}(h)}{\text{error}(h/2)}
+\end{equation*}
+
+\begin{center}\includegraphics[width=0.95\linewidth]{figures/s04_energy_1000s.png}\\\small Energy error of RK4, the midpoint rule and the composition over 1000 s at h = 0.02 s (one run).\end{center}
+
+\begin{center}\includegraphics[width=0.75\linewidth]{figures/s04_order_test.png}\\\small Order test: slope 2 for the midpoint rule, slope 4 for the composition.\end{center}
+
+\begin{center}\includegraphics[width=0.95\linewidth]{figures/s04_work_precision.png}\\\small Accuracy against work: the midpoint rule is cheaper for loose energy limits, the composition for tight ones.\end{center}
+
+\begin{center}\includegraphics[width=0.75\linewidth]{figures/s04_step_limit.png}\\\small The composition gives up at a smaller step than the midpoint rule.\end{center}
+
+\subsection*{E. Worked example}
+Find the three step sizes of the triple jump for h = 0.02 s and check the two order conditions.
+\begin{enumerate}[nosep]
+\item 2\textasciicircum{}(1/3) = 1.259921, so 2 - 2\textasciicircum{}(1/3) = 0.740079.
+\item gamma1 = 1 / 0.740079 = 1.351207.
+\item gamma0 = -2\textasciicircum{}(1/3) gamma1 = -1.259921 x 1.351207 = -1.702414.
+\item Sum: 2 x 1.351207 - 1.702414 = 1.000000. Cubes: gamma1\textasciicircum{}3 = 2.467, so 2 gamma1\textasciicircum{}3 = 4.934, and gamma0\textasciicircum{}3 = -4.934; the sum is 0.
+\item For h = 0.02 s the sub-steps are 0.027024 s, -0.034048 s and 0.027024 s, which add up to 0.02 s.
+\item Check with the simulation: halving h from 0.025 s to 0.0125 s divides the error by 15.9, so the observed order is 3.99.
+\end{enumerate}
+\textbf{Answer.} The sizes are 1.3512 h, -1.7024 h and 1.3512 h, here 0.027024 s, -0.034048 s and 0.027024 s; the middle sub-step goes back 1.26 times as far as each outer sub-step goes forward.
+
+\subsection*{F. Questions}
+\begin{enumerate}[nosep]
+\item \textbf{Conceptual.} A classmate says: ``The fourth-order solver is simply better than the midpoint rule: it is just as symplectic and much more accurate.'' Give two reasons why this is too simple.
+\item \textbf{Numerical.} At h = 0.05 s the composition's state error after 0.4 s is 2.75e-4. Predict the error at h = 0.0125 s, and compare the number of midpoint solves per second of simulated time at the two steps. Give a sanity check.
+\item \textbf{Graph and simulation interpretation.} Figure 3 (left) gives, for the typical largest energy error over 60 s, 43,328 evaluations for the midpoint rule and 121,330 for the composition at 1e-2, and for 1e-4 only the composition (192,125). Which solver would you choose for each limit? Why does the composition's curve fall so much faster as the work grows?
+\item \textbf{Design and optimisation challenge.} Design: you need the typical largest energy error of the 120 degree release over 60 s to stay below 1e-4 of E\_ref, with a budget of 200,000 rate evaluations. Choose a solver and a step, check your margin against the step at which the solver fails, and say what you would re-test if the pendulum were released from 150 degrees.
+\end{enumerate}
+
+\section{Session 5: Ensemble forecasts: probabilities instead of paths}
+
+\subsection*{A. Real-world problem}
+Weather services do not give one forecast. They start dozens of forecasts from slightly different versions of today's measurements and report what fraction brings rain. In Session 3 we forecast the double pendulum from one start with one assumed error and found that the forecast fails after a horizon. Today we do what the weather services do: 1000 runs from a Gaussian cloud of start errors of 1e-6 rad. We measure the time when the cloud has spread so far that the path is lost, and we turn the cloud into a probability that the outer rod has flipped by 20 s. And we ask how far that probability can be trusted.
+
+\subsection*{B. Concept and theory}
+An \textbf{ensemble} is a set of N runs (members) that start from the release angles plus a random error with a Gaussian distribution of standard deviation sigma, drawn independently for the two angles. All members use the same equations and the same RK4 step. The \textbf{spread} at time t is the standard deviation of theta2 over the members. At first it equals sigma. While it is small it grows like sigma exp(lambda t), the exponential growth of Session 3, so the slope of ln(spread) estimates lambda. When the spread reaches the size of the motion it saturates. The \textbf{spread time} is the first time the spread exceeds 0.5 rad: after it, members disagree about the position of the outer rod by more than half a radian and no single path can be trusted. The \textbf{flip time} of a member is the first time its outer rod goes over the top (|theta2| above pi). The flip probability P(t) is the fraction of members whose flip time is at most t. With N members it has a \textbf{sampling error} (standard error) sqrt(P (1 - P) / N). It also has a \textbf{numerical error}: RK4's error at step h acts like an extra start error, and chaos amplifies it exactly like the error we put in on purpose, so P can move when h changes even if N is huge. A converged answer is one that stays within the sampling error when the seed changes and when h is halved. Finally, an ensemble answers a question about the cloud: the probability that the cloud has flipped is not the probability that one particular pendulum has.
+
+\begin{itemize}[nosep]
+\item N: number of members (none)
+\item sigma: standard deviation of the start errors (rad)
+\item spread: standard deviation of theta2 over the members (rad)
+\item lambda: growth rate of the spread (1/s)
+\item t\_s: spread time, first time the spread exceeds 0.5 rad (s)
+\item P(t): fraction of members that have flipped by time t (none)
+\item SE: standard error of P (none)
+\item h: time step (s)
+\end{itemize}
+
+\begin{equation*}
+\text{spread}(t)\approx\sigma\,e^{\lambda t}\ \Longleftrightarrow\ \ln\text{spread}=\ln\sigma+\lambda t
+\end{equation*}
+
+\begin{equation*}
+\hat P(t)=\frac{\#\{\text{members with flip time}\le t\}}{N},\qquad \mathrm{SE}=\sqrt{\frac{\hat P(1-\hat P)}{N}}
+\end{equation*}
+
+\begin{equation*}
+N\ge\frac{P(1-P)}{\mathrm{SE}^2}
+\end{equation*}
+
+\begin{center}\includegraphics[width=0.95\linewidth]{figures/s05_ensemble_cloud.png}\\\small Forty of the 1000 forecasts for the 120 degree release, with the cloud mean and its spread.\end{center}
+
+\begin{center}\includegraphics[width=0.8\linewidth]{figures/s05_spread_vs_time.png}\\\small Spread of theta2 over the members: exponential growth from 1e-6 rad, then saturation.\end{center}
+
+\begin{center}\includegraphics[width=0.8\linewidth]{figures/s05_flip_probability.png}\\\small Flip probability for the 95 degree release at three time steps; the grey band is two standard errors.\end{center}
+
+\begin{center}\includegraphics[width=0.95\linewidth]{figures/s05_precision.png}\\\small Spread time and flip probability against the size of the start error.\end{center}
+
+\subsection*{E. Worked example}
+A forecast of the 95 degree release from 1000 members says that 77 percent have flipped by 20 s. What is the sampling standard error and a 95 percent interval? How many members give a standard error of 0.01?
+\begin{enumerate}[nosep]
+\item SE = sqrt(P (1 - P) / N) = sqrt(0.77 x 0.23 / 1000) = sqrt(1.771e-4) = 0.0133.
+\item A 95 percent interval is about plus or minus 1.96 SE = 0.026, so 0.74 to 0.80.
+\item For SE = 0.01: N = P (1 - P) / SE\textasciicircum{}2 = 0.1771 / 0.0001 = 1771, so about 1800 members.
+\item Four times as many members (4000) halve the error: sqrt(0.1771 / 4000) = 0.0067.
+\item Check with the simulation: four different seeds give 0.773, 0.766, 0.780 and 0.781, all within 0.015 of each other, as expected from a standard error of 0.013.
+\end{enumerate}
+\textbf{Answer.} SE = 0.013, interval 0.74 to 0.80, and about 1800 members for SE = 0.01 (the sampling error only).
+
+\subsection*{F. Questions}
+\begin{enumerate}[nosep]
+\item \textbf{Conceptual.} After the spread time, why does a forecaster report a probability instead of a path, and what can still go wrong with that probability?
+\item \textbf{Numerical.} For the 95 degree release the probability of a flip by 20 s is about 0.77 with 1000 members. A report must give it with a standard error of 0.005. How many members are needed, and how long will the run take if 1000 members take 2.3 s? Give a sanity check.
+\item \textbf{Graph and simulation interpretation.} In Figure 3 the probability of a flip by 20 s is 0.708 for h = 0.01 s, 0.773 for 0.005 s and 0.785 for 0.0025 s, with a sampling standard error of 0.013. Can sampling explain the change from 0.01 s to 0.005 s? Which step would you report?
+\item \textbf{Design and optimisation challenge.} Design: you must publish the probability that the outer rod of the 95 degree release has flipped by 20 s, accurate to plus or minus 0.02 with 95 percent confidence. Choose the number of members and the step, say how you will check convergence, and name one thing the number does not cover.
+\end{enumerate}
+
+\section{Real-world mini-project}
+\textbf{How long can you forecast a double pendulum?} A lab can measure the two starting angles of a double pendulum to within 1e-6 rad. Released from rest with both rods at 100, 120 or 140 degrees, for how long does a forecast stay within 0.1 rad of the true motion? Use \texttt{benettin}, \texttt{predicted\_horizon} and \texttt{median\_horizon} from Session 3 (20 random error directions, seed 7).
+
+\textbf{Pick the cheapest solver for a long pendulum run.} You must simulate the 120 degree release for 60 s and keep the typical largest energy error (median over 5 nearby starts, sampled once per second) below 1e-2, 1e-3 or 1e-4 of E\_ref. Use \texttt{ladder\_results} and \texttt{cheapest\_for\_tolerance} with the steps [0.015, 0.0075, 0.0025] for the midpoint rule and [0.02, 0.015, 0.01] for the composition, and count work with \texttt{CALLS}. \textbf{Deliverable:} A script that prints, for each of the three tolerances, the cheapest step and number of rate evaluations for each solver (or ``not reached''), names the cheaper solver, and finally compares the state error after 5 s for the midpoint rule at h = 0.003125 s with the composition at h = 0.0125 s. \textbf{Success looks like:} For 1e-2 the midpoint rule is cheaper (43,328 against 121,330 evaluations) and also for 1e-3 (72,037 against 144,413); for 1e-4 only the composition reaches it (h = 0.01 s, 192,125 evaluations; the midpoint rule's best is 1.3e-4); and for the state after 5 s the composition's error (3.4e-3 with 13,441 evaluations) is about nine times smaller than the midpoint rule's (3.0e-2 with 11,628).
+
+\textbf{How precise must the instrument be?} A lab can measure the two release angles of the 95 degree pendulum to 1e-4, 1e-6 or 1e-8 rad. Use \texttt{precision\_ladder} (1000 members, h = 0.005 s, seed 1, 30 s) to find, for each, the spread time and the probability of a flip by 20 s with its standard error, and compare the gain from each factor of 100 with ln(100) / lambda. \textbf{Deliverable:} A script that prints, for the three precisions, the spread time, the flip probability by 20 s and its standard error; prints the gain in spread time for each factor of 100 next to ln(100) / lambda with lambda taken from the spread of the 1e-6 run; and says in one sentence whether the 1e-8 instrument makes the 20 s forecast certain. \textbf{Success looks like:} Spread times of 9.8, 13.0 and 17.9 s; flip probabilities 0.98 (error 0.005), 0.77 (0.013) and 0.71 (0.014); gains of 3.2 s and 4.9 s next to ln(100) / lambda = 3.4 s; and the conclusion that even the 1e-8 instrument leaves the cloud spreading before 20 s (spread time 17.9 s), so the forecast is still a probability, not a certainty.
+
+\section{The path ahead}
+\begin{enumerate}[nosep]
+\item \textbf{Session 6: The full Lyapunov spectrum.} All four exponents of the 120 degree release instead of the largest one only.
+\item \textbf{Session 7: A damped, real pendulum.} A damped model and a fit routine run on a synthetic measurement.
+\item \textbf{Session 8: Chaos for unequal masses.} Flip-time maps for general masses and rods.
+\end{enumerate}
+
+\section{Answers and hints}
+
+\subsection*{Session 1}
+\begin{enumerate}[nosep]
+\item \textbf{Conceptual.} Hint: Ask whether the same start always gives the same motion, and what the gap graph shows about the start. Solution: The motion looks random but is not: the equations are exact and the same start always gives the same motion (it is deterministic). What is true is that the motion is extremely sensitive to the start: a difference of 1e-8 rad grows to more than 0.1 rad in about 13 s, so we cannot predict it far ahead unless we know the start almost perfectly. Chaos means unpredictable in practice, not lawless.
+\item \textbf{Numerical.} Hint: Put L = 0.25 m and g = 9.81 m/s\textasciicircum{}2 into the formula; then compare with 2.006 s. Solution: L / g = 0.25 / 9.81 = 0.02548 s\textasciicircum{}2, sqrt = 0.1596 s, T = 2 pi x 0.1596 = 1.003 s. It is half of 2.006 s: four times shorter gives half the swing time (T goes as the square root of L). Units: seconds.
+\item \textbf{Graph and simulation interpretation.} Hint: Divide the two gaps, then take the natural logarithm and divide by 5 s. Solution: The factor is 0.62 / 3.2e-4 = about 1950. The natural logarithm of 1950 is 7.58, so the rate is 7.58 / 5 s = 1.5 per second (the gap multiplies by about 4.5 every second). This rate, called the Lyapunov exponent, is measured properly in Session 3.
+\item \textbf{Design and optimisation challenge.} Hint: The gap is about delta x exp(1.5 t); solve for t when it reaches 0.1, then solve for delta at t = 10 s. Solution: From delta e\textasciicircum{}(1.5 t) = 0.1 we get t = ln(0.1 / 1e-3) / 1.5 = ln(100) / 1.5 = 4.605 / 1.5 = 3.1 s. For 10 s we need delta = 0.1 e\textasciicircum{}(-15) = 3e-8 rad, thirty thousand times better than the protractor. Assumption: the growth is a clean exponential from the start; the real gap grows more slowly at first (see the graph), so these numbers are rough. Trade-off: each extra second of forecast needs the start known e\textasciicircum{}1.5 = 4.5 times better.
+\end{enumerate}
+
+\subsection*{Session 2}
+\begin{enumerate}[nosep]
+\item \textbf{Conceptual.} Hint: Think of a simulation that moves the pendulum on the right energy shell but at the wrong speed. Solution: No. Energy conservation is necessary, not sufficient: a solver could keep E constant and still get the timing (phase) of the swing wrong, or solve slightly different equations that also conserve a similar energy. We also compare with cases that have a known answer: the small-angle normal modes, hanging at rest, and an independent form of the equations (mass-matrix form), and we check that the error shrinks as the step shrinks.
+\item \textbf{Numerical.} Hint: At rest T = 0 and V = -(m1 + m2) g l1 cos(theta1) - m2 g l2 cos(theta2) with equal angles. Solution: V = -3 g cos(theta) with g = 9.81. At 60 degrees cos = 0.5 so E = -14.715 J; at 90 degrees cos = 0 so E = 0 J. Height is measured from the pivot, so hanging below the pivot is negative energy; at 90 degrees the balls are level with the pivot, zero height. Hanging at rest is the lowest energy, -3 g = -29.43 J.
+\item \textbf{Graph and simulation interpretation.} Hint: Read the points at 0.01 s and 0.005 s, then divide. Solution: The error is 8.4e-5 at 0.01 s (too large) and 4.5e-6 at 0.005 s (below 1e-5). Halving the step cuts it by 8.4e-5 / 4.5e-6 = 18.6, close to the 2\textasciicircum{}4 = 16 expected for a fourth-order method.
+\item \textbf{Design and optimisation challenge.} Hint: Use largest\_step(1e-6, ...) with the candidates 0.04, 0.02, 0.01, 0.005, 0.0025 s. Solution: 0.0025 s gives 1.4e-7 (passes) and 0.005 s gives 4.5e-6 (fails 1e-6, passes 1e-5). So 0.0025 s for 1e-6 needs 8000 steps, against 4000 steps with 0.005 s for 1e-5: twice the work for 30 times less error. RK4 makes four rate evaluations per step, so 32000 against 16000. Trade-off: accuracy against run time; also, for a chaotic motion extra accuracy extends how long the run follows the true path only slowly (Session 3).
+\end{enumerate}
+
+\subsection*{Session 3}
+\begin{enumerate}[nosep]
+\item \textbf{Conceptual.} Hint: Use t\_h = ln(Delta / delta0) / lambda. Solution: The horizon depends on the logarithm of the precision: halving delta0 adds only ln 2 / lambda, about 0.5 s for lambda = 1.4 per second. To double a 10 s horizon you would need delta0 about e\textasciicircum{}14 = a million times smaller. Better options are to accept a larger error Delta (which also helps only logarithmically), to forecast statistics (averages and probabilities) instead of the exact path, or to correct the forecast with new measurements as time goes on.
+\item \textbf{Numerical.} Hint: t\_h = ln(Delta / delta0) / lambda. Solution: Delta / delta0 = 0.5 / 1e-8 = 5e7, ln(5e7) = 17.73, so t\_h = 17.73 / 1.2 = 14.8 s. Sanity check: with delta0 = 1e-8 and Delta = 0.1 the earlier simulation passed 0.1 rad at about 13 s; a larger tolerance and slightly smaller lambda give a bit more, so 15 s is plausible.
+\item \textbf{Graph and simulation interpretation.} Hint: Slope of ln d: ln(1e-2 / 1e-6) divided by the time between the two points. Solution: ln(1e4) = 9.21 over 6.6 s gives 1.40 per second. The fit (1.21) and Benettin (1.43) differ because the growth rate is not constant along the orbit: the pendulum alternates between phases of fast and slow stretching, so a finite-time estimate depends on the window and the length of the run. Quote lambda with this uncertainty (here about 1.2 to 1.5 per second) and say for which start it was measured.
+\item \textbf{Design and optimisation challenge.} Hint: Solve t\_h = 15 s for delta0: delta0 = Delta exp(-lambda t\_h). Solution: delta0 = 0.1 exp(-1.43 x 15) = 0.1 exp(-21.45) = 4.8e-11 rad, a million times finer than a 1e-5 rad encoder, which would give only about 5 s by the formula. It is not realistic. Alternatives: shorten the horizon you promise, accept 1 rad error (gain ln(10) / 1.43 = 1.6 s only), use repeated measurements to correct the forecast, or forecast the probability of a flip rather than the path. Assumption: friction and the model error are neglected, which would make things worse in reality.
+\end{enumerate}
+
+\subsection*{Session 4}
+\begin{enumerate}[nosep]
+\item \textbf{Conceptual.} Hint: Think about what one step costs, and about the backward sub-step of 1.70 h. Solution: First, cost: one composed step is three midpoint solves (3.4 times the rate evaluations at h = 0.02 s), so for a loose energy limit the cheap rule wins: 43,328 evaluations against 121,330 for 1e-2. The composition pays off only for tight limits (1e-4) or short-time accuracy. Second, robustness: the middle solve uses a step of 1.70 h, so the substitution that solves it stops converging at a smaller h: the composition fails from h = 0.03 s to 0.035 s while the midpoint rule still runs at 0.04 s. A high order is only an advantage when h is small enough for the method to be in its asymptotic regime.
+\item \textbf{Numerical.} Hint: Order 4: the error scales with h\textasciicircum{}4. The step shrinks by a factor 4. Solution: The step shrinks by 4, so the error shrinks by 4\textasciicircum{}4 = 256: 2.75e-4 / 256 = 1.07e-6 (the lesson measures 1.12e-6). Midpoint solves per second: 3 / 0.05 = 60 at h = 0.05 s and 3 / 0.0125 = 240 at h = 0.0125 s, so four times the work buys 256 times less error. Sanity check: the midpoint rule with the same four-fold work would improve only by 4\textasciicircum{}2 = 16.
+\item \textbf{Graph and simulation interpretation.} Hint: Compare the error at h = 0.02 s and at h = 0.01 s for each solver (composition 1.2e-3 and 5.3e-5; midpoint 1.3e-2 and 3.8e-3). Solution: For 1e-2 choose the midpoint rule: it needs 2.8 times fewer evaluations. For 1e-4 the composition is the only one that gets there on this ladder. The composition falls faster because its error depends on a higher power of h: halving h from 0.02 s to 0.01 s divides its typical error by 23 (order about 4), the midpoint rule's by 3.4 (order about 2). A steeper curve starts more expensive but crosses the flatter one at tight limits (here between 1e-4 and 2e-4). Assumption: one release angle and 60 s; the crossing moves with the start and the run length.
+\item \textbf{Design and optimisation challenge.} Hint: Use the ladder results: the midpoint rule's best is 1.3e-4 at 172,221 evaluations; look at the composition at h = 0.01 s. Solution: The composition at h = 0.01 s gives a typical error of 5.3e-5 with 192,125 evaluations: below 1e-4 and inside the 200,000 budget. The midpoint rule does not reach 1e-4 (1.3e-4 with 172,221 evaluations at h = 0.0025 s). The composition starts to fail at h = 0.03 s, three times larger than the chosen step, a reasonable safety margin. A release from 150 degrees has more energy and faster motion, so the safe step is smaller: run the step survey again (error and number of unsettled solves) and, if needed, reduce h and recompute the budget. Assumption: a single release angle and 60 s; a longer run costs proportionally more evaluations.
+\end{enumerate}
+
+\subsection*{Session 5}
+\begin{enumerate}[nosep]
+\item \textbf{Conceptual.} Hint: Think about what the members do after the spread time, and about the two kinds of error of the probability. Solution: After the spread time the members disagree by more than 0.5 rad, so no single member is more believable than another; the path is lost. The fraction of members that flip, however, is a statistic of the whole cloud and changes smoothly with time, so it can still be estimated. It can go wrong in two ways: the sampling error (too few members, the standard error falls only like 1 / sqrt(N)) and the numerical error (a too coarse step, which moved the 95 degree probability by 0.07). It also assumes the cloud is the right description of what we do not know about the start; if the real error is larger or not Gaussian the probability is wrong whatever N is.
+\item \textbf{Numerical.} Hint: N = P (1 - P) / SE\textasciicircum{}2; the run time is proportional to N. Solution: N = 0.77 x 0.23 / 0.005\textasciicircum{}2 = 0.1771 / 2.5e-5 = 7084, so about 7100 members, and the run takes about 7.1 x 2.3 s = 16 s. Sanity check: the error must fall from 0.0133 to 0.005, a factor 2.66, and the error falls like 1 / sqrt(N), so N must grow by 2.66\textasciicircum{}2 = 7.1.
+\item \textbf{Graph and simulation interpretation.} Hint: Compare the change with the standard error of a difference, about sqrt(2) times the standard error of one value. Solution: The change is 0.065. The standard error of a difference is about sqrt(2) x 0.013 = 0.019, so the change is about 3.5 standard errors: sampling does not explain it; the coarse step changes the result. From 0.005 s to 0.0025 s the change is 0.012, smaller than one standard error of the difference, so the result has converged within the sampling error. Report the finer value, about 0.78 plus or minus 0.03 (two standard errors), and state the step used.
+\item \textbf{Design and optimisation challenge.} Hint: 95 percent confidence is about 2 standard errors, so SE = 0.01. Solution: SE = 0.01 needs N = 0.77 x 0.23 / 0.01\textasciicircum{}2 = 1771, so use at least 1800 members. Use h = 0.005 s, then repeat with h = 0.0025 s and a second seed: the two probabilities must agree within about 0.02, otherwise halve the step again. Report P with both numbers and the step used. The number does not cover anything outside the cloud: measurement bias, a start error larger than 1e-6 rad or not Gaussian, friction, or the fact that the one real pendulum either flips or does not.
+\end{enumerate}
+
+\section{How to join}
+Read \texttt{CONTRIBUTING.md} in the repository, then pick an issue labelled \texttt{good first issue}. Repository: \url{https://github.com/KrunalPanchal1995/pan-iit-oss/tree/main/openchaos}
+
+\end{document}

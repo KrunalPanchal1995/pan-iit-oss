@@ -1,0 +1,245 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Session 4: boiling curves from fluid properties</title>
+<style>
+  :root { --bg:#ffffff; --fg:#14181f; --muted:#5b6472; --card:#f3f5f8; --accent:#003f7f; --good:#c86a00; --bad:#d81b60; --line:#d7dce3; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#0e1116; --fg:#e6e9ee; --muted:#9aa3b2; --card:#171b22; --accent:#3b8fe0; --good:#ffc857; --bad:#e0457b; --line:#2a313c; } }
+  * { box-sizing: border-box; }
+  body { margin:0; padding:16px; background:var(--bg); color:var(--fg); font:16px/1.5 system-ui, sans-serif; }
+  main { max-width: 780px; margin: 0 auto; }
+  h1 { font-size: 1.3rem; margin: 0 0 4px; }
+  p.sub { margin: 0 0 12px; color: var(--muted); }
+  .scroll { overflow-x:auto; }
+  canvas { width:100%; min-width:560px; height:auto; background:var(--card); border:1px solid var(--line); border-radius:8px; display:block; }
+  .sr { position:absolute; left:-9999px; }
+  .bar { display:flex; flex-wrap:wrap; gap:8px; margin:10px 0; }
+  button { font:inherit; padding:6px 12px; border:1px solid var(--line); background:var(--card); color:var(--fg); border-radius:6px; cursor:pointer; }
+  button[aria-pressed="true"] { border-color:var(--accent); color:var(--accent); font-weight:600; }
+  button:focus-visible, input:focus-visible { outline:3px solid var(--accent); outline-offset:2px; }
+  .row { display:grid; grid-template-columns: 11rem 1fr 6rem; gap:8px; align-items:center; margin:8px 0; }
+  .row output { text-align:right; font-variant-numeric: tabular-nums; }
+  @media (max-width: 560px) { .row { grid-template-columns: 1fr; gap:2px; } .row output { text-align:left; } }
+  input[type=range] { width:100%; accent-color: var(--accent); }
+  #readout, #challenge, .note { margin-top:10px; padding:10px 12px; background:var(--card); border-radius:8px; border:1px solid var(--line); }
+  #challenge[data-ok="true"] { border-color:var(--good); } #challenge[data-ok="true"] b { color:var(--good); }
+  .note { font-size:.85rem; color:var(--muted); }
+  a { color: var(--accent); }
+</style>
+</head>
+<body>
+<main>
+  <h1>Session 4: boiling curves from fluid properties</h1>
+  <p class="sub">Pressure changes the critical heat flux. Pick a pressure and a heat flux, and read the boiling curve, the margin below the CHF and the wall temperature.</p>
+  <div class="bar" id="graphs" role="group" aria-label="Choose a graph"></div>
+  <div class="scroll"><canvas id="c" width="720" height="420" role="img" aria-label="Session 4: boiling curves from fluid properties: interactive plot"></canvas></div>
+  <div class="bar" id="presets" role="group" aria-label="Presets"></div>
+  <div id="controls"></div>
+  <div class="bar"><button id="reset" type="button">Reset</button></div>
+  <div id="readout"></div>
+  <div id="challenge" hidden></div>
+  <div id="status" class="sr" aria-live="polite"></div>
+  <p class="note">This is a simplified educational model. It is not a validated design tool and must not be used for real structures, electrical installations, vehicles, industrial processes or medical decisions. The correlations are textbook ones with large uncertainties (the CHF about 20 to 30 percent, the nucleate flux up to a factor of two), and the transition and film parts, especially at high pressure, show only a shape.</p>
+  <p class="sub"><a href="https://github.com/KrunalPanchal1995/pan-iit-oss/tree/main/openboiling">Back to the repository</a></p>
+</main>
+<script>
+"use strict";
+const PARAMS = [{"id": "P", "label": "Pressure", "min": 0.5, "max": 20, "step": 0.5, "value": 1, "unit": "bar absolute"}, {"id": "q", "label": "Heat flux supplied", "min": 100, "max": 2500, "step": 50, "value": 800, "unit": "kW/m2"}, {"id": "csf", "label": "Surface constant Csf", "min": 0.008, "max": 0.02, "step": 0.001, "value": 0.013, "unit": ""}];
+const GRAPHS = [{"id": "curve", "label": "Boiling curve"}, {"id": "chf", "label": "CHF against pressure"}, {"id": "dt", "label": "Wall superheat against pressure"}];
+const PRESETS = [{"label": "1 atm, 800 kW/m2", "values": {"P": 1, "q": 800, "csf": 0.013}}, {"label": "Above the 1 atm CHF", "values": {"P": 1, "q": 1300, "csf": 0.013}}, {"label": "Same flux at 5 bar", "values": {"P": 5, "q": 1300, "csf": 0.013}}, {"label": "Low pressure", "values": {"P": 0.5, "q": 600, "csf": 0.013}}];
+const CHALLENGE = "Run the heater at 1500 kW/m2 or more with at least a 40 percent margin below the critical heat flux (flux at most 60 percent of the CHF). What is the lowest pressure that works?";
+const CHALLENGE_SOLUTION = {"P": 9, "q": 1500, "csf": 0.013};
+// ---- water properties (IAPWS-IF97 steam table, 0.5 to 20 bar absolute) and the correlations of the lesson ----
+const G = 9.81, ATM = 1.01325, HNC = 1000, QSHIP = 1.1e6;
+const COLS = ["P", "T", "rho_l", "rho_v", "h_fg", "sigma", "mu_l", "cp_l", "Pr_l", "mu_v", "k_v", "cp_v"];
+const TABLE = [[0.5, 81.317, 970.95, 0.30863, 2304700.0, 0.062431, 0.0003483, 4196.8, 2.1888, 1.1584e-05, 0.022833, 2015.5], [0.75, 91.758, 964.12, 0.45104, 2278000.0, 0.060485, 0.00030797, 4207.0, 1.9233, 1.1946e-05, 0.023782, 2047.4], [1.01325, 99.974, 958.37, 0.59762, 2256500.0, 0.058917, 0.00028166, 4216.6, 1.7538, 1.2231e-05, 0.024568, 2077.4], [1.5, 111.35, 949.92, 0.86255, 2226000.0, 0.056695, 0.00025133, 4232.4, 1.5628, 1.2626e-05, 0.02572, 2127.8], [2.0, 120.21, 942.94, 1.129, 2201600.0, 0.054926, 0.0002316, 4246.7, 1.4416, 1.2934e-05, 0.026675, 2175.2], [3.0, 133.53, 931.81, 1.6507, 2163400.0, 0.052205, 0.00020691, 4272.0, 1.2943, 1.3394e-05, 0.028216, 2261.8], [4.0, 143.61, 922.88, 2.1627, 2133300.0, 0.050096, 0.00019134, 4294.4, 1.2046, 1.3742e-05, 0.029477, 2340.3], [5.0, 151.84, 915.28, 2.6681, 2107900.0, 0.048349, 0.00018025, 4315.1, 1.1427, 1.4024e-05, 0.030571, 2412.7], [7.0, 164.95, 902.56, 3.6662, 2065600.0, 0.045513, 0.00016498, 4353.0, 1.0604, 1.4473e-05, 0.03245, 2543.3], [10.0, 179.89, 887.13, 5.1454, 2014400.0, 0.042216, 0.00015048, 4405.1, 0.98744, 1.4981e-05, 0.034812, 2715.0], [15.0, 198.3, 866.65, 7.5929, 1946300.0, 0.038063, 0.0001358, 4485.5, 0.92137, 1.5608e-05, 0.038098, 2964.5], [20.0, 212.38, 849.8, 10.042, 1889800.0, 0.03483, 0.00012636, 4562.3, 0.88517, 1.6091e-05, 0.040936, 3190.4]];
+const LNP = TABLE.map(r => Math.log(r[0]));
+function props(P) {
+  const x = Math.log(P); let i = 0;
+  while (i < TABLE.length - 2 && x > LNP[i + 1]) i++;
+  const f = (x - LNP[i]) / (LNP[i + 1] - LNP[i]), o = {};
+  COLS.forEach((c, j) => {
+    if (c === "P") return;
+    const a = TABLE[i][j], b = TABLE[i + 1][j];
+    o[c] = c === "T" ? a + f * (b - a) : Math.exp(Math.log(a) + f * (Math.log(b) - Math.log(a)));
+  });
+  return o;
+}
+function chfOf(P) { const r = props(P); return 0.131 * r.h_fg * Math.sqrt(r.rho_v) * Math.pow(r.sigma * G * (r.rho_l - r.rho_v), 0.25); }
+// everything the boiling curve needs at pressure P and surface constant csf
+function model(P, csf) {
+  const r = props(P), drho = r.rho_l - r.rho_v;
+  const lead = r.mu_l * r.h_fg * Math.sqrt(G * drho / r.sigma);
+  const coef = lead * Math.pow(r.cp_l / (csf * r.h_fg * r.Pr_l), 3);
+  const chf = chfOf(P);
+  const qmin = 0.09 * r.rho_v * r.h_fg * Math.pow(G * r.sigma * drho / Math.pow(r.rho_l + r.rho_v, 2), 0.25);
+  const lam = 2 * Math.PI * Math.sqrt(3 * r.sigma / (G * drho));
+  const film = dt => 0.425 * Math.pow(Math.pow(r.k_v, 3) * r.rho_v * drho * G * (r.h_fg + 0.4 * r.cp_v * dt) / (r.mu_v * dt * lam), 0.25) * dt;
+  let lo = 1, hi = 3000;
+  for (let k = 0; k < 100; k++) { const mid = 0.5 * (lo + hi); if (film(mid) < qmin) lo = mid; else hi = mid; }
+  const d2 = 0.5 * (lo + hi), d1 = Math.cbrt(chf / coef);
+  const flux = dt => {
+    if (dt <= 0) return HNC * dt;
+    if (dt <= d1) return Math.max(HNC * dt, coef * dt * dt * dt);
+    if (dt <= d2) { const f = (dt - d1) / (d2 - d1); return Math.exp(Math.log(chf) + f * (Math.log(qmin) - Math.log(chf))); }
+    return film(dt);
+  };
+  return { r, coef, chf, qmin, d1, d2, flux, film, sh: q => Math.cbrt(q / coef) };
+}
+// lowest pressure (bar, within 0.5 to 20) at which the CHF reaches the flux qW (W/m2), or null
+function pressureFor(qW) {
+  if (chfOf(0.5) >= qW) return 0.5;
+  if (chfOf(20) < qW) return null;
+  let lo = 0.5, hi = 20;
+  for (let k = 0; k < 60; k++) { const mid = 0.5 * (lo + hi); if (chfOf(mid) < qW) lo = mid; else hi = mid; }
+  return 0.5 * (lo + hi);
+}
+const challengeTest = CHALLENGE ? (p) => (p.q >= 1500 && p.q * 1e3 <= 0.6 * chfOf(p.P)) : null;
+const cv = document.getElementById("c"), ctx = cv.getContext("2d");
+const W = cv.width, H = cv.height, p = {};
+let graph = GRAPHS.length ? GRAPHS[0].id : "main";
+const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+const fmt = v => (Math.abs(v) >= 10000 || (Math.abs(v) > 0 && Math.abs(v) < 0.01)) ? v.toExponential(1) : String(+v.toPrecision(4));
+function readout(html) {
+  document.getElementById("readout").innerHTML = html;
+  cv.setAttribute("aria-label", document.title + ". " + html.replace(/<[^>]+>/g, " ").replace(/&nbsp;/g, " "));  // screen readers get the numbers
+}
+let lastOk = null;
+// ---- plotting helpers: every graph gets labelled axes with units; o.lx / o.ly make an axis logarithmic ----
+function niceTicks(lo, hi, n) {
+  const raw = (hi - lo) / n, mag = Math.pow(10, Math.floor(Math.log10(raw))), f = raw / mag;
+  const step = (f < 1.5 ? 1 : f < 3 ? 2 : f < 7 ? 5 : 10) * mag, out = [];
+  for (let v = Math.ceil(lo / step - 1e-9) * step; v <= hi + 1e-9; v += step) out.push(+v.toPrecision(12));
+  return out;
+}
+function decades(lo, hi) { const out = []; for (let k = Math.ceil(Math.log10(lo) - 1e-9); Math.pow(10, k) <= hi * 1.0001; k++) out.push(Math.pow(10, k)); return out; }
+function axes(o, C) {
+  const L = 66, R = 16, T = 34, B = 50, w = W - L - R, h = H - T - B;
+  const tx = v => o.lx ? Math.log10(v) : v, ty = v => o.ly ? Math.log10(v) : v;
+  const X = v => L + (tx(v) - tx(o.x[0])) / (tx(o.x[1]) - tx(o.x[0])) * w, Y = v => T + h - (ty(v) - ty(o.y[0])) / (ty(o.y[1]) - ty(o.y[0])) * h;
+  ctx.lineWidth = 1; ctx.font = "12px system-ui";
+  for (const xv of (o.lx ? decades(o.x[0], o.x[1]) : niceTicks(o.x[0], o.x[1], 6))) {
+    ctx.strokeStyle = C.line; ctx.beginPath(); ctx.moveTo(X(xv), T); ctx.lineTo(X(xv), T + h); ctx.stroke();
+    ctx.fillStyle = C.muted; ctx.textAlign = "center"; ctx.fillText(fmt(xv), X(xv), T + h + 16);
+  }
+  for (const yv of (o.ly ? decades(o.y[0], o.y[1]) : niceTicks(o.y[0], o.y[1], 5))) {
+    ctx.strokeStyle = C.line; ctx.beginPath(); ctx.moveTo(L, Y(yv)); ctx.lineTo(L + w, Y(yv)); ctx.stroke();
+    ctx.fillStyle = C.muted; ctx.textAlign = "right"; ctx.fillText(fmt(yv), L - 6, Y(yv) + 4);
+  }
+  ctx.strokeStyle = C.fg; ctx.beginPath(); ctx.moveTo(L, T); ctx.lineTo(L, T + h); ctx.lineTo(L + w, T + h); ctx.stroke();
+  ctx.fillStyle = C.fg; ctx.textAlign = "center"; ctx.font = "13px system-ui";
+  ctx.fillText(o.xl, L + w / 2, H - 8);
+  ctx.save(); ctx.translate(14, T + h / 2); ctx.rotate(-Math.PI / 2); ctx.fillText(o.yl, 0, 0); ctx.restore();
+  ctx.font = "bold 13px system-ui"; ctx.fillText(o.title || "", L + w / 2, 20);
+  return { X, Y, L, T, w, h };
+}
+// draw y = f(x) over [x0, x1]; `xs` gives the sample points (default: evenly spaced); points with a non-finite y are skipped
+function curve(f, a, color, x0, x1, n, dash, xs) {
+  n = n || 160; ctx.save(); ctx.beginPath(); ctx.rect(a.L, a.T, a.w, a.h); ctx.clip();   // never draw outside the plot area
+  ctx.strokeStyle = color; ctx.lineWidth = 2.5; ctx.setLineDash(dash || []); ctx.beginPath();
+  let pen = false;
+  for (let i = 0; i <= n; i++) {
+    const x = xs ? xs(i / n) : x0 + (x1 - x0) * i / n, y = f(x);
+    if (!isFinite(y)) { pen = false; continue; }
+    pen ? ctx.lineTo(a.X(x), a.Y(y)) : ctx.moveTo(a.X(x), a.Y(y)); pen = true;
+  }
+  ctx.stroke(); ctx.restore();
+}
+function dot(a, x, y, color, label, square) {
+  ctx.fillStyle = color; ctx.beginPath();
+  if (square) ctx.rect(a.X(x) - 5, a.Y(y) - 5, 10, 10); else ctx.arc(a.X(x), a.Y(y), 6, 0, 2 * Math.PI);
+  ctx.fill();
+  if (label) { ctx.textAlign = "left"; ctx.font = "12px system-ui"; ctx.fillText(label, a.X(x) + 9, a.Y(y) - 8); }
+}
+function text(s, x, y, color, bold, align) { ctx.fillStyle = color; ctx.font = (bold ? "bold " : "") + "12px system-ui"; ctx.textAlign = align || "left"; ctx.fillText(s, x, y); }
+function draw() {
+  ctx.clearRect(0, 0, W, H);
+  const C = { fg: css("--fg"), muted: css("--muted"), accent: css("--accent"), line: css("--line"), good: css("--good"), bad: css("--bad") };
+  const M = model(p.P, p.csf), M1 = model(ATM, p.csf), q = p.q * 1e3;
+  const ok = q <= M.chf, margin = 1 - q / M.chf, dtw = ok ? M.sh(q) : null, ratio = M.chf / chfOf(ATM);
+  if (graph === "curve") {
+    const A = axes({ x: [1, 2000], y: [10, 5000], lx: true, ly: true, xl: "wall superheat T_wall - T_sat (K, log scale)", yl: "heat flux (kW/m2, log scale)", title: "Boiling curve at " + p.P + " bar (dashed: 1 atm)" }, C);
+    const xs = u => Math.pow(10, u * Math.log10(2000));
+    curve(d => M1.flux(d) / 1e3, A, C.muted, 1, 2000, 320, [6, 4], xs);
+    curve(d => M.flux(d) / 1e3, A, C.accent, 1, 2000, 320, [], xs);
+    ctx.save(); ctx.beginPath(); ctx.rect(A.L, A.T, A.w, A.h); ctx.clip();
+    ctx.strokeStyle = C.bad; ctx.lineWidth = 2; ctx.setLineDash([]); ctx.beginPath(); ctx.moveTo(A.L, A.Y(p.q)); ctx.lineTo(A.L + A.w, A.Y(p.q)); ctx.stroke(); ctx.restore();
+    dot(A, M.d1, M.chf / 1e3, C.accent, "");
+    dot(A, M.d2, M.qmin / 1e3, C.accent, "", true);
+    text("CHF " + (M.chf / 1e3).toFixed(0), A.X(M.d1) + 9, A.Y(M.chf / 1e3) - 8, C.accent, true);
+    text("minimum " + (M.qmin / 1e3).toFixed(0), A.X(M.d2) + 9, A.Y(M.qmin / 1e3) + 18, C.accent, true);
+    text("red line: heat supplied, " + p.q + " kW/m2", A.L + 8, A.Y(p.q) - 6, C.bad, true);
+    if (ok) { dot(A, dtw, p.q, C.good, ""); text("steady nucleate boiling, " + dtw.toFixed(1) + " K", A.L + 8, A.Y(p.q) + 20, C.good, true); }
+    else text("above the CHF: no steady nucleate state", A.L + 8, A.T + 18, C.bad, true);
+    text("transition and film parts: a shape only", A.L + A.w - 8, A.T + 18, C.muted, false, "right");
+  } else if (graph === "chf") {
+    const A = axes({ x: [0, 20], y: [0, 3.5], xl: "pressure (bar absolute)", yl: "heat flux (MW/m2)", title: "Critical heat flux against pressure" }, C);
+    curve(P => 1.1, A, C.muted, 0.5, 20, 2, [6, 4]);
+    curve(P => chfOf(P) / 1e6, A, C.accent, 0.5, 20, 160);
+    curve(P => 0.6 * chfOf(P) / 1e6, A, C.good, 0.5, 20, 160, [3, 3]);
+    curve(P => p.q / 1e3, A, C.bad, 0, 20, 2);
+    dot(A, p.P, M.chf / 1e6, C.accent, "");
+    text("Zuber CHF from properties", A.X(9) - 4, A.Y(chfOf(9) / 1e6) - 12, C.accent, true, "right");
+    text("60 percent of the CHF (design limit)", A.X(14) - 4, A.Y(0.6 * chfOf(14) / 1e6) - 10, C.good, true, "right");
+    const lowQ = p.q < 1100, xr = A.L + A.w - 6;
+    text("hand-picked curve: 1.1 at any pressure", xr, A.Y(1.1) + (lowQ ? -6 : 16), C.muted, false, "right");
+    text("red line: heat supplied, " + p.q + " kW/m2", xr, A.Y(p.q / 1e3) + (lowQ ? 16 : -6), C.bad, true, "right");
+    const P1 = pressureFor(q), P2 = pressureFor(q / 0.6);
+    const s1 = P1 === null ? "q is above the CHF at every pressure up to 20 bar" : P1 <= 0.5 ? "q is below the CHF at every pressure in range" : "q is below the CHF from " + P1.toFixed(1) + " bar upwards";
+    const s2 = P2 === null ? "no pressure up to 20 bar gives a 40 percent margin" : P2 <= 0.5 ? "a 40 percent margin holds at every pressure in range" : "a 40 percent margin needs " + P2.toFixed(1) + " bar or more";
+    text(s1, A.L + 8, A.T + 18, C.fg); text(s2, A.L + 8, A.T + 34, C.fg);
+  } else {
+    const A = axes({ x: [0, 20], y: [0, 40], xl: "pressure (bar absolute)", yl: "wall superheat for the supplied flux (K)", title: "Superheat needed to carry " + p.q + " kW/m2 in nucleate boiling" }, C);
+    const sh = (P, c) => (q <= chfOf(P) ? model(P, c).sh(q) : NaN);
+    curve(P => sh(P, 0.02), A, C.muted, 0.5, 20, 120, [6, 4]);
+    curve(P => sh(P, 0.008), A, C.muted, 0.5, 20, 120, [6, 4]);
+    curve(P => sh(P, p.csf), A, C.accent, 0.5, 20, 120);
+    if (ok) dot(A, p.P, dtw, C.good, "");
+    text("Csf = 0.02 (dashed)", A.X(20) - 6, A.Y(sh(20, 0.02)) - 8, C.muted, false, "right");
+    text("Csf = 0.008 (dashed)", A.X(20) - 6, A.Y(sh(20, 0.008)) + 16, C.muted, false, "right");
+    text("curve stops where the flux is above the CHF", A.L + 8, A.T + 18, C.muted);
+  }
+  readout("<b>" + p.P + " bar</b>, saturation temperature " + M.r.T.toFixed(1) + " C &nbsp;|&nbsp; CHF " + (M.chf / 1e6).toFixed(2) + " MW/m2 (" + ratio.toFixed(2) + " times the 1 atm value; the hand-picked curve says 1.10) &nbsp;|&nbsp; " +
+    (ok ? "heat supplied " + p.q + " kW/m2 leaves a margin of " + (100 * margin).toFixed(0) + " percent, steady superheat " + dtw.toFixed(1) + " K, wall " + (M.r.T + dtw).toFixed(1) + " C"
+        : "heat supplied " + p.q + " kW/m2 is <b>above the CHF</b>: no steady nucleate state, a power-controlled heater would burn out (Session 3)"));
+
+  const ch = document.getElementById("challenge");
+  if (challengeTest) { const done = !!challengeTest(p); ch.hidden = false; ch.dataset.ok = String(done);
+    ch.innerHTML = "<b>Challenge:</b> " + CHALLENGE + " &nbsp; " + (done ? "<b>Done!</b>" : "Not yet.");
+    if (done !== lastOk) { document.getElementById("status").textContent = done ? "Challenge done." : "Challenge not yet done."; lastOk = done; } }
+}
+
+const box = document.getElementById("controls");
+const inputs = {};
+for (const q of PARAMS) {
+  p[q.id] = q.value;
+  const row = document.createElement("div"); row.className = "row";
+  row.innerHTML = `<label for="${q.id}">${q.label} (${q.unit || "no unit"})</label>` +
+    `<input id="${q.id}" type="range" min="${q.min}" max="${q.max}" step="${q.step}" value="${q.value}">` +
+    `<output for="${q.id}">${q.value}</output>`;
+  const inp = row.querySelector("input"), out = row.querySelector("output");
+  inputs[q.id] = [inp, out];
+  inp.addEventListener("input", () => { p[q.id] = +inp.value; out.textContent = inp.value; draw(); });
+  box.appendChild(row);
+}
+function setAll(vals) { for (const k in vals) { p[k] = vals[k]; if (inputs[k]) { inputs[k][0].value = vals[k]; inputs[k][1].textContent = vals[k]; } } draw(); }
+const DEFAULTS = Object.assign({}, p);
+document.getElementById("reset").addEventListener("click", () => setAll(DEFAULTS));
+for (const g of GRAPHS) {
+  const b = document.createElement("button"); b.type = "button"; b.textContent = g.label;
+  b.setAttribute("aria-pressed", String(g.id === graph));
+  b.addEventListener("click", () => { graph = g.id; for (const x of document.querySelectorAll("#graphs button")) x.setAttribute("aria-pressed", String(x === b)); draw(); });
+  document.getElementById("graphs").appendChild(b);
+}
+for (const pr of PRESETS) {
+  const b = document.createElement("button"); b.type = "button"; b.textContent = pr.label;
+  b.addEventListener("click", () => setAll(pr.values));
+  document.getElementById("presets").appendChild(b);
+}
+matchMedia("(prefers-color-scheme: dark)").addEventListener("change", draw);
+draw();
+</script>
+</body>
+</html>

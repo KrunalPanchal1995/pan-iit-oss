@@ -1,0 +1,236 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Session 4: reading a netlist</title>
+<style>
+  :root { --bg:#ffffff; --fg:#14181f; --muted:#5b6472; --card:#f3f5f8; --accent:#003f7f; --good:#c86a00; --bad:#d81b60; --line:#d7dce3; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#0e1116; --fg:#e6e9ee; --muted:#9aa3b2; --card:#171b22; --accent:#3b8fe0; --good:#ffc857; --bad:#e0457b; --line:#2a313c; } }
+  * { box-sizing: border-box; }
+  body { margin:0; padding:16px; background:var(--bg); color:var(--fg); font:16px/1.5 system-ui, sans-serif; }
+  main { max-width: 780px; margin: 0 auto; }
+  h1 { font-size: 1.3rem; margin: 0 0 4px; }
+  p.sub { margin: 0 0 12px; color: var(--muted); }
+  .scroll { overflow-x:auto; }
+  canvas { width:100%; min-width:560px; height:auto; background:var(--card); border:1px solid var(--line); border-radius:8px; display:block; }
+  .sr { position:absolute; left:-9999px; }
+  .bar { display:flex; flex-wrap:wrap; gap:8px; margin:10px 0; }
+  button { font:inherit; padding:6px 12px; border:1px solid var(--line); background:var(--card); color:var(--fg); border-radius:6px; cursor:pointer; }
+  button[aria-pressed="true"] { border-color:var(--accent); color:var(--accent); font-weight:600; }
+  button:focus-visible, input:focus-visible { outline:3px solid var(--accent); outline-offset:2px; }
+  .row { display:grid; grid-template-columns: 11rem 1fr 6rem; gap:8px; align-items:center; margin:8px 0; }
+  .row output { text-align:right; font-variant-numeric: tabular-nums; }
+  @media (max-width: 560px) { .row { grid-template-columns: 1fr; gap:2px; } .row output { text-align:left; } }
+  input[type=range] { width:100%; accent-color: var(--accent); }
+  #readout, #challenge, .note { margin-top:10px; padding:10px 12px; background:var(--card); border-radius:8px; border:1px solid var(--line); }
+  #challenge[data-ok="true"] { border-color:var(--good); } #challenge[data-ok="true"] b { color:var(--good); }
+  .note { font-size:.85rem; color:var(--muted); }
+  a { color: var(--accent); }
+</style>
+</head>
+<body>
+<main>
+  <h1>Session 4: reading a netlist</h1>
+  <p class="sub">A circuit written as text: change the digits and the suffix of one value, and see how the reader turns the file into numbers and the solver into voltages.</p>
+  <div class="bar" id="graphs" role="group" aria-label="Choose a graph"></div>
+  <div class="scroll"><canvas id="c" width="720" height="420" role="img" aria-label="Session 4: reading a netlist: interactive plot"></canvas></div>
+  <div class="bar" id="presets" role="group" aria-label="Presets"></div>
+  <div id="controls"></div>
+  <div class="bar"><button id="reset" type="button">Reset</button></div>
+  <div id="readout"></div>
+  <div id="challenge" hidden></div>
+  <div id="status" class="sr" aria-live="polite"></div>
+  <p class="note">This is a simplified educational model. It is not a validated design tool and must not be used for real structures, electrical installations, vehicles, industrial processes or medical decisions.</p>
+  <p class="sub"><a href="https://github.com/KrunalPanchal1995/pan-iit-oss/tree/main/opencircuitlab">Back to the repository</a></p>
+</main>
+<script>
+"use strict";
+const PARAMS = [{"id": "V1", "label": "Source V1", "min": 2, "max": 12, "step": 1, "value": 10, "unit": "V"}, {"id": "V2", "label": "Source V2", "min": 0, "max": 12, "step": 1, "value": 4, "unit": "V"}, {"id": "digits", "label": "R3 digits typed", "min": 100, "max": 900, "step": 100, "value": 300, "unit": "as typed"}, {"id": "exp", "label": "R3 suffix: -3 = m, 0 = none, 3 = k, 6 = meg", "min": -3, "max": 6, "step": 3, "value": -3, "unit": "power of ten"}];
+const GRAPHS = [{"id": "text", "label": "The file and what is read"}, {"id": "typo", "label": "V(A) against R3"}, {"id": "ladder", "label": "Four suffixes"}];
+const PRESETS = [{"label": "Typo: 300m (default)", "values": {"V1": 10, "V2": 4, "digits": 300, "exp": -3}}, {"label": "Intended: 300", "values": {"V1": 10, "V2": 4, "digits": 300, "exp": 0}}, {"label": "300k", "values": {"V1": 10, "V2": 4, "digits": 300, "exp": 3}}, {"label": "300meg", "values": {"V1": 10, "V2": 4, "digits": 300, "exp": 6}}];
+const CHALLENGE = "The file was meant to hold R3 = 300 ohm but it was typed as 300m. Without touching the sources, change the suffix so that V(A) is back within 0.01 V of 6.5455 V.";
+const CHALLENGE_SOLUTION = {"V1": 10, "V2": 4, "digits": 300, "exp": 0};
+const SCALE = { t: 12, g: 9, meg: 6, k: 3, m: -3, u: -6, n: -9, p: -12, f: -15 };
+function parseValue(text) {
+  const m = /^([+-]?(?:\d+\.?\d*|\.\d+)(?:e[+-]?\d+)?)([a-z]*)$/i.exec(String(text).trim());
+  if (!m) throw new Error("cannot read the value '" + text + "'");
+  const letters = m[2].toLowerCase(); let exp = 0;
+  if (letters.startsWith("meg")) exp = 6; else if (letters && SCALE[letters[0]] !== undefined) exp = SCALE[letters[0]];
+  return m[1].toLowerCase().indexOf("e") >= 0 ? parseFloat(m[1]) * Math.pow(10, exp) : parseFloat(m[1] + "e" + exp);
+}
+function parseNetlist(text) {
+  const nodes = { "0": 0 }, names = { R: [], V: [], I: [] }, lists = { R: [], V: [], I: [] }, seen = {};
+  const node = nm => { nm = nm.toLowerCase(); if (nm === "0" || nm === "gnd") return 0; if (!(nm in nodes)) nodes[nm] = Object.keys(nodes).length; return nodes[nm]; };
+  text.split("\n").forEach((raw, idx) => {
+    const ln = idx + 1, line = raw.split(";")[0].trim();
+    if (!line || line[0] === "*" || parseNetlist.done) return;
+    if (line.toLowerCase() === ".end") { parseNetlist.done = true; return; }
+    if (line[0] === ".") throw new Error("line " + ln + ": the command '" + line.split(/\s+/)[0] + "' is not supported");
+    let tok = line.split(/\s+/); const nm = tok[0], kind = nm[0].toUpperCase();
+    if (!lists[kind]) throw new Error("line " + ln + ": unknown part '" + nm + "'");
+    if (kind !== "R" && tok.length === 5 && tok[3].toLowerCase() === "dc") tok = tok.slice(0, 3).concat(tok.slice(4));
+    if (tok.length !== 4) throw new Error("line " + ln + ": '" + nm + "' needs a name, two nodes and a value");
+    if (seen[nm.toLowerCase()]) throw new Error("line " + ln + ": the name '" + nm + "' is already used");
+    let val; try { val = parseValue(tok[3]); } catch (e) { throw new Error("line " + ln + ": " + e.message); }
+    const a = node(tok[1]), b = node(tok[2]);
+    if (a === b) throw new Error("line " + ln + ": both ends of '" + nm + "' are on the same node");
+    if (kind === "R" && val <= 0) throw new Error("line " + ln + ": the resistance of '" + nm + "' must be positive");
+    seen[nm.toLowerCase()] = true; lists[kind].push([a, b, val]); names[kind].push(nm.toLowerCase());
+  });
+  parseNetlist.done = false;
+  return { n: Object.keys(nodes).length - 1, nodes: nodes, names: names, resistors: lists.R, vsources: lists.V, isources: lists.I };
+}
+function solveNetwork(n, res, vs, is) {
+  const m = vs.length, size = n + m, A = [], b = new Array(size).fill(0);
+  for (let i = 0; i < size; i++) A.push(new Array(size).fill(0));
+  res.forEach(r => { const g = 1 / r[2]; [[r[0], r[0], g], [r[1], r[1], g], [r[0], r[1], -g], [r[1], r[0], -g]].forEach(t => { if (t[0] > 0 && t[1] > 0) A[t[0] - 1][t[1] - 1] += t[2]; }); });
+  is.forEach(s => { if (s[0] > 0) b[s[0] - 1] -= s[2]; if (s[1] > 0) b[s[1] - 1] += s[2]; });
+  vs.forEach((s, k) => { if (s[0] > 0) { A[s[0] - 1][n + k] -= 1; A[n + k][s[0] - 1] += 1; } if (s[1] > 0) { A[s[1] - 1][n + k] += 1; A[n + k][s[1] - 1] -= 1; } b[n + k] = s[2]; });
+  let scale = 0; A.forEach(r => r.forEach(x => { scale = Math.max(scale, Math.abs(x)); }));
+  for (let c = 0; c < size; c++) {
+    let p = c; for (let r = c + 1; r < size; r++) if (Math.abs(A[r][c]) > Math.abs(A[p][c])) p = r;
+    if (Math.abs(A[p][c]) < 1e-13 * scale) throw new Error("singular matrix: a node is floating or sources contradict each other");
+    [A[c], A[p]] = [A[p], A[c]]; [b[c], b[p]] = [b[p], b[c]];
+    for (let r = c + 1; r < size; r++) { const f = A[r][c] / A[c][c]; for (let k = c; k < size; k++) A[r][k] -= f * A[c][k]; b[r] -= f * b[c]; }
+  }
+  const x = new Array(size).fill(0);
+  for (let r = size - 1; r >= 0; r--) { let s = b[r]; for (let k = r + 1; k < size; k++) s -= A[r][k] * x[k]; x[r] = s / A[r][r]; }
+  return { v: [0].concat(x.slice(0, n)), j: x.slice(n) };
+}
+function solveNetlist(text) {
+  const net = parseNetlist(text), s = solveNetwork(net.n, net.resistors, net.vsources, net.isources), volts = {}, amps = {};
+  Object.keys(net.nodes).forEach(k => { volts[k] = s.v[net.nodes[k]]; });
+  net.names.V.forEach((k, i) => { amps[k] = s.j[i]; });
+  return { volts: volts, amps: amps };
+}
+const SUFFIX = { "-3": "m", "0": "", "3": "k", "6": "meg" };
+function twoLoopText(V1, V2, digits, exp) {
+  return "V1 top1 0 " + V1 + "\nV2 top2 0 " + V2 + "\nR1 top1 A 100\nR2 top2 A 200\nR3 A 0 " + digits + (SUFFIX[String(exp)] || "") + "\n";
+}
+function vaOf(r3) { return (10 / 100 + 4 / 200) / (1 / 100 + 1 / 200 + 1 / r3); }
+window.R = { parseValue, parseNetlist, solveNetwork, solveNetlist, twoLoopText };
+const challengeTest = CHALLENGE ? (p) => p.V1 === 10 && p.V2 === 4 && Math.abs(solveNetlist(twoLoopText(p.V1, p.V2, p.digits, p.exp)).volts.a - 6.545454545) <= 0.01 : null;
+const cv = document.getElementById("c"), ctx = cv.getContext("2d");
+const W = cv.width, H = cv.height, p = {};
+let graph = GRAPHS.length ? GRAPHS[0].id : "main";
+const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+const fmt = v => (Math.abs(v) >= 1000 || (Math.abs(v) > 0 && Math.abs(v) < 0.01)) ? v.toExponential(2) : String(+v.toPrecision(4));
+function readout(html) {
+  document.getElementById("readout").innerHTML = html;
+  cv.setAttribute("aria-label", document.title + ". " + html.replace(/<[^>]+>/g, " ").replace(/&nbsp;/g, " "));  // screen readers get the numbers
+}
+let lastOk = null;
+// ---- plotting helpers: every graph gets labelled axes with units ----
+function niceTicks(lo, hi, n) {
+  const raw = (hi - lo) / n, mag = Math.pow(10, Math.floor(Math.log10(raw))), f = raw / mag;
+  const step = (f < 1.5 ? 1 : f < 3 ? 2 : f < 7 ? 5 : 10) * mag, out = [];
+  for (let v = Math.ceil(lo / step - 1e-9) * step; v <= hi + 1e-9; v += step) out.push(+v.toPrecision(12));
+  return out;
+}
+function axes(o, C) {
+  const L = 66, R = 16, T = 34, B = 50, w = W - L - R, h = H - T - B;
+  const X = v => L + (v - o.x[0]) / (o.x[1] - o.x[0]) * w, Y = v => T + h - (v - o.y[0]) / (o.y[1] - o.y[0]) * h;
+  ctx.lineWidth = 1; ctx.font = "12px system-ui";
+  for (const xv of niceTicks(o.x[0], o.x[1], 6)) {
+    ctx.strokeStyle = C.line; ctx.beginPath(); ctx.moveTo(X(xv), T); ctx.lineTo(X(xv), T + h); ctx.stroke();
+    ctx.fillStyle = C.muted; ctx.textAlign = "center"; ctx.fillText(fmt(xv), X(xv), T + h + 16);
+  }
+  for (const yv of niceTicks(o.y[0], o.y[1], 5)) {
+    ctx.strokeStyle = C.line; ctx.beginPath(); ctx.moveTo(L, Y(yv)); ctx.lineTo(L + w, Y(yv)); ctx.stroke();
+    ctx.fillStyle = C.muted; ctx.textAlign = "right"; ctx.fillText(fmt(yv), L - 6, Y(yv) + 4);
+  }
+  ctx.strokeStyle = C.fg; ctx.beginPath(); ctx.moveTo(L, T); ctx.lineTo(L, T + h); ctx.lineTo(L + w, T + h); ctx.stroke();
+  ctx.fillStyle = C.fg; ctx.textAlign = "center"; ctx.font = "13px system-ui";
+  ctx.fillText(o.xl, L + w / 2, H - 8);
+  ctx.save(); ctx.translate(14, T + h / 2); ctx.rotate(-Math.PI / 2); ctx.fillText(o.yl, 0, 0); ctx.restore();
+  ctx.font = "bold 13px system-ui"; ctx.fillText(o.title || "", L + w / 2, 20);
+  return { X, Y, L, T, w, h };
+}
+function curve(f, a, color, x0, x1, n) {
+  n = n || 160; ctx.save(); ctx.beginPath(); ctx.rect(a.L, a.T, a.w, a.h); ctx.clip();   // never draw outside the plot area
+  ctx.strokeStyle = color; ctx.lineWidth = 2.5; ctx.beginPath();
+  for (let i = 0; i <= n; i++) { const x = x0 + (x1 - x0) * i / n, y = f(x); i ? ctx.lineTo(a.X(x), a.Y(y)) : ctx.moveTo(a.X(x), a.Y(y)); }
+  ctx.stroke(); ctx.restore();
+}
+function dot(a, x, y, color, label) {
+  ctx.fillStyle = color; ctx.beginPath(); ctx.arc(a.X(x), a.Y(y), 6, 0, 2 * Math.PI); ctx.fill();
+  if (label) { ctx.textAlign = "left"; ctx.font = "12px system-ui"; ctx.fillText(label, a.X(x) + 9, a.Y(y) - 8); }
+}
+function draw() {
+  ctx.clearRect(0, 0, W, H);
+  const C = { fg: css("--fg"), muted: css("--muted"), accent: css("--accent"), line: css("--line"), good: css("--good"), bad: css("--bad") };
+const text = twoLoopText(p.V1, p.V2, p.digits, p.exp), sol = solveNetlist(text), net = parseNetlist(text);
+const lines = text.trim().split("\n"), r3 = parseValue(String(p.digits) + (SUFFIX[String(p.exp)] || ""));
+const fmtR = v => v >= 1e6 ? fmt(v / 1e6) + " Mohm" : v >= 1e3 ? fmt(v / 1e3) + " kohm" : v >= 1 ? fmt(v) + " ohm" : fmt(v * 1000) + " mohm";
+if (graph === "text") {
+  ctx.fillStyle = C.fg; ctx.textAlign = "center"; ctx.font = "bold 13px system-ui"; ctx.fillText("The file, and what the reader makes of each line", W / 2, 22);
+  ctx.textAlign = "left"; ctx.font = "bold 12px system-ui"; ctx.fillStyle = C.muted; ctx.fillText("text in the file", 30, 56); ctx.fillText("value read", 250, 56); ctx.fillText("node voltages (V)", 420, 56);
+  lines.forEach((ln, i) => {
+    const y = 90 + i * 34, t = ln.split(/\s+/), isR3 = t[0] === "R3";
+    ctx.fillStyle = isR3 ? C.bad : C.fg; ctx.font = "15px ui-monospace, Menlo, Consolas, monospace"; ctx.fillText(ln, 30, y);
+    ctx.font = "13px system-ui"; ctx.fillStyle = isR3 ? C.bad : C.muted;
+    ctx.fillText(t[0][0] === "V" ? fmt(parseValue(t[3])) + " V" : fmtR(parseValue(t[3])), 250, y);
+  });
+  const names = ["top1", "top2", "a"], vmax = Math.max(12, p.V1, p.V2);
+  names.forEach((nm, i) => {
+    const y = 80 + i * 44, w = 250 * Math.max(0, sol.volts[nm]) / vmax;
+    ctx.fillStyle = C.muted; ctx.font = "12px system-ui"; ctx.textAlign = "left"; ctx.fillText(nm === "a" ? "node A" : nm, 420, y - 6);
+    ctx.fillStyle = nm === "a" ? C.accent : C.line; ctx.fillRect(420, y, Math.max(1, w), 18);
+    ctx.fillStyle = C.fg; ctx.fillText(fmt(sol.volts[nm]) + " V", 426 + w, y + 14);
+  });
+  ctx.fillStyle = C.muted; ctx.font = "13px system-ui"; ctx.textAlign = "left";
+  ctx.fillText("Node numbers in order of appearance: " + Object.keys(net.nodes).map(k => k + "=" + net.nodes[k]).join(", "), 30, 290);
+  ctx.fillText("Source currents: V1 " + fmt(1000 * sol.amps.v1) + " mA, V2 " + fmt(1000 * sol.amps.v2) + " mA", 30, 314);
+  ctx.fillStyle = C.bad; ctx.fillText("magenta line: the one you change with the digits and suffix sliders", 30, 350);
+} else if (graph === "typo") {
+  const A = axes({ x: [-1, 9], y: [0, 10], xl: "R3 as a power of ten (0 = 1 ohm, 3 = 1 kohm, 6 = 1 Mohm, 8 = 100 Mohm)", yl: "V(A) (V)", title: "V(A) against the value of R3 (V1 = " + p.V1 + " V, V2 = " + p.V2 + " V)" }, C);
+  const va = r => { const t = twoLoopText(p.V1, p.V2, +r.toPrecision(10), 0); return solveNetlist(t).volts.a; };
+  curve(x => va(Math.pow(10, x)), A, C.accent, -1, 7, 120);
+  [["m", -3], ["", 0], ["k", 3], ["meg", 6]].forEach(s => { const r = parseValue(p.digits + s[0]); dot(A, Math.log10(r), va(r), s[1] === p.exp ? C.bad : C.good, p.digits + s[0]); });
+  ctx.font = "12px system-ui"; ctx.textAlign = "left"; ctx.fillStyle = C.muted; ctx.fillText("the same digits with four different suffixes (magenta: the one now typed)", A.L + 10, A.T + 16);
+} else {
+  const sufs = [["m", -3], ["(none)", 0], ["k", 3], ["meg", 6]], vals = sufs.map(s => solveNetlist(twoLoopText(p.V1, p.V2, p.digits, s[1])).volts.a);
+  const A = axes({ x: [0, 4], y: [0, Math.max(10, p.V1)], xl: "suffix typed after " + p.digits, yl: "V(A) (V)", title: "One suffix decides the answer" }, C);
+  vals.forEach((v, i) => { const x0 = A.X(i + 0.2), x1 = A.X(i + 0.8); ctx.fillStyle = sufs[i][1] === p.exp ? C.bad : C.accent; ctx.fillRect(x0, A.Y(v), x1 - x0, A.Y(0) - A.Y(v));
+    ctx.fillStyle = C.fg; ctx.textAlign = "center"; ctx.font = "12px system-ui"; ctx.fillText(fmt(v) + " V", (x0 + x1) / 2, A.Y(v) - 6); ctx.fillText(sufs[i][0], (x0 + x1) / 2, A.Y(0) + 32); });
+}
+readout("R3 typed as " + p.digits + (SUFFIX[String(p.exp)] || "") + " is read as " + fmtR(r3) + ". The file solves to V(A) = " + sol.volts.a.toFixed(4) + " V (the intended 300 ohm gives 6.5455 V), V1 supplies " + fmt(1000 * sol.amps.v1) + " mA and V2 " + fmt(1000 * sol.amps.v2) + " mA.");
+
+  const ch = document.getElementById("challenge");
+  if (challengeTest) { const ok = !!challengeTest(p); ch.hidden = false; ch.dataset.ok = String(ok);
+    ch.innerHTML = "<b>Challenge:</b> " + CHALLENGE + " &nbsp; " + (ok ? "<b>Done!</b>" : "Not yet.");
+    if (ok !== lastOk) { document.getElementById("status").textContent = ok ? "Challenge done." : "Challenge not yet done."; lastOk = ok; } }
+}
+const box = document.getElementById("controls");
+const inputs = {};
+for (const q of PARAMS) {
+  p[q.id] = q.value;
+  const row = document.createElement("div"); row.className = "row";
+  row.innerHTML = `<label for="${q.id}">${q.label} (${q.unit || "no unit"})</label>` +
+    `<input id="${q.id}" type="range" min="${q.min}" max="${q.max}" step="${q.step}" value="${q.value}">` +
+    `<output for="${q.id}">${q.value}</output>`;
+  const inp = row.querySelector("input"), out = row.querySelector("output");
+  inputs[q.id] = [inp, out];
+  inp.addEventListener("input", () => { p[q.id] = +inp.value; out.textContent = inp.value; draw(); });
+  box.appendChild(row);
+}
+function setAll(vals) { for (const k in vals) { p[k] = vals[k]; if (inputs[k]) { inputs[k][0].value = vals[k]; inputs[k][1].textContent = vals[k]; } } draw(); }
+const DEFAULTS = Object.assign({}, p);
+document.getElementById("reset").addEventListener("click", () => setAll(DEFAULTS));
+for (const g of GRAPHS) {
+  const b = document.createElement("button"); b.type = "button"; b.textContent = g.label;
+  b.setAttribute("aria-pressed", String(g.id === graph));
+  b.addEventListener("click", () => { graph = g.id; for (const x of document.querySelectorAll("#graphs button")) x.setAttribute("aria-pressed", String(x === b)); draw(); });
+  document.getElementById("graphs").appendChild(b);
+}
+for (const pr of PRESETS) {
+  const b = document.createElement("button"); b.type = "button"; b.textContent = pr.label;
+  b.addEventListener("click", () => setAll(pr.values));
+  document.getElementById("presets").appendChild(b);
+}
+matchMedia("(prefers-color-scheme: dark)").addEventListener("change", draw);
+draw();
+</script>
+</body>
+</html>

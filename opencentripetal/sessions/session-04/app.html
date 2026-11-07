@@ -1,0 +1,219 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Session 4: the transition spiral</title>
+<style>
+  :root { --bg:#ffffff; --fg:#14181f; --muted:#5b6472; --card:#f3f5f8; --accent:#003f7f; --good:#c86a00; --bad:#d81b60; --line:#d7dce3; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#0e1116; --fg:#e6e9ee; --muted:#9aa3b2; --card:#171b22; --accent:#3b8fe0; --good:#ffc857; --bad:#e0457b; --line:#2a313c; } }
+  * { box-sizing: border-box; }
+  body { margin:0; padding:16px; background:var(--bg); color:var(--fg); font:16px/1.5 system-ui, sans-serif; }
+  main { max-width: 780px; margin: 0 auto; }
+  h1 { font-size: 1.3rem; margin: 0 0 4px; }
+  p.sub { margin: 0 0 12px; color: var(--muted); }
+  .scroll { overflow-x:auto; }
+  canvas { width:100%; min-width:560px; height:auto; background:var(--card); border:1px solid var(--line); border-radius:8px; display:block; }
+  .sr { position:absolute; left:-9999px; }
+  .bar { display:flex; flex-wrap:wrap; gap:8px; margin:10px 0; }
+  button { font:inherit; padding:6px 12px; border:1px solid var(--line); background:var(--card); color:var(--fg); border-radius:6px; cursor:pointer; }
+  button[aria-pressed="true"] { border-color:var(--accent); color:var(--accent); font-weight:600; }
+  button:focus-visible, input:focus-visible { outline:3px solid var(--accent); outline-offset:2px; }
+  .row { display:grid; grid-template-columns: 11rem 1fr 6rem; gap:8px; align-items:center; margin:8px 0; }
+  .row output { text-align:right; font-variant-numeric: tabular-nums; }
+  @media (max-width: 560px) { .row { grid-template-columns: 1fr; gap:2px; } .row output { text-align:left; } }
+  input[type=range] { width:100%; accent-color: var(--accent); }
+  #readout, #challenge, .note { margin-top:10px; padding:10px 12px; background:var(--card); border-radius:8px; border:1px solid var(--line); }
+  #challenge[data-ok="true"] { border-color:var(--good); } #challenge[data-ok="true"] b { color:var(--good); }
+  .note { font-size:.85rem; color:var(--muted); }
+  a { color: var(--accent); }
+</style>
+</head>
+<body>
+<main>
+  <h1>Session 4: the transition spiral</h1>
+  <p class="sub">A straight road, a clothoid spiral and a circular curve: the sideways acceleration, its rate of change (jerk) and how well a car with slow tyres follows the road.</p>
+  <div class="bar" id="graphs" role="group" aria-label="Choose a graph"></div>
+  <div class="scroll"><canvas id="c" width="720" height="420" role="img" aria-label="Session 4: the transition spiral: interactive plot"></canvas></div>
+  <div class="bar" id="presets" role="group" aria-label="Presets"></div>
+  <div id="controls"></div>
+  <div class="bar"><button id="reset" type="button">Reset</button></div>
+  <div id="readout"></div>
+  <div id="challenge" hidden></div>
+  <div id="status" class="sr" aria-live="polite"></div>
+  <p class="note">This is a simplified educational model. It is not a validated design tool and must not be used for real structures, electrical installations, vehicles, industrial processes or medical decisions.</p>
+  <p class="sub"><a href="https://github.com/KrunalPanchal1995/pan-iit-oss/tree/main/opencentripetal">Back to the repository</a></p>
+</main>
+<script>
+"use strict";
+const PARAMS = [{"id": "v", "label": "Speed v", "min": 5, "max": 35, "step": 1, "value": 20, "unit": "m/s"}, {"id": "R", "label": "Curve radius R", "min": 50, "max": 300, "step": 10, "value": 100, "unit": "m"}, {"id": "L", "label": "Spiral length L (0 = step)", "min": 0, "max": 150, "step": 5, "value": 40, "unit": "m"}, {"id": "tau", "label": "Tyre lag tau", "min": 0.05, "max": 0.6, "step": 0.05, "value": 0.25, "unit": "s"}];
+const GRAPHS = [{"id": "path", "label": "Road and car"}, {"id": "accel", "label": "Sideways acceleration"}, {"id": "dev", "label": "Distance from the road"}];
+const PRESETS = [{"label": "No spiral (step)", "values": {"v": 20, "R": 100, "L": 0, "tau": 0.25}}, {"label": "40 m spiral", "values": {"v": 20, "R": 100, "L": 40, "tau": 0.25}}, {"label": "Too fast for the grip", "values": {"v": 29, "R": 100, "L": 40, "tau": 0.25}}, {"label": "Near-instant tyres", "values": {"v": 20, "R": 100, "L": 40, "tau": 0.05}}];
+const CHALLENGE = "At 20 m/s on a curve of radius 100 m, find the shortest spiral (steps of 5 m) that keeps the ideal lateral jerk at or below 1.0 m/s^3.";
+const CHALLENGE_SOLUTION = {"v": 20, "R": 100, "L": 80, "tau": 0.25};
+const GR = 9.81, KP = 1.0, KD = 1.4;
+function clothoidXY(s, R, L) {
+  const u = s * s / (2 * R * L); let x = 0, y = 0, f = 1;
+  for (let k = 0; k < 14; k++) {
+    if (k > 0) f *= (2 * k - 1) * (2 * k);
+    const fy = f * (2 * k + 1);
+    x += Math.pow(-1, k) * Math.pow(u, 2 * k) / ((4 * k + 1) * f);
+    y += Math.pow(-1, k) * Math.pow(u, 2 * k + 1) / ((4 * k + 3) * fy);
+  }
+  return [s * x, s * y];
+}
+function buildPath(R, L, straight, arc, ds) {
+  straight = straight === undefined ? 60 : straight; arc = arc === undefined ? 80 : arc; ds = ds || 0.05;
+  const xs = [], ys = [], th = [], ka = [], ss = [];
+  const n0 = Math.round(straight / ds), s0 = n0 * ds;
+  for (let i = 0; i < n0; i++) { ss.push(i * ds); xs.push(i * ds); ys.push(0); th.push(0); ka.push(0); }
+  let te = 0, xe = s0, ye = 0, sArc = s0;
+  if (L > 0) {
+    const n1 = Math.round(L / ds);
+    for (let i = 0; i < n1; i++) { const q = i * ds, p = clothoidXY(q, R, L); ss.push(s0 + q); xs.push(s0 + p[0]); ys.push(p[1]); th.push(q * q / (2 * R * L)); ka.push(q / (R * L)); }
+    const e = clothoidXY(L, R, L); te = L / (2 * R); xe = s0 + e[0]; ye = e[1]; sArc = s0 + n1 * ds;
+  }
+  const cx = xe - R * Math.sin(te), cy = ye + R * Math.cos(te), m = Math.round(arc / ds) + 1;
+  for (let i = 0; i < m; i++) { const ph = te + i * ds / R; ss.push(sArc + i * ds); xs.push(cx + R * Math.sin(ph)); ys.push(cy - R * Math.cos(ph)); th.push(ph); ka.push(1 / R); }
+  return { s: ss, x: xs, y: ys, th: th, ka: ka, shift: cy - R, sSpiral: s0, sArc: sArc };
+}
+function follow(path, v, tau, mu, dt) {
+  dt = dt || 0.01; const xs = path.x, ys = path.y, th = path.th, ka = path.ka, N = xs.length;
+  const T = (path.s[N - 1] - 15) / v, cap = mu * GR, n = Math.round(T / dt);
+  const deriv = st => {
+    const x = st[0], y = st[1], psi = st[2], a = st[3];
+    let best = 0, bd = Infinity;
+    for (let i = 0; i < N; i++) { const dx = xs[i] - x, dy = ys[i] - y, d2 = dx * dx + dy * dy; if (d2 < bd) { bd = d2; best = i; } }
+    const i = best, d = -(x - xs[i]) * Math.sin(th[i]) + (y - ys[i]) * Math.cos(th[i]), dd = v * Math.sin(psi - th[i]);
+    const acmd = v * v * ka[i] - KP * d - KD * dd, alim = Math.max(-cap, Math.min(cap, acmd));
+    return [[v * Math.cos(psi), v * Math.sin(psi), a / v, (alim - a) / tau], d];
+  };
+  let st = [0, 0, 0, 0]; const rec = { t: [], x: [], y: [], a: [], d: [] };
+  for (let i = 0; i <= n; i++) {
+    const r1 = deriv(st), k1 = r1[0];
+    rec.t.push(i * dt); rec.x.push(st[0]); rec.y.push(st[1]); rec.a.push(st[3]); rec.d.push(r1[1]);
+    if (i === n) break;
+    const add = (k, h) => st.map((q, j) => q + h * k[j]);
+    const k2 = deriv(add(k1, 0.5 * dt))[0], k3 = deriv(add(k2, 0.5 * dt))[0], k4 = deriv(add(k3, dt))[0];
+    st = st.map((q, j) => q + dt / 6 * (k1[j] + 2 * k2[j] + 2 * k3[j] + k4[j]));
+  }
+  return rec;
+}
+function metrics(R, L, v, tau, mu) {
+  const path = buildPath(R, L), rec = follow(path, v, tau, mu || 0.8);
+  let maxDev = 0, peakA = -Infinity, peakJ = 0;
+  for (let i = 0; i < rec.t.length; i++) { maxDev = Math.max(maxDev, Math.abs(rec.d[i])); peakA = Math.max(peakA, rec.a[i]); if (i) peakJ = Math.max(peakJ, Math.abs(rec.a[i] - rec.a[i - 1]) / 0.01); }
+  return { path, rec, maxDev, peakA, peakJ, steady: v * v / R, ideal: L > 0 ? v * v * v / (R * L) : Infinity };
+}
+window.R = { clothoidXY, buildPath, follow, metrics };
+const challengeTest = CHALLENGE ? (p) => p.v === 20 && p.R === 100 && p.L > 0 && p.L <= 80 && p.v * p.v * p.v / (p.R * p.L) <= 1.0 + 1e-9 : null;
+const cv = document.getElementById("c"), ctx = cv.getContext("2d");
+const W = cv.width, H = cv.height, p = {};
+let graph = GRAPHS.length ? GRAPHS[0].id : "main";
+const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+const fmt = v => (Math.abs(v) >= 1000 || (Math.abs(v) > 0 && Math.abs(v) < 0.01)) ? v.toExponential(2) : String(+v.toPrecision(4));
+function readout(html) {
+  document.getElementById("readout").innerHTML = html;
+  cv.setAttribute("aria-label", document.title + ". " + html.replace(/<[^>]+>/g, " ").replace(/&nbsp;/g, " "));  // screen readers get the numbers
+}
+let lastOk = null;
+// ---- plotting helpers: every graph gets labelled axes with units ----
+function niceTicks(lo, hi, n) {
+  const raw = (hi - lo) / n, mag = Math.pow(10, Math.floor(Math.log10(raw))), f = raw / mag;
+  const step = (f < 1.5 ? 1 : f < 3 ? 2 : f < 7 ? 5 : 10) * mag, out = [];
+  for (let v = Math.ceil(lo / step - 1e-9) * step; v <= hi + 1e-9; v += step) out.push(+v.toPrecision(12));
+  return out;
+}
+function axes(o, C) {
+  const L = 66, R = 16, T = 34, B = 50, w = W - L - R, h = H - T - B;
+  const X = v => L + (v - o.x[0]) / (o.x[1] - o.x[0]) * w, Y = v => T + h - (v - o.y[0]) / (o.y[1] - o.y[0]) * h;
+  ctx.lineWidth = 1; ctx.font = "12px system-ui";
+  for (const xv of niceTicks(o.x[0], o.x[1], 6)) {
+    ctx.strokeStyle = C.line; ctx.beginPath(); ctx.moveTo(X(xv), T); ctx.lineTo(X(xv), T + h); ctx.stroke();
+    ctx.fillStyle = C.muted; ctx.textAlign = "center"; ctx.fillText(fmt(xv), X(xv), T + h + 16);
+  }
+  for (const yv of niceTicks(o.y[0], o.y[1], 5)) {
+    ctx.strokeStyle = C.line; ctx.beginPath(); ctx.moveTo(L, Y(yv)); ctx.lineTo(L + w, Y(yv)); ctx.stroke();
+    ctx.fillStyle = C.muted; ctx.textAlign = "right"; ctx.fillText(fmt(yv), L - 6, Y(yv) + 4);
+  }
+  ctx.strokeStyle = C.fg; ctx.beginPath(); ctx.moveTo(L, T); ctx.lineTo(L, T + h); ctx.lineTo(L + w, T + h); ctx.stroke();
+  ctx.fillStyle = C.fg; ctx.textAlign = "center"; ctx.font = "13px system-ui";
+  ctx.fillText(o.xl, L + w / 2, H - 8);
+  ctx.save(); ctx.translate(14, T + h / 2); ctx.rotate(-Math.PI / 2); ctx.fillText(o.yl, 0, 0); ctx.restore();
+  ctx.font = "bold 13px system-ui"; ctx.fillText(o.title || "", L + w / 2, 20);
+  return { X, Y, L, T, w, h };
+}
+function curve(f, a, color, x0, x1, n) {
+  n = n || 160; ctx.save(); ctx.beginPath(); ctx.rect(a.L, a.T, a.w, a.h); ctx.clip();   // never draw outside the plot area
+  ctx.strokeStyle = color; ctx.lineWidth = 2.5; ctx.beginPath();
+  for (let i = 0; i <= n; i++) { const x = x0 + (x1 - x0) * i / n, y = f(x); i ? ctx.lineTo(a.X(x), a.Y(y)) : ctx.moveTo(a.X(x), a.Y(y)); }
+  ctx.stroke(); ctx.restore();
+}
+function dot(a, x, y, color, label) {
+  ctx.fillStyle = color; ctx.beginPath(); ctx.arc(a.X(x), a.Y(y), 6, 0, 2 * Math.PI); ctx.fill();
+  if (label) { ctx.textAlign = "left"; ctx.font = "12px system-ui"; ctx.fillText(label, a.X(x) + 9, a.Y(y) - 8); }
+}
+function draw() {
+  ctx.clearRect(0, 0, W, H);
+  const C = { fg: css("--fg"), muted: css("--muted"), accent: css("--accent"), line: css("--line"), good: css("--good"), bad: css("--bad") };
+const m = metrics(p.R, p.L, p.v, p.tau), rec = m.rec, path = m.path;
+const poly = (xs, ys, A, color, w) => { ctx.save(); ctx.beginPath(); ctx.rect(A.L, A.T, A.w, A.h); ctx.clip(); ctx.strokeStyle = color; ctx.lineWidth = w || 2.5; ctx.beginPath(); xs.forEach((x, i) => i ? ctx.lineTo(A.X(x), A.Y(ys[i])) : ctx.moveTo(A.X(x), A.Y(ys[i]))); ctx.stroke(); ctx.restore(); };
+if (graph === "path") {
+  const last = Math.min(path.x.length - 1, Math.round((60 + p.L + 80) / 0.05)), px = path.x.slice(0, last), py = path.y.slice(0, last);
+  const xmax = Math.max.apply(null, px) + 5, ymin = Math.min.apply(null, py) - 5, ymax = Math.max.apply(null, py) + 5;
+  const rat = 336 / 638; let xr = Math.max(xmax, (ymax - ymin) / rat), yr = xr * rat; const yc = 0.5 * (ymin + ymax);
+  const A = axes({ x: [0, xr], y: [yc - yr / 2, yc + yr / 2], xl: "x (m)", yl: "y (m)", title: "Road: straight, spiral (L = " + p.L + " m), circle (R = " + p.R + " m); dots every 0.5 s" }, C);
+  poly(px, py, A, C.line, 7); poly(px, py, A, C.accent, 2.5);
+  poly(rec.x, rec.y, A, C.bad, 1.5);
+  ctx.fillStyle = C.bad; for (let i = 0; i < rec.t.length; i += 50) { ctx.beginPath(); ctx.arc(A.X(rec.x[i]), A.Y(rec.y[i]), 4, 0, 2 * Math.PI); ctx.fill(); }
+  ctx.font = "12px system-ui"; ctx.fillStyle = C.muted; ctx.textAlign = "left"; ctx.fillText("blue: the road   magenta: the car (slow tyres)", A.L + 8, A.T + A.h - 8);
+} else if (graph === "accel") {
+  const tmax = rec.t[rec.t.length - 1], ymax = Math.max(m.peakA, m.steady, 1) * 1.15;
+  const A = axes({ x: [0, tmax], y: [0, ymax], xl: "time (s)", yl: "sideways acceleration (m/s^2)", title: "Sideways acceleration: ideal v^2 kappa(s) and the car" }, C);
+  const ideal = rec.t.map(t => { const s = p.v * t, S0 = 60; const k = s <= S0 ? 0 : (p.L > 0 && s < S0 + p.L ? (s - S0) / (p.R * p.L) : 1 / p.R); return p.v * p.v * k; });
+  poly(rec.t, ideal, A, C.accent, 2.5); poly(rec.t, rec.a, A, C.bad, 2.5);
+  ctx.font = "13px system-ui"; ctx.textAlign = "left"; ctx.fillStyle = C.accent; ctx.fillText("blue: ideal (no lag)", A.L + 10, A.T + 18); ctx.fillStyle = C.bad; ctx.fillText("magenta: the car", A.L + 10, A.T + 36);
+} else {
+  const tmax = rec.t[rec.t.length - 1], lim = Math.max(0.5, m.maxDev * 1.2);
+  const A = axes({ x: [0, tmax], y: [-lim, lim], xl: "time (s)", yl: "distance left of the road (m)", title: "How far the car strays from the road (largest " + fmt(m.maxDev) + " m)" }, C);
+  poly(rec.t, rec.d, A, C.bad, 2.5);
+}
+readout("v = " + p.v + " m/s, R = " + p.R + " m: steady sideways acceleration " + fmt(m.steady) + " m/s^2. Spiral " + p.L + " m: ideal jerk " + (p.L > 0 ? fmt(m.ideal) + " m/s^3" : "infinite (a step)") + ", shift " + fmt(m.path.shift) + " m. Car with tyre lag " + p.tau + " s: peak jerk " + fmt(m.peakJ) + " m/s^3, peak acceleration " + fmt(m.peakA) + " m/s^2, largest distance from the road " + fmt(m.maxDev) + " m.");
+
+  const ch = document.getElementById("challenge");
+  if (challengeTest) { const ok = !!challengeTest(p); ch.hidden = false; ch.dataset.ok = String(ok);
+    ch.innerHTML = "<b>Challenge:</b> " + CHALLENGE + " &nbsp; " + (ok ? "<b>Done!</b>" : "Not yet.");
+    if (ok !== lastOk) { document.getElementById("status").textContent = ok ? "Challenge done." : "Challenge not yet done."; lastOk = ok; } }
+}
+const box = document.getElementById("controls");
+const inputs = {};
+for (const q of PARAMS) {
+  p[q.id] = q.value;
+  const row = document.createElement("div"); row.className = "row";
+  row.innerHTML = `<label for="${q.id}">${q.label} (${q.unit || "no unit"})</label>` +
+    `<input id="${q.id}" type="range" min="${q.min}" max="${q.max}" step="${q.step}" value="${q.value}">` +
+    `<output for="${q.id}">${q.value}</output>`;
+  const inp = row.querySelector("input"), out = row.querySelector("output");
+  inputs[q.id] = [inp, out];
+  inp.addEventListener("input", () => { p[q.id] = +inp.value; out.textContent = inp.value; draw(); });
+  box.appendChild(row);
+}
+function setAll(vals) { for (const k in vals) { p[k] = vals[k]; if (inputs[k]) { inputs[k][0].value = vals[k]; inputs[k][1].textContent = vals[k]; } } draw(); }
+const DEFAULTS = Object.assign({}, p);
+document.getElementById("reset").addEventListener("click", () => setAll(DEFAULTS));
+for (const g of GRAPHS) {
+  const b = document.createElement("button"); b.type = "button"; b.textContent = g.label;
+  b.setAttribute("aria-pressed", String(g.id === graph));
+  b.addEventListener("click", () => { graph = g.id; for (const x of document.querySelectorAll("#graphs button")) x.setAttribute("aria-pressed", String(x === b)); draw(); });
+  document.getElementById("graphs").appendChild(b);
+}
+for (const pr of PRESETS) {
+  const b = document.createElement("button"); b.type = "button"; b.textContent = pr.label;
+  b.addEventListener("click", () => setAll(pr.values));
+  document.getElementById("presets").appendChild(b);
+}
+matchMedia("(prefers-color-scheme: dark)").addEventListener("change", draw);
+draw();
+</script>
+</body>
+</html>

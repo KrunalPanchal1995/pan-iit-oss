@@ -1,0 +1,11 @@
+[project]
+name = "openchaos"
+version = "0.1.0"
+description = "Learn why a double pendulum is unpredictable: equations, energy checks, Lyapunov exponents and a flip-time map, in 5 sessions."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+dependencies = ["numpy", "matplotlib"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

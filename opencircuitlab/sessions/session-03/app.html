@@ -1,0 +1,182 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Session 3: Thevenin equivalent and maximum power</title>
+<style>
+  :root { --bg:#ffffff; --fg:#14181f; --muted:#5b6472; --card:#f3f5f8; --accent:#003f7f; --good:#c86a00; --bad:#d81b60; --line:#d7dce3; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#0e1116; --fg:#e6e9ee; --muted:#9aa3b2; --card:#171b22; --accent:#3b8fe0; --good:#ffc857; --bad:#e0457b; --line:#2a313c; } }
+  * { box-sizing: border-box; }
+  body { margin:0; padding:16px; background:var(--bg); color:var(--fg); font:16px/1.5 system-ui, sans-serif; }
+  main { max-width: 780px; margin: 0 auto; }
+  h1 { font-size: 1.3rem; margin: 0 0 4px; }
+  p.sub { margin: 0 0 12px; color: var(--muted); }
+  .scroll { overflow-x:auto; }
+  canvas { width:100%; min-width:560px; height:auto; background:var(--card); border:1px solid var(--line); border-radius:8px; display:block; }
+  .sr { position:absolute; left:-9999px; }
+  .bar { display:flex; flex-wrap:wrap; gap:8px; margin:10px 0; }
+  button { font:inherit; padding:6px 12px; border:1px solid var(--line); background:var(--card); color:var(--fg); border-radius:6px; cursor:pointer; }
+  button[aria-pressed="true"] { border-color:var(--accent); color:var(--accent); font-weight:600; }
+  button:focus-visible, input:focus-visible { outline:3px solid var(--accent); outline-offset:2px; }
+  .row { display:grid; grid-template-columns: 11rem 1fr 6rem; gap:8px; align-items:center; margin:8px 0; }
+  .row output { text-align:right; font-variant-numeric: tabular-nums; }
+  @media (max-width: 560px) { .row { grid-template-columns: 1fr; gap:2px; } .row output { text-align:left; } }
+  input[type=range] { width:100%; accent-color: var(--accent); }
+  #readout, #challenge, .note { margin-top:10px; padding:10px 12px; background:var(--card); border-radius:8px; border:1px solid var(--line); }
+  #challenge[data-ok="true"] { border-color:var(--good); } #challenge[data-ok="true"] b { color:var(--good); }
+  .note { font-size:.85rem; color:var(--muted); }
+  a { color: var(--accent); }
+</style>
+</head>
+<body>
+<main>
+  <h1>Session 3: Thevenin equivalent and maximum power</h1>
+  <p class="sub">A 2-resistor source network with a load. The same load voltage and current come from the Thevenin equivalent.</p>
+  <div class="bar" id="graphs" role="group" aria-label="Choose a graph"></div>
+  <div class="scroll"><canvas id="c" width="720" height="420" role="img" aria-label="Session 3: Thevenin equivalent and maximum power: interactive plot"></canvas></div>
+  <div class="bar" id="presets" role="group" aria-label="Presets"></div>
+  <div id="controls"></div>
+  <div class="bar"><button id="reset" type="button">Reset</button></div>
+  <div id="readout"></div>
+  <div id="challenge" hidden></div>
+  <div id="status" class="sr" aria-live="polite"></div>
+  <p class="note">This is a simplified educational model. It is not a validated design tool and must not be used for real structures, electrical installations, vehicles, industrial processes or medical decisions.</p>
+  <p class="sub"><a href="https://github.com/KrunalPanchal1995/pan-iit-oss/tree/main/opencircuitlab">Back to the repository</a></p>
+</main>
+<script>
+"use strict";
+const PARAMS = [{"id": "Vs", "label": "Supply voltage", "min": 2, "max": 12, "step": 0.5, "value": 12, "unit": "V"}, {"id": "R1", "label": "Series resistor R1", "min": 100, "max": 5000, "step": 50, "value": 1000, "unit": "ohm"}, {"id": "R2", "label": "Shunt resistor R2", "min": 100, "max": 5000, "step": 50, "value": 2000, "unit": "ohm"}, {"id": "RL", "label": "Load RL", "min": 50, "max": 5000, "step": 5, "value": 1000, "unit": "ohm"}];
+const GRAPHS = [{"id": "circuit", "label": "Network and Thevenin equivalent", "diagram": true}, {"id": "loadline", "label": "Load line"}, {"id": "power", "label": "Load power versus RL"}];
+const PRESETS = [{"label": "Worked example", "values": {"Vs": 12, "R1": 1000, "R2": 2000, "RL": 1000}}, {"label": "Matched load", "values": {"Vs": 12, "R1": 1000, "R2": 2000, "RL": 665}}, {"label": "Heavy load", "values": {"Vs": 12, "R1": 1000, "R2": 2000, "RL": 100}}];
+const CHALLENGE = "Match the load to the network: set RL equal to Rth (the parallel value of R1 and R2) within 1 percent.";
+const CHALLENGE_SOLUTION = {"Vs": 12, "R1": 1000, "R2": 2000, "RL": 665};
+const challengeTest = CHALLENGE ? (p) => (Math.abs(p.RL - p.R1 * p.R2 / (p.R1 + p.R2)) <= 0.01 * p.R1 * p.R2 / (p.R1 + p.R2)) : null;
+const cv = document.getElementById("c"), ctx = cv.getContext("2d");
+const W = cv.width, H = cv.height, p = {};
+let graph = GRAPHS.length ? GRAPHS[0].id : "main";
+const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+const fmt = v => (Math.abs(v) >= 1000 || (Math.abs(v) > 0 && Math.abs(v) < 0.01)) ? v.toExponential(2) : String(+v.toPrecision(4));
+function readout(html) {
+  document.getElementById("readout").innerHTML = html;
+  cv.setAttribute("aria-label", document.title + ". " + html.replace(/<[^>]+>/g, " ").replace(/&nbsp;/g, " "));  // screen readers get the numbers
+}
+let lastOk = null;
+// ---- plotting helpers: every graph gets labelled axes with units ----
+function niceTicks(lo, hi, n) {
+  const raw = (hi - lo) / n, mag = Math.pow(10, Math.floor(Math.log10(raw))), f = raw / mag;
+  const step = (f < 1.5 ? 1 : f < 3 ? 2 : f < 7 ? 5 : 10) * mag, out = [];
+  for (let v = Math.ceil(lo / step - 1e-9) * step; v <= hi + 1e-9; v += step) out.push(+v.toPrecision(12));
+  return out;
+}
+function axes(o, C) {
+  const L = 66, R = 16, T = 34, B = 50, w = W - L - R, h = H - T - B;
+  const X = v => L + (v - o.x[0]) / (o.x[1] - o.x[0]) * w, Y = v => T + h - (v - o.y[0]) / (o.y[1] - o.y[0]) * h;
+  ctx.lineWidth = 1; ctx.font = "12px system-ui";
+  for (const xv of niceTicks(o.x[0], o.x[1], 6)) {
+    ctx.strokeStyle = C.line; ctx.beginPath(); ctx.moveTo(X(xv), T); ctx.lineTo(X(xv), T + h); ctx.stroke();
+    ctx.fillStyle = C.muted; ctx.textAlign = "center"; ctx.fillText(fmt(xv), X(xv), T + h + 16);
+  }
+  for (const yv of niceTicks(o.y[0], o.y[1], 5)) {
+    ctx.strokeStyle = C.line; ctx.beginPath(); ctx.moveTo(L, Y(yv)); ctx.lineTo(L + w, Y(yv)); ctx.stroke();
+    ctx.fillStyle = C.muted; ctx.textAlign = "right"; ctx.fillText(fmt(yv), L - 6, Y(yv) + 4);
+  }
+  ctx.strokeStyle = C.fg; ctx.beginPath(); ctx.moveTo(L, T); ctx.lineTo(L, T + h); ctx.lineTo(L + w, T + h); ctx.stroke();
+  ctx.fillStyle = C.fg; ctx.textAlign = "center"; ctx.font = "13px system-ui";
+  ctx.fillText(o.xl, L + w / 2, H - 8);
+  ctx.save(); ctx.translate(14, T + h / 2); ctx.rotate(-Math.PI / 2); ctx.fillText(o.yl, 0, 0); ctx.restore();
+  ctx.font = "bold 13px system-ui"; ctx.fillText(o.title || "", L + w / 2, 20);
+  return { X, Y, L, T, w, h };
+}
+function curve(f, a, color, x0, x1, n) {
+  n = n || 160; ctx.save(); ctx.beginPath(); ctx.rect(a.L, a.T, a.w, a.h); ctx.clip();   // never draw outside the plot area
+  ctx.strokeStyle = color; ctx.lineWidth = 2.5; ctx.beginPath();
+  for (let i = 0; i <= n; i++) { const x = x0 + (x1 - x0) * i / n, y = f(x); i ? ctx.lineTo(a.X(x), a.Y(y)) : ctx.moveTo(a.X(x), a.Y(y)); }
+  ctx.stroke(); ctx.restore();
+}
+function dot(a, x, y, color, label) {
+  ctx.fillStyle = color; ctx.beginPath(); ctx.arc(a.X(x), a.Y(y), 6, 0, 2 * Math.PI); ctx.fill();
+  if (label) { ctx.textAlign = "left"; ctx.font = "12px system-ui"; ctx.fillText(label, a.X(x) + 9, a.Y(y) - 8); }
+}
+function draw() {
+  ctx.clearRect(0, 0, W, H);
+  const C = { fg: css("--fg"), muted: css("--muted"), accent: css("--accent"), line: css("--line"), good: css("--good"), bad: css("--bad") };
+  
+const par3 = (a, b) => a * b / (a + b);
+const vth = p.Vs * p.R2 / (p.R1 + p.R2), rth = par3(p.R1, p.R2);
+const il = vth / (rth + p.RL), vl = il * p.RL, pl = vl * il, pmax = vth * vth / (4 * rth);
+const pAt = rl => 1000 * vth * vth * rl / ((rth + rl) * (rth + rl));
+if (graph === "circuit") {
+  const box = (x, y0, y1) => { ctx.strokeStyle = C.fg; ctx.lineWidth = 2.5; ctx.strokeRect(x - 14, y0, 28, y1 - y0); };
+  ctx.strokeStyle = C.fg; ctx.lineWidth = 3; ctx.beginPath();
+  ctx.moveTo(150, 70); ctx.lineTo(150, 90); ctx.moveTo(150, 160); ctx.lineTo(150, 200); ctx.lineTo(150, 220); ctx.moveTo(150, 290); ctx.lineTo(150, 330);
+  ctx.moveTo(150, 200); ctx.lineTo(280, 200); ctx.lineTo(280, 220); ctx.moveTo(280, 290); ctx.lineTo(280, 330);
+  ctx.moveTo(150, 70); ctx.lineTo(60, 70); ctx.lineTo(60, 175); ctx.moveTo(60, 215); ctx.lineTo(60, 330); ctx.lineTo(280, 330); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(40, 180); ctx.lineTo(80, 180); ctx.moveTo(48, 205); ctx.lineTo(72, 205); ctx.moveTo(60, 175); ctx.lineTo(60, 180); ctx.moveTo(60, 205); ctx.lineTo(60, 215); ctx.stroke();
+  box(150, 90, 160); box(150, 220, 290); box(280, 220, 290);
+  ctx.setLineDash([5, 4]); ctx.strokeStyle = C.muted; ctx.lineWidth = 1.5; ctx.strokeRect(30, 52, 175, 300); ctx.setLineDash([]);
+  ctx.fillStyle = C.fg; ctx.font = "12px system-ui"; ctx.textAlign = "left";
+  ctx.fillText(p.Vs.toFixed(1) + " V", 4, 196); ctx.fillText("R1 " + p.R1, 168, 130); ctx.fillText("R2 " + p.R2, 168, 262); ctx.fillText("RL " + p.RL, 300, 262);
+  ctx.fillStyle = C.muted; ctx.fillText("source network", 36, 44); ctx.fillText("(ohm)", 168, 144);
+  ctx.fillStyle = C.accent; ctx.fillText("V(load) = " + vl.toFixed(2) + " V", 290, 190);
+  // Thevenin equivalent
+  ctx.strokeStyle = C.fg; ctx.lineWidth = 3; ctx.beginPath();
+  ctx.moveTo(420, 70); ctx.lineTo(470, 70); ctx.moveTo(560, 70); ctx.lineTo(620, 70); ctx.lineTo(620, 220); ctx.moveTo(620, 290); ctx.lineTo(620, 330); ctx.lineTo(420, 330); ctx.lineTo(420, 215); ctx.moveTo(420, 175); ctx.lineTo(420, 70); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(400, 180); ctx.lineTo(440, 180); ctx.moveTo(408, 205); ctx.lineTo(432, 205); ctx.moveTo(420, 175); ctx.lineTo(420, 180); ctx.moveTo(420, 205); ctx.lineTo(420, 215); ctx.stroke();
+  ctx.strokeStyle = C.fg; ctx.lineWidth = 2.5; ctx.strokeRect(470, 56, 90, 28); box(620, 220, 290);
+  ctx.fillStyle = C.fg; ctx.fillText("Vth " + vth.toFixed(2) + " V", 340, 196); ctx.fillText("Rth " + rth.toFixed(0) + " ohm", 475, 104); ctx.fillText("RL " + p.RL, 640, 262);
+  ctx.fillStyle = C.muted; ctx.fillText("Thevenin equivalent", 420, 44); ctx.fillText("same load voltage and current", 440, 360);
+  ctx.fillStyle = C.accent; ctx.fillText("I = " + (1000 * il).toFixed(2) + " mA", 480, 130);
+} else if (graph === "loadline") {
+  const A = axes({ x: [0, 125], y: [0, 12.5], xl: "load current (mA)", yl: "voltage across the load (V)", title: "Thevenin load line meets the load line" }, C);
+  curve(i => vth - rth * i / 1000, A, C.accent, 0, 125, 2);
+  curve(i => p.RL * i / 1000, A, C.good, 0, 125, 2);
+  dot(A, 1000 * il, vl, C.bad, "operating point");
+  ctx.font = "12px system-ui"; ctx.textAlign = "left"; ctx.fillStyle = C.accent; ctx.fillText("blue: V = Vth - Rth I (the network)", A.L + 10, A.T + 16);
+  ctx.fillStyle = C.good; ctx.fillText("orange: V = RL I (the load)", A.L + 10, A.T + 32);
+} else {
+  const ym = Math.max(1.15 * 1000 * pmax, 0.01);
+  const A = axes({ x: [0, 5000], y: [0, ym], xl: "load resistance RL (ohm)", yl: "power in the load (mW)", title: "Load power peaks at RL = Rth" }, C);
+  curve(pAt, A, C.accent, 0, 5000, 300);
+  dot(A, rth, 1000 * pmax, C.good, "maximum");
+  dot(A, p.RL, 1000 * pl, C.bad, "now");
+}
+readout("Vth = " + vth.toFixed(2) + " V, Rth = " + rth.toFixed(1) + " ohm &nbsp;|&nbsp; load: " + vl.toFixed(2) + " V, " + (1000 * il).toFixed(2) + " mA, " + (1000 * pl).toFixed(2) + " mW &nbsp;|&nbsp; most possible " + (1000 * pmax).toFixed(2) + " mW at RL = " + rth.toFixed(1) + " ohm &nbsp;|&nbsp; Thevenin source efficiency " + (100 * p.RL / (rth + p.RL)).toFixed(1) + " %");
+
+  const ch = document.getElementById("challenge");
+  if (challengeTest) { const ok = !!challengeTest(p); ch.hidden = false; ch.dataset.ok = String(ok);
+    ch.innerHTML = "<b>Challenge:</b> " + CHALLENGE + " &nbsp; " + (ok ? "<b>Done!</b>" : "Not yet.");
+    if (ok !== lastOk) { document.getElementById("status").textContent = ok ? "Challenge done." : "Challenge not yet done."; lastOk = ok; } }
+}
+const box = document.getElementById("controls");
+const inputs = {};
+for (const q of PARAMS) {
+  p[q.id] = q.value;
+  const row = document.createElement("div"); row.className = "row";
+  row.innerHTML = `<label for="${q.id}">${q.label} (${q.unit || "no unit"})</label>` +
+    `<input id="${q.id}" type="range" min="${q.min}" max="${q.max}" step="${q.step}" value="${q.value}">` +
+    `<output for="${q.id}">${q.value}</output>`;
+  const inp = row.querySelector("input"), out = row.querySelector("output");
+  inputs[q.id] = [inp, out];
+  inp.addEventListener("input", () => { p[q.id] = +inp.value; out.textContent = inp.value; draw(); });
+  box.appendChild(row);
+}
+function setAll(vals) { for (const k in vals) { p[k] = vals[k]; if (inputs[k]) { inputs[k][0].value = vals[k]; inputs[k][1].textContent = vals[k]; } } draw(); }
+const DEFAULTS = Object.assign({}, p);
+document.getElementById("reset").addEventListener("click", () => setAll(DEFAULTS));
+for (const g of GRAPHS) {
+  const b = document.createElement("button"); b.type = "button"; b.textContent = g.label;
+  b.setAttribute("aria-pressed", String(g.id === graph));
+  b.addEventListener("click", () => { graph = g.id; for (const x of document.querySelectorAll("#graphs button")) x.setAttribute("aria-pressed", String(x === b)); draw(); });
+  document.getElementById("graphs").appendChild(b);
+}
+for (const pr of PRESETS) {
+  const b = document.createElement("button"); b.type = "button"; b.textContent = pr.label;
+  b.addEventListener("click", () => setAll(pr.values));
+  document.getElementById("presets").appendChild(b);
+}
+matchMedia("(prefers-color-scheme: dark)").addEventListener("change", draw);
+draw();
+</script>
+</body>
+</html>

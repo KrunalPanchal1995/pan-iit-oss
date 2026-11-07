@@ -1,0 +1,214 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Session 5: ensemble forecasts</title>
+<style>
+  :root { --bg:#ffffff; --fg:#14181f; --muted:#5b6472; --card:#f3f5f8; --accent:#003f7f; --good:#c86a00; --bad:#d81b60; --line:#d7dce3; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#0e1116; --fg:#e6e9ee; --muted:#9aa3b2; --card:#171b22; --accent:#3b8fe0; --good:#ffc857; --bad:#e0457b; --line:#2a313c; } }
+  * { box-sizing: border-box; }
+  body { margin:0; padding:16px; background:var(--bg); color:var(--fg); font:16px/1.5 system-ui, sans-serif; }
+  main { max-width: 780px; margin: 0 auto; }
+  h1 { font-size: 1.3rem; margin: 0 0 4px; }
+  p.sub { margin: 0 0 12px; color: var(--muted); }
+  .scroll { overflow-x:auto; }
+  canvas { width:100%; min-width:560px; height:auto; background:var(--card); border:1px solid var(--line); border-radius:8px; display:block; }
+  .sr { position:absolute; left:-9999px; }
+  .bar { display:flex; flex-wrap:wrap; gap:8px; margin:10px 0; }
+  button { font:inherit; padding:6px 12px; border:1px solid var(--line); background:var(--card); color:var(--fg); border-radius:6px; cursor:pointer; }
+  button[aria-pressed="true"] { border-color:var(--accent); color:var(--accent); font-weight:600; }
+  button:focus-visible, input:focus-visible { outline:3px solid var(--accent); outline-offset:2px; }
+  .row { display:grid; grid-template-columns: 11rem 1fr 6rem; gap:8px; align-items:center; margin:8px 0; }
+  .row output { text-align:right; font-variant-numeric: tabular-nums; }
+  @media (max-width: 560px) { .row { grid-template-columns: 1fr; gap:2px; } .row output { text-align:left; } }
+  input[type=range] { width:100%; accent-color: var(--accent); }
+  #readout, #challenge, .note { margin-top:10px; padding:10px 12px; background:var(--card); border-radius:8px; border:1px solid var(--line); }
+  #challenge[data-ok="true"] { border-color:var(--good); } #challenge[data-ok="true"] b { color:var(--good); }
+  .note { font-size:.85rem; color:var(--muted); }
+  a { color: var(--accent); }
+</style>
+</head>
+<body>
+<main>
+  <h1>Session 5: ensemble forecasts</h1>
+  <p class="sub">A cloud of forecasts from slightly different starts: watch it spread, and read off a probability that the outer rod has flipped, with its sampling error.</p>
+  <div class="bar" id="graphs" role="group" aria-label="Choose a graph"></div>
+  <div class="scroll"><canvas id="c" width="720" height="420" role="img" aria-label="Session 5: ensemble forecasts: interactive plot"></canvas></div>
+  <div class="bar" id="presets" role="group" aria-label="Presets"></div>
+  <div id="controls"></div>
+  <div class="bar"><button id="reset" type="button">Reset</button></div>
+  <div id="readout"></div>
+  <div id="challenge" hidden></div>
+  <div id="status" class="sr" aria-live="polite"></div>
+  <p class="note">This is a simplified educational model. It is not a validated design tool and must not be used for real structures, electrical installations, vehicles, industrial processes or medical decisions.</p>
+  <p class="sub"><a href="https://github.com/KrunalPanchal1995/pan-iit-oss/tree/main/openchaos">Back to the repository</a></p>
+</main>
+<script>
+"use strict";
+const PARAMS = [{"id": "th", "label": "Release angle (both rods)", "min": 60, "max": 170, "step": 5, "value": 95, "unit": "degrees"}, {"id": "e", "label": "Start error exponent e", "min": 2, "max": 12, "step": 1, "value": 6, "unit": "sigma = 10^-e rad"}, {"id": "n", "label": "Members N", "min": 100, "max": 1000, "step": 100, "value": 1000, "unit": "forecasts"}, {"id": "h", "label": "Step h", "min": 5, "max": 20, "step": 5, "value": 5, "unit": "ms"}];
+const GRAPHS = [{"id": "cloud", "label": "Cloud of forecasts"}, {"id": "spread", "label": "Spread over time"}, {"id": "prob", "label": "Flip probability"}];
+const PRESETS = [{"label": "The lesson (95 degrees, 1e-6)", "values": {"th": 95, "e": 6, "n": 1000, "h": 5}}, {"label": "120 degrees: all flip", "values": {"th": 120, "e": 6, "n": 1000, "h": 5}}, {"label": "Coarse step (20 ms)", "values": {"th": 95, "e": 6, "n": 1000, "h": 20}}, {"label": "Better instrument (1e-8)", "values": {"th": 95, "e": 8, "n": 1000, "h": 5}}];
+const CHALLENGE = "For the 95 degree release, find a start error (exponent e) small enough that the spread of the cloud stays below 0.5 rad for at least 17 s.";
+const CHALLENGE_SOLUTION = {"th": 95, "e": 8, "n": 1000, "h": 5};
+const GG = 9.81, AC = [0, 0], R_last = {};
+function acc(t1, t2, w1, w2) {
+  const d = t1 - t2, den = 3 - Math.cos(2 * d);
+  AC[0] = (-3 * GG * Math.sin(t1) - GG * Math.sin(t1 - 2 * t2) - 2 * Math.sin(d) * (w2 * w2 + w1 * w1 * Math.cos(d))) / den;
+  AC[1] = (2 * Math.sin(d) * (2 * w1 * w1 + 2 * GG * Math.cos(t1) + w2 * w2 * Math.cos(d))) / den;
+}
+function rng(seed) { let a = seed >>> 0; return () => { a = (a + 0x6D2B79F5) >>> 0; let t = a; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; }
+function gauss(r) { let u = 0; while (u === 0) u = r(); const v = r(); return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v); }
+// n members from a Gaussian cloud of start errors (sigma, rad) around a release from rest; RK4 with step h
+function ensembleRun(aDeg, n, sigma, T, h, seed) {
+  const r = rng(seed), a0 = aDeg * Math.PI / 180, t1 = new Float64Array(n), t2 = new Float64Array(n), w1 = new Float64Array(n), w2 = new Float64Array(n), flip = new Float64Array(n).fill(Infinity);
+  for (let j = 0; j < n; j++) { t1[j] = a0 + sigma * gauss(r); t2[j] = a0 + sigma * gauss(r); }
+  const steps = Math.round(T / h), every = Math.max(1, Math.round(0.05 / h)), nShow = Math.min(30, n);
+  const times = [], mean = [], std = [], paths = [];
+  const sample = t => {
+    let m = 0; for (let j = 0; j < n; j++) m += t2[j]; m /= n; let v = 0; for (let j = 0; j < n; j++) v += (t2[j] - m) * (t2[j] - m);
+    times.push(t); mean.push(m); std.push(Math.sqrt(v / n)); paths.push(Array.from(t2.subarray(0, nShow)));
+  };
+  sample(0);
+  for (let i = 1; i <= steps; i++) {
+    for (let j = 0; j < n; j++) {
+      const a = t1[j], b = t2[j], c = w1[j], d = w2[j];
+      acc(a, b, c, d); const k1a = c, k1b = d, k1c = AC[0], k1d = AC[1];
+      acc(a + h / 2 * k1a, b + h / 2 * k1b, c + h / 2 * k1c, d + h / 2 * k1d); const k2a = c + h / 2 * k1c, k2b = d + h / 2 * k1d, k2c = AC[0], k2d = AC[1];
+      acc(a + h / 2 * k2a, b + h / 2 * k2b, c + h / 2 * k2c, d + h / 2 * k2d); const k3a = c + h / 2 * k2c, k3b = d + h / 2 * k2d, k3c = AC[0], k3d = AC[1];
+      acc(a + h * k3a, b + h * k3b, c + h * k3c, d + h * k3d); const k4a = c + h * k3c, k4b = d + h * k3d, k4c = AC[0], k4d = AC[1];
+      t1[j] = a + h / 6 * (k1a + 2 * k2a + 2 * k3a + k4a); t2[j] = b + h / 6 * (k1b + 2 * k2b + 2 * k3b + k4b);
+      w1[j] = c + h / 6 * (k1c + 2 * k2c + 2 * k3c + k4c); w2[j] = d + h / 6 * (k1d + 2 * k2d + 2 * k3d + k4d);
+      if (flip[j] === Infinity && Math.abs(t2[j]) > Math.PI) flip[j] = i * h;
+    }
+    if (i % every === 0) sample(i * h);
+  }
+  const sorted = Array.from(flip).sort((x, y) => x - y);
+  const prob = times.map(t => { let lo = 0, hi = n; while (lo < hi) { const m = (lo + hi) >> 1; if (sorted[m] <= t + 1e-9) lo = m + 1; else hi = m; } return lo / n; });
+  let st = null; for (let k = 0; k < std.length; k++) if (std[k] > 0.5) { st = times[k]; break; }
+  const pAt = x => { let c = 0; for (let j = 0; j < n; j++) if (flip[j] <= x + 1e-9) c++; return c / n; };
+  return { times, mean, std, paths, prob, spreadTime: st, pAt, n, flip };
+}
+const cache = new Map();
+function study(th, e, n, hms) {
+  const key = [th, e, n, hms].join("|"); if (cache.has(key)) return cache.get(key);
+  const out = ensembleRun(th, n, Math.pow(10, -e), 25, hms / 1000, 1); cache.set(key, out); return out;
+}
+window.R = { ensembleRun, study, last: R_last };
+const challengeTest = CHALLENGE ? (p) => p.th === 95 && R_last.st !== null && R_last.st >= 17 : null;
+const cv = document.getElementById("c"), ctx = cv.getContext("2d");
+const W = cv.width, H = cv.height, p = {};
+let graph = GRAPHS.length ? GRAPHS[0].id : "main";
+const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+const fmt = v => (Math.abs(v) >= 1000 || (Math.abs(v) > 0 && Math.abs(v) < 0.01)) ? v.toExponential(2) : String(+v.toPrecision(4));
+function readout(html) {
+  document.getElementById("readout").innerHTML = html;
+  cv.setAttribute("aria-label", document.title + ". " + html.replace(/<[^>]+>/g, " ").replace(/&nbsp;/g, " "));  // screen readers get the numbers
+}
+let lastOk = null;
+// ---- plotting helpers: every graph gets labelled axes with units ----
+function niceTicks(lo, hi, n) {
+  const raw = (hi - lo) / n, mag = Math.pow(10, Math.floor(Math.log10(raw))), f = raw / mag;
+  const step = (f < 1.5 ? 1 : f < 3 ? 2 : f < 7 ? 5 : 10) * mag, out = [];
+  for (let v = Math.ceil(lo / step - 1e-9) * step; v <= hi + 1e-9; v += step) out.push(+v.toPrecision(12));
+  return out;
+}
+function axes(o, C) {
+  const L = 66, R = 16, T = 34, B = 50, w = W - L - R, h = H - T - B;
+  const X = v => L + (v - o.x[0]) / (o.x[1] - o.x[0]) * w, Y = v => T + h - (v - o.y[0]) / (o.y[1] - o.y[0]) * h;
+  ctx.lineWidth = 1; ctx.font = "12px system-ui";
+  for (const xv of niceTicks(o.x[0], o.x[1], 6)) {
+    ctx.strokeStyle = C.line; ctx.beginPath(); ctx.moveTo(X(xv), T); ctx.lineTo(X(xv), T + h); ctx.stroke();
+    ctx.fillStyle = C.muted; ctx.textAlign = "center"; ctx.fillText(fmt(xv), X(xv), T + h + 16);
+  }
+  for (const yv of niceTicks(o.y[0], o.y[1], 5)) {
+    ctx.strokeStyle = C.line; ctx.beginPath(); ctx.moveTo(L, Y(yv)); ctx.lineTo(L + w, Y(yv)); ctx.stroke();
+    ctx.fillStyle = C.muted; ctx.textAlign = "right"; ctx.fillText(fmt(yv), L - 6, Y(yv) + 4);
+  }
+  ctx.strokeStyle = C.fg; ctx.beginPath(); ctx.moveTo(L, T); ctx.lineTo(L, T + h); ctx.lineTo(L + w, T + h); ctx.stroke();
+  ctx.fillStyle = C.fg; ctx.textAlign = "center"; ctx.font = "13px system-ui";
+  ctx.fillText(o.xl, L + w / 2, H - 8);
+  ctx.save(); ctx.translate(14, T + h / 2); ctx.rotate(-Math.PI / 2); ctx.fillText(o.yl, 0, 0); ctx.restore();
+  ctx.font = "bold 13px system-ui"; ctx.fillText(o.title || "", L + w / 2, 20);
+  return { X, Y, L, T, w, h };
+}
+function curve(f, a, color, x0, x1, n) {
+  n = n || 160; ctx.save(); ctx.beginPath(); ctx.rect(a.L, a.T, a.w, a.h); ctx.clip();   // never draw outside the plot area
+  ctx.strokeStyle = color; ctx.lineWidth = 2.5; ctx.beginPath();
+  for (let i = 0; i <= n; i++) { const x = x0 + (x1 - x0) * i / n, y = f(x); i ? ctx.lineTo(a.X(x), a.Y(y)) : ctx.moveTo(a.X(x), a.Y(y)); }
+  ctx.stroke(); ctx.restore();
+}
+function dot(a, x, y, color, label) {
+  ctx.fillStyle = color; ctx.beginPath(); ctx.arc(a.X(x), a.Y(y), 6, 0, 2 * Math.PI); ctx.fill();
+  if (label) { ctx.textAlign = "left"; ctx.font = "12px system-ui"; ctx.fillText(label, a.X(x) + 9, a.Y(y) - 8); }
+}
+function draw() {
+  ctx.clearRect(0, 0, W, H);
+  const C = { fg: css("--fg"), muted: css("--muted"), accent: css("--accent"), line: css("--line"), good: css("--good"), bad: css("--bad") };
+const sg = Math.pow(10, -p.e), E = study(p.th, p.e, p.n, p.h), P20 = E.pAt(20), se = Math.sqrt(P20 * (1 - P20) / p.n);
+const poly = (xs, ys, A, color, w, dash) => { ctx.save(); ctx.beginPath(); ctx.rect(A.L, A.T, A.w, A.h); ctx.clip(); ctx.strokeStyle = color; ctx.lineWidth = w || 2.5; ctx.setLineDash(dash || []); ctx.beginPath(); xs.forEach((x, i) => i ? ctx.lineTo(A.X(x), A.Y(ys[i])) : ctx.moveTo(A.X(x), A.Y(ys[i]))); ctx.stroke(); ctx.restore(); };
+const lg = v => Math.log10(Math.max(v, 1e-9));
+if (graph === "cloud") {
+  let ymax = 4; for (const row of E.paths) for (const v of row) ymax = Math.max(ymax, Math.abs(v)); ymax = Math.ceil(ymax / 5) * 5;
+  const A = axes({ x: [0, 25], y: [-ymax, ymax], xl: "time (s)", yl: "outer rod angle theta2 (rad)", title: "30 of " + p.n + " forecasts, start error " + fmt(sg) + " rad" }, C);
+  const nShow = E.paths[0].length;
+  ctx.globalAlpha = 0.45; for (let j = 0; j < nShow; j++) poly(E.times, E.paths.map(r => r[j]), A, C.muted, 1); ctx.globalAlpha = 1;
+  poly(E.times, E.mean.map((m, i) => m + E.std[i]), A, C.accent, 1.2, [5, 4]); poly(E.times, E.mean.map((m, i) => m - E.std[i]), A, C.accent, 1.2, [5, 4]);
+  poly(E.times, E.mean, A, C.accent, 2.6);
+  poly([0, 25], [Math.PI, Math.PI], A, C.bad, 1.2, [6, 4]); poly([0, 25], [-Math.PI, -Math.PI], A, C.bad, 1.2, [6, 4]);
+  ctx.font = "12px system-ui"; ctx.textAlign = "left"; ctx.fillStyle = C.accent; ctx.fillText("blue: cloud mean and mean +/- spread", A.L + 10, A.T + 16); ctx.fillStyle = C.bad; ctx.fillText("magenta dashes: outer rod over the top (+/- pi)", A.L + 10, A.T + 32);
+} else if (graph === "spread") {
+  const A = axes({ x: [0, 25], y: [-8, 2], xl: "time (s)", yl: "log10 of the spread of theta2 (rad)", title: "Spread of the cloud: exponential growth, then saturation" }, C);
+  poly(E.times.slice(1), E.std.slice(1).map(lg), A, C.accent, 2.5);
+  poly([0, 25], [lg(0.5), lg(0.5)], A, C.bad, 1.5, [6, 4]); poly([0, 25], [lg(sg), lg(sg)], A, C.muted, 1.2, [3, 4]);
+  ctx.font = "12px system-ui"; ctx.textAlign = "left"; ctx.fillStyle = C.bad; ctx.fillText("0.5 rad", A.L + 8, A.Y(lg(0.5)) - 5); ctx.fillStyle = C.muted; ctx.fillText("start error", A.L + 8, A.Y(lg(sg)) - 5);
+  if (E.spreadTime !== null) dot(A, E.spreadTime, lg(0.5), C.bad, "spread time " + E.spreadTime.toFixed(2) + " s");
+} else {
+  const A = axes({ x: [0, 25], y: [0, 1.05], xl: "time (s)", yl: "probability the outer rod has flipped", title: "Flip probability from " + p.n + " forecasts" }, C);
+  const lo = E.prob.map(v => Math.max(0, v - 2 * Math.sqrt(v * (1 - v) / p.n))), hi = E.prob.map(v => Math.min(1, v + 2 * Math.sqrt(v * (1 - v) / p.n)));
+  ctx.save(); ctx.beginPath(); ctx.rect(A.L, A.T, A.w, A.h); ctx.clip(); ctx.fillStyle = C.accent; ctx.globalAlpha = 0.2; ctx.beginPath();
+  E.times.forEach((t, i) => i ? ctx.lineTo(A.X(t), A.Y(hi[i])) : ctx.moveTo(A.X(t), A.Y(hi[i]))); for (let i = E.times.length - 1; i >= 0; i--) ctx.lineTo(A.X(E.times[i]), A.Y(lo[i])); ctx.fill(); ctx.restore();
+  poly(E.times, E.prob, A, C.accent, 2.6); poly([20, 20], [0, 1.05], A, C.muted, 1.2, [4, 4]);
+  dot(A, 20, P20, C.bad, "P(20 s) = " + P20.toFixed(3));
+  ctx.font = "12px system-ui"; ctx.textAlign = "left"; ctx.fillStyle = C.muted; ctx.fillText("shaded band: +/- 2 standard errors (sampling only)", A.L + 10, A.T + 16);
+}
+R_last.st = E.spreadTime; R_last.p20 = P20;
+readout("Release " + p.th + " degrees, start error " + fmt(sg) + " rad, " + p.n + " members, step " + p.h + " ms. Spread of theta2 first exceeds 0.5 rad at " + (E.spreadTime === null ? "no time within 25 s" : E.spreadTime.toFixed(2) + " s") + ". Probability that the outer rod has flipped by 20 s: " + P20.toFixed(3) + " +/- " + se.toFixed(3) + " (sampling error only; a smaller step can move it by more, so halve h and compare). Probability by 10 s " + E.pAt(10).toFixed(3) + ", by 15 s " + E.pAt(15).toFixed(3) + ", by 25 s " + E.pAt(25).toFixed(3) + ".");
+
+  const ch = document.getElementById("challenge");
+  if (challengeTest) { const ok = !!challengeTest(p); ch.hidden = false; ch.dataset.ok = String(ok);
+    ch.innerHTML = "<b>Challenge:</b> " + CHALLENGE + " &nbsp; " + (ok ? "<b>Done!</b>" : "Not yet.");
+    if (ok !== lastOk) { document.getElementById("status").textContent = ok ? "Challenge done." : "Challenge not yet done."; lastOk = ok; } }
+}
+const box = document.getElementById("controls");
+const inputs = {};
+for (const q of PARAMS) {
+  p[q.id] = q.value;
+  const row = document.createElement("div"); row.className = "row";
+  row.innerHTML = `<label for="${q.id}">${q.label} (${q.unit || "no unit"})</label>` +
+    `<input id="${q.id}" type="range" min="${q.min}" max="${q.max}" step="${q.step}" value="${q.value}">` +
+    `<output for="${q.id}">${q.value}</output>`;
+  const inp = row.querySelector("input"), out = row.querySelector("output");
+  inputs[q.id] = [inp, out];
+  inp.addEventListener("input", () => { p[q.id] = +inp.value; out.textContent = inp.value; draw(); });
+  box.appendChild(row);
+}
+function setAll(vals) { for (const k in vals) { p[k] = vals[k]; if (inputs[k]) { inputs[k][0].value = vals[k]; inputs[k][1].textContent = vals[k]; } } draw(); }
+const DEFAULTS = Object.assign({}, p);
+document.getElementById("reset").addEventListener("click", () => setAll(DEFAULTS));
+for (const g of GRAPHS) {
+  const b = document.createElement("button"); b.type = "button"; b.textContent = g.label;
+  b.setAttribute("aria-pressed", String(g.id === graph));
+  b.addEventListener("click", () => { graph = g.id; for (const x of document.querySelectorAll("#graphs button")) x.setAttribute("aria-pressed", String(x === b)); draw(); });
+  document.getElementById("graphs").appendChild(b);
+}
+for (const pr of PRESETS) {
+  const b = document.createElement("button"); b.type = "button"; b.textContent = pr.label;
+  b.addEventListener("click", () => setAll(pr.values));
+  document.getElementById("presets").appendChild(b);
+}
+matchMedia("(prefers-color-scheme: dark)").addEventListener("change", draw);
+draw();
+</script>
+</body>
+</html>

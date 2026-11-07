@@ -1,0 +1,246 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Session 4: a fourth-order symplectic solver</title>
+<style>
+  :root { --bg:#ffffff; --fg:#14181f; --muted:#5b6472; --card:#f3f5f8; --accent:#003f7f; --good:#c86a00; --bad:#d81b60; --line:#d7dce3; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#0e1116; --fg:#e6e9ee; --muted:#9aa3b2; --card:#171b22; --accent:#3b8fe0; --good:#ffc857; --bad:#e0457b; --line:#2a313c; } }
+  * { box-sizing: border-box; }
+  body { margin:0; padding:16px; background:var(--bg); color:var(--fg); font:16px/1.5 system-ui, sans-serif; }
+  main { max-width: 780px; margin: 0 auto; }
+  h1 { font-size: 1.3rem; margin: 0 0 4px; }
+  p.sub { margin: 0 0 12px; color: var(--muted); }
+  .scroll { overflow-x:auto; }
+  canvas { width:100%; min-width:560px; height:auto; background:var(--card); border:1px solid var(--line); border-radius:8px; display:block; }
+  .sr { position:absolute; left:-9999px; }
+  .bar { display:flex; flex-wrap:wrap; gap:8px; margin:10px 0; }
+  button { font:inherit; padding:6px 12px; border:1px solid var(--line); background:var(--card); color:var(--fg); border-radius:6px; cursor:pointer; }
+  button[aria-pressed="true"] { border-color:var(--accent); color:var(--accent); font-weight:600; }
+  button:focus-visible, input:focus-visible { outline:3px solid var(--accent); outline-offset:2px; }
+  .row { display:grid; grid-template-columns: 11rem 1fr 6rem; gap:8px; align-items:center; margin:8px 0; }
+  .row output { text-align:right; font-variant-numeric: tabular-nums; }
+  @media (max-width: 560px) { .row { grid-template-columns: 1fr; gap:2px; } .row output { text-align:left; } }
+  input[type=range] { width:100%; accent-color: var(--accent); }
+  #readout, #challenge, .note { margin-top:10px; padding:10px 12px; background:var(--card); border-radius:8px; border:1px solid var(--line); }
+  #challenge[data-ok="true"] { border-color:var(--good); } #challenge[data-ok="true"] b { color:var(--good); }
+  .note { font-size:.85rem; color:var(--muted); }
+  a { color: var(--accent); }
+</style>
+</head>
+<body>
+<main>
+  <h1>Session 4: a fourth-order symplectic solver</h1>
+  <p class="sub">Three solvers on the double pendulum: watch the energy error over time, change the step, and see where the fourth-order composition stops working.</p>
+  <div class="bar" id="graphs" role="group" aria-label="Choose a graph"></div>
+  <div class="scroll"><canvas id="c" width="720" height="420" role="img" aria-label="Session 4: a fourth-order symplectic solver: interactive plot"></canvas></div>
+  <div class="bar" id="presets" role="group" aria-label="Presets"></div>
+  <div id="controls"></div>
+  <div class="bar"><button id="reset" type="button">Reset</button></div>
+  <div id="readout"></div>
+  <div id="challenge" hidden></div>
+  <div id="status" class="sr" aria-live="polite"></div>
+  <p class="note">This is a simplified educational model. It is not a validated design tool and must not be used for real structures, electrical installations, vehicles, industrial processes or medical decisions.</p>
+  <p class="sub"><a href="https://github.com/KrunalPanchal1995/pan-iit-oss/tree/main/openchaos">Back to the repository</a></p>
+</main>
+<script>
+"use strict";
+const PARAMS = [{"id": "th", "label": "Start angle (both rods)", "min": 20, "max": 170, "step": 5, "value": 120, "unit": "degrees"}, {"id": "h", "label": "Step h", "min": 5, "max": 60, "step": 5, "value": 20, "unit": "ms"}, {"id": "dur", "label": "Run length", "min": 20, "max": 200, "step": 20, "value": 100, "unit": "s"}];
+const GRAPHS = [{"id": "energy", "label": "Energy error over time"}, {"id": "order", "label": "Order test"}];
+const PRESETS = [{"label": "Roadmap test (h = 20 ms)", "values": {"th": 120, "h": 20, "dur": 100}}, {"label": "Fine step (h = 10 ms)", "values": {"th": 120, "h": 10, "dur": 100}}, {"label": "Too coarse (h = 40 ms)", "values": {"th": 120, "h": 40, "dur": 100}}, {"label": "Gentle start (30 degrees)", "values": {"th": 30, "h": 20, "dur": 100}}];
+const CHALLENGE = "In the order test, find the largest step (in steps of 5 ms) at which the fourth-order composition has a state error below 1e-6 after 0.4 s. The midpoint rule cannot get there at any step the slider allows.";
+const CHALLENGE_SOLUTION = {"th": 120, "h": 10, "dur": 100};
+const GG = 9.81, ECAP = 3 * GG, CALLS = { n: 0, bad: 0 }, R_last = {};
+function rateF(s) {
+  const d = s[0] - s[1], den = 3 - Math.cos(2 * d);
+  return [s[2], s[3], (-3 * GG * Math.sin(s[0]) - GG * Math.sin(s[0] - 2 * s[1]) - 2 * Math.sin(d) * (s[3] * s[3] + s[2] * s[2] * Math.cos(d))) / den,
+    (2 * Math.sin(d) * (2 * s[2] * s[2] + 2 * GG * Math.cos(s[0]) + s[3] * s[3] * Math.cos(d))) / den];
+}
+function energyF(s) { return s[2] * s[2] + 0.5 * s[3] * s[3] + s[2] * s[3] * Math.cos(s[0] - s[1]) - 2 * GG * Math.cos(s[0]) - GG * Math.cos(s[1]); }
+function rk4(s, h) {
+  const add = (u, k, c) => u.map((x, i) => x + c * k[i]);
+  const k1 = rateF(s), k2 = rateF(add(s, k1, h / 2)), k3 = rateF(add(s, k2, h / 2)), k4 = rateF(add(s, k3, h));
+  return s.map((x, i) => x + h / 6 * (k1[i] + 2 * k2[i] + 2 * k3[i] + k4[i]));
+}
+function toMom(s) { const c = Math.cos(s[0] - s[1]); return [s[0], s[1], 2 * s[2] + c * s[3], c * s[2] + s[3]]; }
+function toRates(z) { const c = Math.cos(z[0] - z[1]), det = 2 - c * c; return [z[0], z[1], (z[2] - c * z[3]) / det, (2 * z[3] - c * z[2]) / det]; }
+function hamRate(z) {
+  CALLS.n++;
+  const r = toRates(z), w1 = r[2], w2 = r[3], sd = Math.sin(z[0] - z[1]);
+  return [w1, w2, -w1 * w2 * sd - 2 * GG * Math.sin(z[0]), w1 * w2 * sd - GG * Math.sin(z[1])];
+}
+function mid(s, h) {
+  const z = toMom(s), f0 = hamRate(z); let y = z.map((a, i) => a + h * f0[i]), change = 0, done = false;
+  for (let it = 0; it < 60; it++) {
+    const m = z.map((a, i) => (a + y[i]) / 2), f = hamRate(m), yn = z.map((a, i) => a + h * f[i]);
+    change = Math.max.apply(null, yn.map((v, i) => Math.abs(v - y[i]))); y = yn;
+    if (change < 1e-14) { done = true; break; }
+  }
+  if (!done && !(change <= 1e-9)) CALLS.bad++;
+  return toRates(y);
+}
+const G1 = 1 / (2 - Math.cbrt(2)), G0 = -Math.cbrt(2) / (2 - Math.cbrt(2));
+function comp(s, h) { s = mid(s, G1 * h); s = mid(s, G0 * h); return mid(s, G1 * h); }
+function runTo(step, s0, T, h) {
+  let s = s0.slice(); const n = Math.floor(T / h + 1e-9);
+  for (let i = 0; i < n; i++) s = step(s, h);
+  const rest = T - n * h; if (rest > 1e-9) s = step(s, rest);
+  return s;
+}
+// worst energy error (sampled about every second) and the whole curve; a failure ends the curve
+function worst(step, s0, T, h) {
+  CALLS.n = 0; CALLS.bad = 0;
+  let s = s0.slice(); const e0 = energyF(s), n = Math.round(T / h), k = Math.max(1, Math.round(1 / h));
+  const t = [], e = []; let w = 0, failedAt = null;
+  for (let i = 1; i <= n; i++) {
+    s = step(s, h);
+    if (i % k === 0) {
+      const v = Math.abs(energyF(s) - e0) / ECAP;
+      if (!isFinite(v)) { failedAt = i * h; w = Infinity; break; }
+      w = Math.max(w, v); t.push(i * h); e.push(v);
+    }
+  }
+  return { err: w, calls: CALLS.n, bad: CALLS.bad, t: t, e: e, failedAt: failedAt };
+}
+const cache = new Map();
+const cmp = (x, y) => x < y ? -1 : x > y ? 1 : 0;
+// median over 5 nearby starts of the largest energy error (chaos makes one run's value luck); the curve is the middle run
+function ensemble(step, a, T, h) {
+  const runs = []; for (let k = -2; k <= 2; k++) runs.push(worst(step, [a + k * 1e-9, a - k * 0.5e-9, 0, 0], T, h));
+  const mid = runs[2], errs = runs.map(r => r.err).sort(cmp), calls = runs.map(r => r.calls).sort(cmp);
+  return { t: mid.t, e: mid.e, failedAt: mid.failedAt, err: errs[2], calls: calls[2], bad: runs.reduce((s, r) => s + r.bad, 0) };
+}
+function study(angle, h, T) {
+  const key = angle + "|" + h + "|" + T; if (cache.has(key)) return cache.get(key);
+  const a = angle * Math.PI / 180;
+  const out = { rk: ensemble(rk4, a, T, h), md: ensemble(mid, a, T, h), cp: ensemble(comp, a, T, h) };
+  cache.set(key, out); return out;
+}
+const GENTLE = [0.5, -0.3, 0.2, 0.1]; let REF = null;
+function orderErr(step, h) {
+  if (!REF) { REF = runTo(rk4, GENTLE, 0.4, 0.0005); }
+  let r; try { r = runTo(step, GENTLE, 0.4, h); } catch (e) { return Infinity; }
+  const v = Math.max.apply(null, r.map((x, i) => Math.abs(x - REF[i]))); return isFinite(v) ? v : Infinity;
+}
+window.R = { study, worst, mid, comp, rk4, runTo, orderErr, energyF, release: a => [a * Math.PI / 180, a * Math.PI / 180, 0, 0], G0, G1, CALLS, last: R_last };
+const challengeTest = CHALLENGE ? (p) => orderErr(comp, p.h / 1000) < 1e-6 && orderErr(comp, (p.h + 5) / 1000) >= 1e-6 : null;
+const cv = document.getElementById("c"), ctx = cv.getContext("2d");
+const W = cv.width, H = cv.height, p = {};
+let graph = GRAPHS.length ? GRAPHS[0].id : "main";
+const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+const fmt = v => (Math.abs(v) >= 1000 || (Math.abs(v) > 0 && Math.abs(v) < 0.01)) ? v.toExponential(2) : String(+v.toPrecision(4));
+function readout(html) {
+  document.getElementById("readout").innerHTML = html;
+  cv.setAttribute("aria-label", document.title + ". " + html.replace(/<[^>]+>/g, " ").replace(/&nbsp;/g, " "));  // screen readers get the numbers
+}
+let lastOk = null;
+// ---- plotting helpers: every graph gets labelled axes with units ----
+function niceTicks(lo, hi, n) {
+  const raw = (hi - lo) / n, mag = Math.pow(10, Math.floor(Math.log10(raw))), f = raw / mag;
+  const step = (f < 1.5 ? 1 : f < 3 ? 2 : f < 7 ? 5 : 10) * mag, out = [];
+  for (let v = Math.ceil(lo / step - 1e-9) * step; v <= hi + 1e-9; v += step) out.push(+v.toPrecision(12));
+  return out;
+}
+function axes(o, C) {
+  const L = 66, R = 16, T = 34, B = 50, w = W - L - R, h = H - T - B;
+  const X = v => L + (v - o.x[0]) / (o.x[1] - o.x[0]) * w, Y = v => T + h - (v - o.y[0]) / (o.y[1] - o.y[0]) * h;
+  ctx.lineWidth = 1; ctx.font = "12px system-ui";
+  for (const xv of niceTicks(o.x[0], o.x[1], 6)) {
+    ctx.strokeStyle = C.line; ctx.beginPath(); ctx.moveTo(X(xv), T); ctx.lineTo(X(xv), T + h); ctx.stroke();
+    ctx.fillStyle = C.muted; ctx.textAlign = "center"; ctx.fillText(fmt(xv), X(xv), T + h + 16);
+  }
+  for (const yv of niceTicks(o.y[0], o.y[1], 5)) {
+    ctx.strokeStyle = C.line; ctx.beginPath(); ctx.moveTo(L, Y(yv)); ctx.lineTo(L + w, Y(yv)); ctx.stroke();
+    ctx.fillStyle = C.muted; ctx.textAlign = "right"; ctx.fillText(fmt(yv), L - 6, Y(yv) + 4);
+  }
+  ctx.strokeStyle = C.fg; ctx.beginPath(); ctx.moveTo(L, T); ctx.lineTo(L, T + h); ctx.lineTo(L + w, T + h); ctx.stroke();
+  ctx.fillStyle = C.fg; ctx.textAlign = "center"; ctx.font = "13px system-ui";
+  ctx.fillText(o.xl, L + w / 2, H - 8);
+  ctx.save(); ctx.translate(14, T + h / 2); ctx.rotate(-Math.PI / 2); ctx.fillText(o.yl, 0, 0); ctx.restore();
+  ctx.font = "bold 13px system-ui"; ctx.fillText(o.title || "", L + w / 2, 20);
+  return { X, Y, L, T, w, h };
+}
+function curve(f, a, color, x0, x1, n) {
+  n = n || 160; ctx.save(); ctx.beginPath(); ctx.rect(a.L, a.T, a.w, a.h); ctx.clip();   // never draw outside the plot area
+  ctx.strokeStyle = color; ctx.lineWidth = 2.5; ctx.beginPath();
+  for (let i = 0; i <= n; i++) { const x = x0 + (x1 - x0) * i / n, y = f(x); i ? ctx.lineTo(a.X(x), a.Y(y)) : ctx.moveTo(a.X(x), a.Y(y)); }
+  ctx.stroke(); ctx.restore();
+}
+function dot(a, x, y, color, label) {
+  ctx.fillStyle = color; ctx.beginPath(); ctx.arc(a.X(x), a.Y(y), 6, 0, 2 * Math.PI); ctx.fill();
+  if (label) { ctx.textAlign = "left"; ctx.font = "12px system-ui"; ctx.fillText(label, a.X(x) + 9, a.Y(y) - 8); }
+}
+function draw() {
+  ctx.clearRect(0, 0, W, H);
+  const C = { fg: css("--fg"), muted: css("--muted"), accent: css("--accent"), line: css("--line"), good: css("--good"), bad: css("--bad") };
+const T = p.dur, hs = p.h / 1000, st = study(p.th, hs, T);
+const poly = (xs, ys, A, color, w, dash) => { ctx.save(); ctx.beginPath(); ctx.rect(A.L, A.T, A.w, A.h); ctx.clip(); ctx.strokeStyle = color; ctx.lineWidth = w || 2.5; ctx.setLineDash(dash || []); ctx.beginPath(); xs.forEach((x, i) => i ? ctx.lineTo(A.X(x), A.Y(ys[i])) : ctx.moveTo(A.X(x), A.Y(ys[i]))); ctx.stroke(); ctx.restore(); };
+const lg = v => Math.log10(Math.max(v, 1e-7));
+const names = { rk: "RK4", md: "midpoint rule (order 2)", cp: "composition (order 4)" };
+const cols = { rk: C.bad, md: C.good, cp: C.accent };
+if (graph === "energy") {
+  const A = axes({ x: [0, T], y: [-7, 1], xl: "time (s)", yl: "log10 of |E - E0| / E_ref", title: "Energy error, " + p.th + " degree release, h = " + p.h + " ms" }, C);
+  poly([0, T], [-2, -2], A, C.muted, 1.5, [4, 4]);
+  ctx.font = "12px system-ui"; ctx.textAlign = "right"; ctx.fillStyle = C.muted; ctx.fillText("limit 1e-2", A.L + A.w - 6, A.Y(-2) - 5);
+  let ly = A.T + 16; ctx.textAlign = "left";
+  for (const k of ["rk", "md", "cp"]) {
+    const r = st[k]; poly([0].concat(r.t), [-7].concat(r.e.map(lg)), A, cols[k], 2.2, k === "md" ? [8, 4] : []);
+    ctx.fillStyle = cols[k]; ctx.fillText(names[k] + (r.failedAt !== null ? " (failed at " + r.failedAt.toFixed(1) + " s)" : ""), A.L + 10, ly); ly += 16;
+    if (r.failedAt !== null) { ctx.font = "bold 16px system-ui"; ctx.fillText("×", A.X(r.failedAt) - 5, A.Y(0.5)); ctx.font = "12px system-ui"; }
+  }
+} else {
+  const hl = [0.1, 0.05, 0.025, 0.0125], A = axes({ x: [-2.1, -0.9], y: [-7, 0], xl: "log10 of the step h (s)", yl: "log10 of the largest state error after 0.4 s", title: "Order test: slope 2 for the midpoint rule, slope 4 for the composition" }, C);
+  const em = hl.map(h => orderErr(mid, h)), ec = hl.map(h => orderErr(comp, h)), xl = hl.map(Math.log10);
+  poly(xl, em.map(lg), A, C.good, 2.2, [8, 4]); poly(xl, ec.map(lg), A, C.accent, 2.2);
+  for (let i = 0; i < hl.length; i++) { dot(A, xl[i], lg(em[i]), C.good); dot(A, xl[i], lg(ec[i]), C.accent); }
+  const xu = Math.log10(hs), um = orderErr(mid, hs), uc = orderErr(comp, hs);
+  if (isFinite(um)) { ctx.fillStyle = C.fg; dot(A, xu, lg(um), C.fg, "midpoint at your h"); }
+  if (isFinite(uc)) { dot(A, xu, lg(uc), C.fg, "composition at your h"); }
+  ctx.font = "13px system-ui"; ctx.textAlign = "left"; ctx.fillStyle = C.good; ctx.fillText("orange dashed: midpoint rule", A.L + 10, A.T + 18); ctx.fillStyle = C.accent; ctx.fillText("blue: composition", A.L + 10, A.T + 36);
+  ctx.fillStyle = C.muted; ctx.font = "12px system-ui"; ctx.fillText("outlined dots: your step h", A.L + 10, A.T + 54);
+  const ord = a => Math.log2(a[2] / a[3]);
+  R_last.orders = [ord(em), ord(ec)];
+}
+R_last.cp = st.cp.err; R_last.md = st.md.err; R_last.rk = st.rk.err;
+const f3 = v => isFinite(v) ? fmt(v) : "failed";
+readout("Start " + p.th + " degrees, h = " + p.h + " ms, " + T + " s. Largest energy error as a fraction of E_ref (median of 5 nearby starts, because chaos makes a single run lucky or unlucky; the curve shows one run): RK4 " + f3(st.rk.err) + ", midpoint " + f3(st.md.err) + ", composition " + f3(st.cp.err) + ". Rate evaluations: midpoint " + st.md.calls + ", composition " + st.cp.calls +
+  (st.cp.bad || st.md.bad ? ". Solves that did not settle: midpoint " + st.md.bad + ", composition " + st.cp.bad + " (those steps are wrong)." : ".") + " Triple-jump sizes: " + (G1 * p.h).toFixed(2) + ", " + (G0 * p.h).toFixed(2) + ", " + (G1 * p.h).toFixed(2) + " ms.");
+
+  const ch = document.getElementById("challenge");
+  if (challengeTest) { const ok = !!challengeTest(p); ch.hidden = false; ch.dataset.ok = String(ok);
+    ch.innerHTML = "<b>Challenge:</b> " + CHALLENGE + " &nbsp; " + (ok ? "<b>Done!</b>" : "Not yet.");
+    if (ok !== lastOk) { document.getElementById("status").textContent = ok ? "Challenge done." : "Challenge not yet done."; lastOk = ok; } }
+}
+const box = document.getElementById("controls");
+const inputs = {};
+for (const q of PARAMS) {
+  p[q.id] = q.value;
+  const row = document.createElement("div"); row.className = "row";
+  row.innerHTML = `<label for="${q.id}">${q.label} (${q.unit || "no unit"})</label>` +
+    `<input id="${q.id}" type="range" min="${q.min}" max="${q.max}" step="${q.step}" value="${q.value}">` +
+    `<output for="${q.id}">${q.value}</output>`;
+  const inp = row.querySelector("input"), out = row.querySelector("output");
+  inputs[q.id] = [inp, out];
+  inp.addEventListener("input", () => { p[q.id] = +inp.value; out.textContent = inp.value; draw(); });
+  box.appendChild(row);
+}
+function setAll(vals) { for (const k in vals) { p[k] = vals[k]; if (inputs[k]) { inputs[k][0].value = vals[k]; inputs[k][1].textContent = vals[k]; } } draw(); }
+const DEFAULTS = Object.assign({}, p);
+document.getElementById("reset").addEventListener("click", () => setAll(DEFAULTS));
+for (const g of GRAPHS) {
+  const b = document.createElement("button"); b.type = "button"; b.textContent = g.label;
+  b.setAttribute("aria-pressed", String(g.id === graph));
+  b.addEventListener("click", () => { graph = g.id; for (const x of document.querySelectorAll("#graphs button")) x.setAttribute("aria-pressed", String(x === b)); draw(); });
+  document.getElementById("graphs").appendChild(b);
+}
+for (const pr of PRESETS) {
+  const b = document.createElement("button"); b.type = "button"; b.textContent = pr.label;
+  b.addEventListener("click", () => setAll(pr.values));
+  document.getElementById("presets").appendChild(b);
+}
+matchMedia("(prefers-color-scheme: dark)").addEventListener("change", draw);
+draw();
+</script>
+</body>
+</html>

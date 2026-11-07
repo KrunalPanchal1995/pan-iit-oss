@@ -1,0 +1,150 @@
+# openclassifier
+
+[![Checks](https://github.com/KrunalPanchal1995/pan-iit-oss/actions/workflows/tests.yml/badge.svg)](https://github.com/KrunalPanchal1995/pan-iit-oss/actions/workflows/tests.yml) ![License: MIT](https://img.shields.io/badge/license-MIT-green?style=flat-square) ![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue?style=flat-square) [![Open in Colab](https://img.shields.io/badge/Colab-session%201-F9AB00?style=flat-square&logo=googlecolab&logoColor=white)](https://colab.research.google.com/github/KrunalPanchal1995/pan-iit-oss/blob/main/openclassifier/sessions/session-01/lesson.ipynb) [![Live apps](https://img.shields.io/badge/live-apps-1f6feb?style=flat-square)](https://krunalpanchal1995.github.io/pan-iit-oss/openclassifier/)
+
+**Draw decision boundaries and read a confusion matrix, in five sessions.**
+
+openclassifier teaches classification as a decision problem: how a rule splits two groups, and how to judge it honestly with confusion matrices, ROC curves and held-out data, using only Python and a browser.
+
+- **Start from zero.** Session 1 needs only a ruler-and-graph idea: a line that splits two groups of points.
+- **See it move.** Every session ships a slider app that runs in the browser, with labelled graphs.
+- **Know you got it right.** Each session ends with a checkpoint that prints PASS or FAIL against hand calculations.
+- **Build the missing half.** The repo stops at Session 5 on purpose; the roadmap shows the path to the Target.
+
+[Target](#the-target) · [Who is this for](#who-is-this-for) · [Quick start](#quick-start) · [Sessions](#sessions) · [Roadmap](#roadmap) · [Contribute](#contribute) · [Explainer PDF](docs/explainer.pdf)
+
+> **This repo is incomplete on purpose.** Sessions 1 to 5 are here and fully working. The finished Target below is a preview of what the community can build next. We show you the path, not the code. Sessions 6 and up are yours.
+
+## The Target
+
+Three linked panels on one problem. On the left, the decision region of a bagged-tree classifier grows more detailed as the trees get deeper, and then its boundary moves as a threshold slides. In the middle, the ROC curve is traced out one threshold at a time with a marker on the current operating point. On the right, a confusion-matrix heat map updates live. Your goal over the coming sessions: build this dashboard yourself, from your own forest and your own ROC code.
+
+![Target: decision region, ROC curve and confusion matrix updating together](promo/media/target.gif)
+
+*Target: decision region, ROC curve and confusion matrix updating together*
+
+![One frame of the Target: boundary, ROC and confusion matrix at one threshold](promo/media/target_still.png)
+
+*One frame of the Target: boundary, ROC and confusion matrix at one threshold*
+
+![The same data at tree depths 1, 2, 4 and 8: the boundary gains detail with depth](promo/media/depth_strip.png)
+
+*The same data at tree depths 1, 2, 4 and 8: the boundary gains detail with depth*
+
+Try it live:
+
+- [Math Visual Studio: statistics, estimation and regression (Atlas S26)](https://krunalpanchal1995.github.io/studio/#atlas?ch=S26&ex=1)
+
+How the Target was made is shown only as a path in [promo/roadmap.md](promo/roadmap.md).
+
+## Who is this for
+**higher secondary to advanced undergraduate (levels 4-6).** Topic area: Artificial Intelligence, Data Science and Robotics.
+
+Prerequisites:
+
+- Reading a scatter plot and the equation of a straight line (school level).
+- Python 3.10 or newer; if `python --version` works, you are ready. PRIMER.md explains the rest.
+- No prior GitHub, statistics or machine-learning experience is needed. This repo is about classification as a decision problem; it does not repeat how neural networks work.
+
+New to Python? Read [PRIMER.md](PRIMER.md) first (10 minutes).
+
+## Quick start
+
+No installation knowledge needed. You need [Git](https://git-scm.com/downloads) and [Python 3.10+](https://www.python.org/downloads/) (Windows: tick "Add Python to PATH"). On Mac and Linux type `python3` wherever this page says `python`.
+
+```bash
+git clone https://github.com/KrunalPanchal1995/pan-iit-oss.git
+cd pan-iit-oss/openclassifier
+python start.py 1
+```
+
+`start.py` creates a private environment, installs what is needed and runs Session 1 with its checkpoint. Next: `python start.py 2`, `python start.py 3`, or `python start.py test` to check everything. Only a checkpoint: `python start.py check 1`.
+
+<!-- friendly-help -->
+<details>
+<summary><b>Not working? Common fixes (no Git, "python not found", no internet)</b></summary>
+
+- **No Git?** You do not need it. On the main page of this collection click the green **Code** button, then **Download ZIP**, unzip it, open a terminal inside the folder `pan-iit-oss-main/openclassifier` and run `python start.py 1`. The ZIP holds every project, so it is large; the live apps need no download at all.
+- **"python is not recognized" or "command not found".** On Windows try `py start.py 1`. On Mac and Linux try `python3 start.py 1`. If neither works, install Python from [python.org](https://www.python.org/downloads/) and tick "Add Python to PATH".
+- **Needs internet once.** The first run downloads NumPy and Matplotlib into a private folder (`.venv`); after that it works offline.
+- **Rather not install anything?** Open the [live apps](https://krunalpanchal1995.github.io/pan-iit-oss/openclassifier/) in your browser, or use the Colab badge at the top of this page.
+- **Still stuck?** [Open an issue](https://github.com/KrunalPanchal1995/pan-iit-oss/issues/new?title=%5Bopenclassifier%5D%20) with your operating system and the message you see. Questions from beginners are welcome.
+
+</details>
+
+Four lines turn the idea of Session 2 into a result (they work as they are): Save it as `try.py` and run it with `python start.py run try.py` (this uses the private environment, where NumPy is installed):
+
+```python
+import numpy as np
+prev, sens, spec = 0.01, 0.99, 0.95      # 1% have it; the test finds 99% of cases and clears 95% of healthy people
+tp, fp = prev * sens, (1 - prev) * (1 - spec)
+print(np.round(tp / (tp + fp), 3))        # -> 0.167: most positive results are false alarms
+```
+
+Every session also opens in your browser with sliders (no install): [live apps](https://krunalpanchal1995.github.io/pan-iit-oss/openclassifier/). Or use the Colab badge above for the notebook.
+
+## Sessions
+
+| # | Session | Model level | Time | Live app |
+|---|---|---|---|---|
+| 1 | [A rule that splits two groups](sessions/session-01/README.md) | Level 1: conceptual interactive model | 60 min | [open](https://krunalpanchal1995.github.io/pan-iit-oss/openclassifier/session-01/) |
+| 2 | [Trees, neighbours and the confusion matrix](sessions/session-02/README.md) | Level 2: mathematical engineering model | 90 min | [open](https://krunalpanchal1995.github.io/pan-iit-oss/openclassifier/session-02/) |
+| 3 | [Judging a classifier honestly](sessions/session-03/README.md) | Level 3: simulation and validation | 90 min | [open](https://krunalpanchal1995.github.io/pan-iit-oss/openclassifier/session-03/) |
+| 4 | [Tune the forest by cross-validation](sessions/session-04/README.md) | Level 3: simulation and validation | 90 min | [open](https://krunalpanchal1995.github.io/pan-iit-oss/openclassifier/session-04/) |
+| 5 | [A threshold for each group](sessions/session-05/README.md) | Level 3: simulation and validation | 90 min | [open](https://krunalpanchal1995.github.io/pan-iit-oss/openclassifier/session-05/) |
+
+**Session 1 in other languages:** [हिन्दी](sessions/session-01/README.hi.md) · [தமிழ்](sessions/session-01/README.ta.md) · [తెలుగు](sessions/session-01/README.te.md) · [മലയാളം](sessions/session-01/README.ml.md)
+
+Each session follows the same six steps: A real-world problem, B concept and theory, C visual explanation, D interactive simulation, E worked example and experiment, F assessment and design challenge. Each ends with `checkpoint.py`, which prints `PASS` or `FAIL` against reference numbers. Session 3 also contains the real-world mini-project: **Choose a model and a threshold for a synthetic screening problem**; Session 4 adds **Report the tuned forest honestly**; Session 5 adds **A tool that picks one threshold per group**.
+
+## Architecture
+
+```mermaid
+flowchart LR
+  S1[Session 1<br/>A rule that splits two groups]
+  S2[Session 2<br/>Trees, neighbours and the confusion matrix]
+  S3[Session 3<br/>Judging a classifier honestly]
+  S4[Session 4<br/>Tune the forest by cross-validation]
+  S5[Session 5<br/>A threshold for each group]
+  R[Roadmap S6+<br/>YOU build this]
+  T((Target))
+  S1 --> S2 --> S3 --> S4 --> S5 --> R --> T
+```
+
+| Folder or file | What is inside |
+|---|---|
+| `sessions/` | five sessions: README (A-F), `lesson.py`, notebook, live app, exercises, activity sheet, checkpoint |
+| `promo/` | the Target: media, live links, and the roadmap (path only) |
+| `docs/` | `explainer.tex` and the built `explainer.pdf` |
+| `tests/` | runs every lesson and checkpoint headless |
+| `start.py` | one command to set up and run anything |
+| `QUALITY.md`, `RUBRIC.md` | the quality checklist and the scoring rubric |
+| `.github/` | CI, PDF build, Pages deploy, issue and PR templates |
+
+## Roadmap
+
+| Milestone | What you will build | Difficulty |
+|---|---|---|
+| Session 6: Beat the screening cost | A screening classifier chosen and tuned only with validation data. | advanced |
+| Session 7: How sure is the AUC? | A 95 percent bootstrap interval for the AUC and a coverage experiment. | advanced |
+| Session 8: Three classes and a 3 by 3 confusion matrix | A classifier for three fruit types with a 3 by 3 matrix and macro-F1. | advanced |
+
+Full detail with a checkpoint per milestone: [promo/roadmap.md](promo/roadmap.md).
+
+## Contribute
+New to GitHub? Read [CONTRIBUTING.md](CONTRIBUTING.md); it starts from zero. Pick an issue labelled `good first issue`. Translations into Hindi, Telugu, Tamil and Malayalam are welcome.
+
+<details>
+<summary>Development</summary>
+
+```bash
+python start.py test        # runs every lesson and checkpoint
+```
+Lessons use `# %%` cell markers so they open as notebooks in VS Code. See [QUALITY.md](QUALITY.md) for the standard every session meets.
+</details>
+
+## License
+MIT. See [LICENSE](LICENSE). Media in `promo/media` is (c) Krunal Panchal, CC BY 4.0.
+
+## Acknowledgments
+Part of the [PAN IIT OSS](https://hellofoss.tech-iitb.org/projects) open-source teaching collection, modelled on the structure of [openspline](https://github.com/openspline/openspline). Built on ideas from the Math Visual Studio at https://krunalpanchal1995.github.io/studio/.

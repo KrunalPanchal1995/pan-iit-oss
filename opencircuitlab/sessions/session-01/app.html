@@ -1,0 +1,182 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Session 1: bulbs in series and in parallel</title>
+<style>
+  :root { --bg:#ffffff; --fg:#14181f; --muted:#5b6472; --card:#f3f5f8; --accent:#003f7f; --good:#c86a00; --bad:#d81b60; --line:#d7dce3; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#0e1116; --fg:#e6e9ee; --muted:#9aa3b2; --card:#171b22; --accent:#3b8fe0; --good:#ffc857; --bad:#e0457b; --line:#2a313c; } }
+  * { box-sizing: border-box; }
+  body { margin:0; padding:16px; background:var(--bg); color:var(--fg); font:16px/1.5 system-ui, sans-serif; }
+  main { max-width: 780px; margin: 0 auto; }
+  h1 { font-size: 1.3rem; margin: 0 0 4px; }
+  p.sub { margin: 0 0 12px; color: var(--muted); }
+  .scroll { overflow-x:auto; }
+  canvas { width:100%; min-width:560px; height:auto; background:var(--card); border:1px solid var(--line); border-radius:8px; display:block; }
+  .sr { position:absolute; left:-9999px; }
+  .bar { display:flex; flex-wrap:wrap; gap:8px; margin:10px 0; }
+  button { font:inherit; padding:6px 12px; border:1px solid var(--line); background:var(--card); color:var(--fg); border-radius:6px; cursor:pointer; }
+  button[aria-pressed="true"] { border-color:var(--accent); color:var(--accent); font-weight:600; }
+  button:focus-visible, input:focus-visible { outline:3px solid var(--accent); outline-offset:2px; }
+  .row { display:grid; grid-template-columns: 11rem 1fr 6rem; gap:8px; align-items:center; margin:8px 0; }
+  .row output { text-align:right; font-variant-numeric: tabular-nums; }
+  @media (max-width: 560px) { .row { grid-template-columns: 1fr; gap:2px; } .row output { text-align:left; } }
+  input[type=range] { width:100%; accent-color: var(--accent); }
+  #readout, #challenge, .note { margin-top:10px; padding:10px 12px; background:var(--card); border-radius:8px; border:1px solid var(--line); }
+  #challenge[data-ok="true"] { border-color:var(--good); } #challenge[data-ok="true"] b { color:var(--good); }
+  .note { font-size:.85rem; color:var(--muted); }
+  a { color: var(--accent); }
+</style>
+</head>
+<body>
+<main>
+  <h1>Session 1: bulbs in series and in parallel</h1>
+  <p class="sub">A battery with up to four 10 ohm bulbs. The glow shows each bulb's power; the graph compares the two wirings.</p>
+  <div class="bar" id="graphs" role="group" aria-label="Choose a graph"></div>
+  <div class="scroll"><canvas id="c" width="720" height="420" role="img" aria-label="Session 1: bulbs in series and in parallel: interactive plot"></canvas></div>
+  <div class="bar" id="presets" role="group" aria-label="Presets"></div>
+  <div id="controls"></div>
+  <div class="bar"><button id="reset" type="button">Reset</button></div>
+  <div id="readout"></div>
+  <div id="challenge" hidden></div>
+  <div id="status" class="sr" aria-live="polite"></div>
+  <p class="note">This is a simplified educational model. It is not a validated design tool and must not be used for real structures, electrical installations, vehicles, industrial processes or medical decisions.</p>
+  <p class="sub"><a href="https://github.com/KrunalPanchal1995/pan-iit-oss/tree/main/opencircuitlab">Back to the repository</a></p>
+</main>
+<script>
+"use strict";
+const PARAMS = [{"id": "V", "label": "Battery voltage", "min": 1, "max": 12, "step": 0.5, "value": 6, "unit": "V"}, {"id": "N", "label": "Number of bulbs", "min": 1, "max": 4, "step": 1, "value": 2, "unit": "bulbs"}, {"id": "wire", "label": "Wiring", "min": 0, "max": 1, "step": 1, "value": 0, "unit": "0 = series, 1 = parallel"}];
+const GRAPHS = [{"id": "circuit", "label": "Circuit picture", "diagram": true}, {"id": "power", "label": "Brightness versus number of bulbs"}];
+const PRESETS = [{"label": "Worked example (series)", "values": {"V": 6, "N": 3, "wire": 0}}, {"label": "Same, in parallel", "values": {"V": 6, "N": 3, "wire": 1}}, {"label": "One bulb", "values": {"V": 6, "N": 1, "wire": 0}}];
+const CHALLENGE = "Wire three bulbs in series so that each one gets at least 1 W.";
+const CHALLENGE_SOLUTION = {"V": 10, "N": 3, "wire": 0};
+const challengeTest = CHALLENGE ? (p) => (p.wire === 0 && p.N === 3 && p.V * p.V / 90 >= 1) : null;
+const cv = document.getElementById("c"), ctx = cv.getContext("2d");
+const W = cv.width, H = cv.height, p = {};
+let graph = GRAPHS.length ? GRAPHS[0].id : "main";
+const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+const fmt = v => (Math.abs(v) >= 1000 || (Math.abs(v) > 0 && Math.abs(v) < 0.01)) ? v.toExponential(2) : String(+v.toPrecision(4));
+function readout(html) {
+  document.getElementById("readout").innerHTML = html;
+  cv.setAttribute("aria-label", document.title + ". " + html.replace(/<[^>]+>/g, " ").replace(/&nbsp;/g, " "));  // screen readers get the numbers
+}
+let lastOk = null;
+// ---- plotting helpers: every graph gets labelled axes with units ----
+function niceTicks(lo, hi, n) {
+  const raw = (hi - lo) / n, mag = Math.pow(10, Math.floor(Math.log10(raw))), f = raw / mag;
+  const step = (f < 1.5 ? 1 : f < 3 ? 2 : f < 7 ? 5 : 10) * mag, out = [];
+  for (let v = Math.ceil(lo / step - 1e-9) * step; v <= hi + 1e-9; v += step) out.push(+v.toPrecision(12));
+  return out;
+}
+function axes(o, C) {
+  const L = 66, R = 16, T = 34, B = 50, w = W - L - R, h = H - T - B;
+  const X = v => L + (v - o.x[0]) / (o.x[1] - o.x[0]) * w, Y = v => T + h - (v - o.y[0]) / (o.y[1] - o.y[0]) * h;
+  ctx.lineWidth = 1; ctx.font = "12px system-ui";
+  for (const xv of niceTicks(o.x[0], o.x[1], 6)) {
+    ctx.strokeStyle = C.line; ctx.beginPath(); ctx.moveTo(X(xv), T); ctx.lineTo(X(xv), T + h); ctx.stroke();
+    ctx.fillStyle = C.muted; ctx.textAlign = "center"; ctx.fillText(fmt(xv), X(xv), T + h + 16);
+  }
+  for (const yv of niceTicks(o.y[0], o.y[1], 5)) {
+    ctx.strokeStyle = C.line; ctx.beginPath(); ctx.moveTo(L, Y(yv)); ctx.lineTo(L + w, Y(yv)); ctx.stroke();
+    ctx.fillStyle = C.muted; ctx.textAlign = "right"; ctx.fillText(fmt(yv), L - 6, Y(yv) + 4);
+  }
+  ctx.strokeStyle = C.fg; ctx.beginPath(); ctx.moveTo(L, T); ctx.lineTo(L, T + h); ctx.lineTo(L + w, T + h); ctx.stroke();
+  ctx.fillStyle = C.fg; ctx.textAlign = "center"; ctx.font = "13px system-ui";
+  ctx.fillText(o.xl, L + w / 2, H - 8);
+  ctx.save(); ctx.translate(14, T + h / 2); ctx.rotate(-Math.PI / 2); ctx.fillText(o.yl, 0, 0); ctx.restore();
+  ctx.font = "bold 13px system-ui"; ctx.fillText(o.title || "", L + w / 2, 20);
+  return { X, Y, L, T, w, h };
+}
+function curve(f, a, color, x0, x1, n) {
+  n = n || 160; ctx.save(); ctx.beginPath(); ctx.rect(a.L, a.T, a.w, a.h); ctx.clip();   // never draw outside the plot area
+  ctx.strokeStyle = color; ctx.lineWidth = 2.5; ctx.beginPath();
+  for (let i = 0; i <= n; i++) { const x = x0 + (x1 - x0) * i / n, y = f(x); i ? ctx.lineTo(a.X(x), a.Y(y)) : ctx.moveTo(a.X(x), a.Y(y)); }
+  ctx.stroke(); ctx.restore();
+}
+function dot(a, x, y, color, label) {
+  ctx.fillStyle = color; ctx.beginPath(); ctx.arc(a.X(x), a.Y(y), 6, 0, 2 * Math.PI); ctx.fill();
+  if (label) { ctx.textAlign = "left"; ctx.font = "12px system-ui"; ctx.fillText(label, a.X(x) + 9, a.Y(y) - 8); }
+}
+function draw() {
+  ctx.clearRect(0, 0, W, H);
+  const C = { fg: css("--fg"), muted: css("--muted"), accent: css("--accent"), line: css("--line"), good: css("--good"), bad: css("--bad") };
+  
+const R = 10, N = Math.round(p.N), par = p.wire >= 0.5;
+const calc = (V, n, parallel) => parallel ? { I: n * V / R, ve: V, pe: V * V / R } : { I: V / (n * R), ve: V / n, pe: V * V / (n * n * R) };
+const c = calc(p.V, N, par), glow = Math.min(1, 0.08 + c.pe / 6);
+if (graph === "circuit") {
+  const xl = 90, xr = 640, yt = 110, yb = 330;
+  ctx.strokeStyle = C.fg; ctx.lineWidth = 3; ctx.beginPath();
+  ctx.moveTo(xl, yt); ctx.lineTo(xr, yt); ctx.lineTo(xr, yb); ctx.lineTo(xl, yb); ctx.lineTo(xl, yt); ctx.stroke();
+  ctx.clearRect(xl - 24, 185, 48, 50);
+  ctx.beginPath(); ctx.moveTo(xl - 24, 195); ctx.lineTo(xl + 24, 195); ctx.moveTo(xl - 12, 225); ctx.lineTo(xl + 12, 225);
+  ctx.moveTo(xl, 185); ctx.lineTo(xl, 195); ctx.moveTo(xl, 225); ctx.lineTo(xl, 235); ctx.stroke();
+  ctx.fillStyle = C.fg; ctx.font = "13px system-ui"; ctx.textAlign = "left";
+  ctx.fillText("battery " + p.V.toFixed(1) + " V", 10, 215);
+  const bulb = (x, y) => {
+    ctx.fillStyle = "#f5c518"; ctx.globalAlpha = glow; ctx.beginPath(); ctx.arc(x, y, 26, 0, 2 * Math.PI); ctx.fill(); ctx.globalAlpha = 1;
+    ctx.strokeStyle = C.fg; ctx.lineWidth = 2.5; ctx.beginPath(); ctx.arc(x, y, 26, 0, 2 * Math.PI); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(x - 14, y + 14); ctx.lineTo(x + 14, y - 14); ctx.moveTo(x - 14, y - 14); ctx.lineTo(x + 14, y + 14); ctx.stroke(); };
+  ctx.font = "12px system-ui";
+  for (let k = 0; k < N; k++) {
+    if (!par) {
+      const x = 190 + (k + 0.5) * 370 / N; bulb(x, yt);
+      ctx.fillStyle = C.fg; ctx.textAlign = "center"; ctx.fillText(c.ve.toFixed(2) + " V", x, yt + 48);
+    } else {
+      const x = 200 + (k + 0.5) * 360 / N;
+      ctx.strokeStyle = C.fg; ctx.lineWidth = 2.5; ctx.beginPath(); ctx.moveTo(x, yt); ctx.lineTo(x, 194); ctx.moveTo(x, 246); ctx.lineTo(x, yb); ctx.stroke();
+      bulb(x, 220);
+      ctx.fillStyle = C.fg; ctx.textAlign = "left"; ctx.fillText(c.ve.toFixed(1) + " V", x + 30, 224);
+    }
+  }
+  ctx.fillStyle = C.muted; ctx.textAlign = "left"; ctx.font = "13px system-ui";
+  ctx.fillText((par ? "Parallel: every bulb is connected straight across the battery" : "Series: one path, the same current through every bulb") + " (" + N + " bulb" + (N > 1 ? "s" : "") + ", 10 ohm each)", 10, 30);
+  ctx.fillText("Battery current I = " + c.I.toFixed(3) + " A   (brightness of each bulb: " + c.pe.toFixed(2) + " W)", 10, 58);
+} else {
+  const A = axes({ x: [1, 4], y: [0, 15], xl: "number of bulbs N", yl: "power in each bulb (W)", title: "Brightness of each bulb at " + p.V.toFixed(1) + " V" }, C);
+  curve(n => calc(p.V, n, false).pe, A, C.accent, 1, 4);
+  curve(n => calc(p.V, n, true).pe, A, C.good, 1, 4);
+  dot(A, N, c.pe, C.bad, "now");
+  ctx.font = "12px system-ui"; ctx.textAlign = "left"; ctx.fillStyle = C.accent; ctx.fillText("blue: series, P = V^2 / (N^2 R)", A.L + 10, A.T + 16);
+  ctx.fillStyle = C.good; ctx.fillText("orange: parallel, P = V^2 / R (does not depend on N)", A.L + 10, A.T + 32);
+}
+readout((par ? "parallel" : "series") + " &nbsp; R_total = " + (par ? R / N : N * R).toFixed(2) + " ohm &nbsp; battery current I = " + c.I.toFixed(3) + " A &nbsp; each bulb: " + c.ve.toFixed(2) + " V, " + c.pe.toFixed(3) + " W &nbsp; total power " + (N * c.pe).toFixed(2) + " W");
+
+  const ch = document.getElementById("challenge");
+  if (challengeTest) { const ok = !!challengeTest(p); ch.hidden = false; ch.dataset.ok = String(ok);
+    ch.innerHTML = "<b>Challenge:</b> " + CHALLENGE + " &nbsp; " + (ok ? "<b>Done!</b>" : "Not yet.");
+    if (ok !== lastOk) { document.getElementById("status").textContent = ok ? "Challenge done." : "Challenge not yet done."; lastOk = ok; } }
+}
+const box = document.getElementById("controls");
+const inputs = {};
+for (const q of PARAMS) {
+  p[q.id] = q.value;
+  const row = document.createElement("div"); row.className = "row";
+  row.innerHTML = `<label for="${q.id}">${q.label} (${q.unit || "no unit"})</label>` +
+    `<input id="${q.id}" type="range" min="${q.min}" max="${q.max}" step="${q.step}" value="${q.value}">` +
+    `<output for="${q.id}">${q.value}</output>`;
+  const inp = row.querySelector("input"), out = row.querySelector("output");
+  inputs[q.id] = [inp, out];
+  inp.addEventListener("input", () => { p[q.id] = +inp.value; out.textContent = inp.value; draw(); });
+  box.appendChild(row);
+}
+function setAll(vals) { for (const k in vals) { p[k] = vals[k]; if (inputs[k]) { inputs[k][0].value = vals[k]; inputs[k][1].textContent = vals[k]; } } draw(); }
+const DEFAULTS = Object.assign({}, p);
+document.getElementById("reset").addEventListener("click", () => setAll(DEFAULTS));
+for (const g of GRAPHS) {
+  const b = document.createElement("button"); b.type = "button"; b.textContent = g.label;
+  b.setAttribute("aria-pressed", String(g.id === graph));
+  b.addEventListener("click", () => { graph = g.id; for (const x of document.querySelectorAll("#graphs button")) x.setAttribute("aria-pressed", String(x === b)); draw(); });
+  document.getElementById("graphs").appendChild(b);
+}
+for (const pr of PRESETS) {
+  const b = document.createElement("button"); b.type = "button"; b.textContent = pr.label;
+  b.addEventListener("click", () => setAll(pr.values));
+  document.getElementById("presets").appendChild(b);
+}
+matchMedia("(prefers-color-scheme: dark)").addEventListener("change", draw);
+draw();
+</script>
+</body>
+</html>

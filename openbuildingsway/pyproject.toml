@@ -1,0 +1,11 @@
+[project]
+name = "openbuildingsway"
+version = "0.1.0"
+description = "Learn why buildings sway, resonate and fail: spring-mass models, mode shapes and drift, from scratch in 4 sessions."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+dependencies = ["numpy", "matplotlib"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
