@@ -1,0 +1,11 @@
+[project]
+name = "openmechanism"
+version = "0.1.0"
+description = "Learn how kinetic mechanisms are fitted to experiments: rate laws, Arrhenius, sensitivity, least squares and uncertainty, in 3 sessions."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+dependencies = ["numpy", "matplotlib"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

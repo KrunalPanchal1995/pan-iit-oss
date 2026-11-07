@@ -1,0 +1,185 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Session 3: velocity and acceleration from noisy positions</title>
+<style>
+  :root { --bg:#ffffff; --fg:#14181f; --muted:#5b6472; --card:#f3f5f8; --accent:#1f6feb; --good:#1a7f37; --bad:#b42318; --line:#d7dce3; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#0e1116; --fg:#e6e9ee; --muted:#9aa3b2; --card:#171b22; --accent:#58a6ff; --good:#3fb950; --bad:#f97066; --line:#2a313c; } }
+  * { box-sizing: border-box; }
+  body { margin:0; padding:16px; background:var(--bg); color:var(--fg); font:16px/1.5 system-ui, sans-serif; }
+  main { max-width: 780px; margin: 0 auto; }
+  h1 { font-size: 1.3rem; margin: 0 0 4px; }
+  p.sub { margin: 0 0 12px; color: var(--muted); }
+  .scroll { overflow-x:auto; }
+  canvas { width:100%; min-width:560px; height:auto; background:var(--card); border:1px solid var(--line); border-radius:8px; display:block; }
+  .sr { position:absolute; left:-9999px; }
+  .bar { display:flex; flex-wrap:wrap; gap:8px; margin:10px 0; }
+  button { font:inherit; padding:6px 12px; border:1px solid var(--line); background:var(--card); color:var(--fg); border-radius:6px; cursor:pointer; }
+  button[aria-pressed="true"] { border-color:var(--accent); color:var(--accent); font-weight:600; }
+  button:focus-visible, input:focus-visible { outline:3px solid var(--accent); outline-offset:2px; }
+  .row { display:grid; grid-template-columns: 11rem 1fr 6rem; gap:8px; align-items:center; margin:8px 0; }
+  .row output { text-align:right; font-variant-numeric: tabular-nums; }
+  @media (max-width: 560px) { .row { grid-template-columns: 1fr; gap:2px; } .row output { text-align:left; } }
+  input[type=range] { width:100%; accent-color: var(--accent); }
+  #readout, #challenge, .note { margin-top:10px; padding:10px 12px; background:var(--card); border-radius:8px; border:1px solid var(--line); }
+  #challenge[data-ok="true"] { border-color:var(--good); } #challenge[data-ok="true"] b { color:var(--good); }
+  .note { font-size:.85rem; color:var(--muted); }
+  a { color: var(--accent); }
+</style>
+</head>
+<body>
+<main>
+  <h1>Session 3: velocity and acceleration from noisy positions</h1>
+  <p class="sub">One random sample of noisy data; compare plain differences with a local cubic fit.</p>
+  <div class="bar" id="graphs" role="group" aria-label="Choose a graph"></div>
+  <div class="scroll"><canvas id="c" width="720" height="420" role="img" aria-label="Session 3: velocity and acceleration from noisy positions: interactive plot"></canvas></div>
+  <div class="bar" id="presets" role="group" aria-label="Presets"></div>
+  <div id="controls"></div>
+  <div class="bar"><button id="reset" type="button">Reset</button></div>
+  <div id="readout"></div>
+  <div id="challenge" hidden></div>
+  <div id="status" class="sr" aria-live="polite"></div>
+  <p class="note">This is a simplified educational model. It is not a validated design tool and must not be used for real structures, electrical installations, vehicles, industrial processes or medical decisions.</p>
+  <p class="sub"><a href="https://github.com/KrunalPanchal1995/pan-iit-oss/tree/main/openmotion">Back to the repository</a></p>
+</main>
+<script>
+"use strict";
+const PARAMS = [{"id": "dt", "label": "Sampling step dt", "min": 0.02, "max": 0.2, "step": 0.01, "value": 0.05, "unit": "s"}, {"id": "sigma", "label": "Position noise sigma", "min": 0, "max": 0.05, "step": 0.005, "value": 0.02, "unit": "m"}, {"id": "half", "label": "Half window h", "min": 2, "max": 30, "step": 1, "value": 8, "unit": "samples"}];
+const GRAPHS = [{"id": "bars", "label": "Error sizes", "diagram": true}, {"id": "vel", "label": "Velocity from data"}, {"id": "acc", "label": "Acceleration from data"}];
+const PRESETS = [{"label": "Worked example", "values": {"dt": 0.05, "sigma": 0.02, "half": 8}}, {"label": "No noise", "values": {"dt": 0.05, "sigma": 0, "half": 8}}, {"label": "Coarse sampling", "values": {"dt": 0.2, "sigma": 0.02, "half": 4}}, {"label": "Wide window", "values": {"dt": 0.05, "sigma": 0.02, "half": 30}}];
+const CHALLENGE = "With noise of at least 0.03 m, choose a smoothing window between 1 and 2.5 seconds long, so that the blue acceleration follows the exact curve.";
+const CHALLENGE_SOLUTION = {"dt": 0.05, "sigma": 0.03, "half": 12};
+const challengeTest = CHALLENGE ? (p) => (p.sigma >= 0.03 && (2 * p.half + 1) * p.dt >= 1 && (2 * p.half + 1) * p.dt <= 2.5) : null;
+const cv = document.getElementById("c"), ctx = cv.getContext("2d");
+const W = cv.width, H = cv.height, p = {};
+let graph = GRAPHS.length ? GRAPHS[0].id : "main";
+const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+const fmt = v => (Math.abs(v) >= 1000 || (Math.abs(v) > 0 && Math.abs(v) < 0.01)) ? v.toExponential(2) : String(+v.toPrecision(4));
+function readout(html) {
+  document.getElementById("readout").innerHTML = html;
+  cv.setAttribute("aria-label", document.title + ". " + html.replace(/<[^>]+>/g, " ").replace(/&nbsp;/g, " "));  // screen readers get the numbers
+}
+let lastOk = null;
+// ---- plotting helpers: every graph gets labelled axes with units ----
+function niceTicks(lo, hi, n) {
+  const raw = (hi - lo) / n, mag = Math.pow(10, Math.floor(Math.log10(raw))), f = raw / mag;
+  const step = (f < 1.5 ? 1 : f < 3 ? 2 : f < 7 ? 5 : 10) * mag, out = [];
+  for (let v = Math.ceil(lo / step - 1e-9) * step; v <= hi + 1e-9; v += step) out.push(+v.toPrecision(12));
+  return out;
+}
+function axes(o, C) {
+  const L = 66, R = 16, T = 34, B = 50, w = W - L - R, h = H - T - B;
+  const X = v => L + (v - o.x[0]) / (o.x[1] - o.x[0]) * w, Y = v => T + h - (v - o.y[0]) / (o.y[1] - o.y[0]) * h;
+  ctx.lineWidth = 1; ctx.font = "12px system-ui";
+  for (const xv of niceTicks(o.x[0], o.x[1], 6)) {
+    ctx.strokeStyle = C.line; ctx.beginPath(); ctx.moveTo(X(xv), T); ctx.lineTo(X(xv), T + h); ctx.stroke();
+    ctx.fillStyle = C.muted; ctx.textAlign = "center"; ctx.fillText(fmt(xv), X(xv), T + h + 16);
+  }
+  for (const yv of niceTicks(o.y[0], o.y[1], 5)) {
+    ctx.strokeStyle = C.line; ctx.beginPath(); ctx.moveTo(L, Y(yv)); ctx.lineTo(L + w, Y(yv)); ctx.stroke();
+    ctx.fillStyle = C.muted; ctx.textAlign = "right"; ctx.fillText(fmt(yv), L - 6, Y(yv) + 4);
+  }
+  ctx.strokeStyle = C.fg; ctx.beginPath(); ctx.moveTo(L, T); ctx.lineTo(L, T + h); ctx.lineTo(L + w, T + h); ctx.stroke();
+  ctx.fillStyle = C.fg; ctx.textAlign = "center"; ctx.font = "13px system-ui";
+  ctx.fillText(o.xl, L + w / 2, H - 8);
+  ctx.save(); ctx.translate(14, T + h / 2); ctx.rotate(-Math.PI / 2); ctx.fillText(o.yl, 0, 0); ctx.restore();
+  ctx.font = "bold 13px system-ui"; ctx.fillText(o.title || "", L + w / 2, 20);
+  return { X, Y, L, T, w, h };
+}
+function curve(f, a, color, x0, x1, n) {
+  n = n || 160; ctx.save(); ctx.beginPath(); ctx.rect(a.L, a.T, a.w, a.h); ctx.clip();   // never draw outside the plot area
+  ctx.strokeStyle = color; ctx.lineWidth = 2.5; ctx.beginPath();
+  for (let i = 0; i <= n; i++) { const x = x0 + (x1 - x0) * i / n, y = f(x); i ? ctx.lineTo(a.X(x), a.Y(y)) : ctx.moveTo(a.X(x), a.Y(y)); }
+  ctx.stroke(); ctx.restore();
+}
+function dot(a, x, y, color, label) {
+  ctx.fillStyle = color; ctx.beginPath(); ctx.arc(a.X(x), a.Y(y), 6, 0, 2 * Math.PI); ctx.fill();
+  if (label) { ctx.textAlign = "left"; ctx.font = "12px system-ui"; ctx.fillText(label, a.X(x) + 9, a.Y(y) - 8); }
+}
+function draw() {
+  ctx.clearRect(0, 0, W, H);
+  const C = { fg: css("--fg"), muted: css("--muted"), accent: css("--accent"), line: css("--line"), good: css("--good"), bad: css("--bad") };
+  
+const dt = p.dt, sg = p.sigma, h = p.half, T = 20, N = Math.round(T / dt) + 1;
+let st = 12345;
+const rnd = () => { st = (st + 0x6D2B79F5) | 0; let z = Math.imul(st ^ (st >>> 15), 1 | st); z = (z + Math.imul(z ^ (z >>> 7), 61 | z)) ^ z; return ((z ^ (z >>> 14)) >>> 0) / 4294967296; };
+const gauss = () => Math.sqrt(-2 * Math.log(Math.max(rnd(), 1e-12))) * Math.cos(2 * Math.PI * rnd());
+const xt = s => 8 * s + 3 * Math.sin(1.2 * s), vt = s => 8 + 3.6 * Math.cos(1.2 * s), at = s => -4.32 * Math.sin(1.2 * s);
+const ts = [], xs = [];
+for (let i = 0; i < N; i++) { const s = i * dt; ts.push(s); xs.push(xt(s) + sg * gauss()); }
+const wts = d => {
+  const n = 2 * h + 1, M = [[0,0,0,0],[0,0,0,0],[0,0,0,0],[0,0,0,0]], V = [];
+  for (let j = 0; j < n; j++) { const u = (j - h) / h, row = [1, u, u * u, u * u * u]; V.push(row); for (let a = 0; a < 4; a++) for (let b = 0; b < 4; b++) M[a][b] += row[a] * row[b]; }
+  const I = [[1,0,0,0],[0,1,0,0],[0,0,1,0],[0,0,0,1]];
+  for (let c = 0; c < 4; c++) { let pv = c; for (let r = c + 1; r < 4; r++) if (Math.abs(M[r][c]) > Math.abs(M[pv][c])) pv = r;
+    [M[c], M[pv]] = [M[pv], M[c]]; [I[c], I[pv]] = [I[pv], I[c]]; const dv = M[c][c];
+    for (let k = 0; k < 4; k++) { M[c][k] /= dv; I[c][k] /= dv; }
+    for (let r = 0; r < 4; r++) if (r !== c) { const f = M[r][c]; for (let k = 0; k < 4; k++) { M[r][k] -= f * M[c][k]; I[r][k] -= f * I[c][k]; } } }
+  const fact = d === 2 ? 2 : 1, sc = Math.pow(h * dt, d), out = [];
+  for (let j = 0; j < n; j++) { let sum = 0; for (let c = 0; c < 4; c++) sum += I[d][c] * V[j][c]; out.push(fact * sum / sc); }
+  return out;
+};
+const w1 = wts(1), w2 = wts(2), vc = [], ac = [], vs = [], as = [], tm = [], tc = [];
+for (let i = 1; i < N - 1; i++) { tc.push(ts[i]); vc.push((xs[i + 1] - xs[i - 1]) / (2 * dt)); ac.push((xs[i + 1] - 2 * xs[i] + xs[i - 1]) / (dt * dt)); }
+for (let i = h; i < N - h; i++) { let s1 = 0, s2 = 0; for (let j = 0; j <= 2 * h; j++) { s1 += w1[j] * xs[i - h + j]; s2 += w2[j] * xs[i - h + j]; } tm.push(ts[i]); vs.push(s1); as.push(s2); }
+const rms = (tArr, arr, f) => { let q = 0; for (let i = 0; i < arr.length; i++) { const d = arr[i] - f(tArr[i]); q += d * d; } return Math.sqrt(q / Math.max(1, arr.length)); };
+const evc = rms(tc, vc, vt), eac = rms(tc, ac, at), evs = rms(tm, vs, vt), eas = rms(tm, as, at);
+const pv = sg / (Math.SQRT2 * dt), pa = sg * Math.sqrt(6) / (dt * dt);
+const line = (A, tArr, arr, color, lo, hi, wd) => { ctx.save(); ctx.beginPath(); ctx.rect(A.L, A.T, A.w, A.h); ctx.clip(); ctx.strokeStyle = color; ctx.lineWidth = wd; ctx.beginPath();
+  for (let i = 0; i < arr.length; i++) { const y = Math.max(lo, Math.min(hi, arr[i])); i ? ctx.lineTo(A.X(tArr[i]), A.Y(y)) : ctx.moveTo(A.X(tArr[i]), A.Y(y)); } ctx.stroke(); ctx.restore(); };
+if (graph === "bars") {
+  const items = [["position noise", sg / 3, sg.toFixed(3) + " m (" + (100 * sg / 3).toFixed(1) + "% of the 3 m wiggle)"], ["velocity error", evc / 3.6, evc.toFixed(2) + " m/s (" + (100 * evc / 3.6).toFixed(0) + "% of the 3.6 m/s wiggle)"], ["acceleration error", eac / 4.32, eac.toFixed(1) + " m/s^2 (" + (100 * eac / 4.32).toFixed(0) + "% of the 4.32 m/s^2 wiggle)"]];
+  ctx.font = "13px system-ui"; ctx.textAlign = "left";
+  items.forEach((it, k) => { const y = 90 + k * 100, wBar = Math.min(W - 80, 4 * (W - 80) / 5 * it[1] * 1); ctx.fillStyle = C.fg; ctx.fillText(it[0], 40, y - 10);
+    ctx.fillStyle = [C.muted, C.accent, C.bad][k]; ctx.fillRect(40, y, Math.max(2, wBar), 26); ctx.fillStyle = C.fg; ctx.fillText(it[2], 46, y + 46); });
+  ctx.fillStyle = C.muted; ctx.fillText("bar length: error divided by the true wiggle size (full bar = 125%); plain finite differences", 40, 30);
+} else if (graph === "vel") {
+  const A = axes({ x: [0, 20], y: [-8, 28], xl: "time t (s)", yl: "velocity (m/s)", title: "Velocity from noisy positions" }, C);
+  line(A, tc, vc, C.bad, -8, 28, 1); line(A, tm, vs, C.accent, -8, 28, 2.5); curve(vt, A, C.fg, 0, 20, 200);
+  ctx.fillStyle = C.bad; ctx.font = "12px system-ui"; ctx.textAlign = "left"; ctx.fillText("red: central difference", A.L + 8, A.T + 14); ctx.fillStyle = C.accent; ctx.fillText("blue: local cubic fit", A.L + 8, A.T + 28); ctx.fillStyle = C.fg; ctx.fillText("black: exact", A.L + 8, A.T + 42);
+} else {
+  const A = axes({ x: [0, 20], y: [-40, 40], xl: "time t (s)", yl: "acceleration (m/s^2)", title: "Acceleration from noisy positions" }, C);
+  line(A, tc, ac, C.bad, -40, 40, 1); line(A, tm, as, C.accent, -40, 40, 2.5); curve(at, A, C.fg, 0, 20, 200);
+  ctx.fillStyle = C.bad; ctx.font = "12px system-ui"; ctx.textAlign = "left"; ctx.fillText("red: second difference", A.L + 8, A.T + 14); ctx.fillStyle = C.accent; ctx.fillText("blue: local cubic fit", A.L + 8, A.T + 28); ctx.fillStyle = C.fg; ctx.fillText("black: exact", A.L + 8, A.T + 42);
+}
+readout("window " + ((2 * h + 1) * dt).toFixed(2) + " s &nbsp; velocity error: central " + evc.toFixed(2) + " (theory " + pv.toFixed(2) + "), smoothed " + evs.toFixed(2) + " m/s &nbsp; acceleration error: second difference " + eac.toFixed(1) + " (theory " + pa.toFixed(1) + "), smoothed " + eas.toFixed(2) + " m/s^2 (random sample)");
+
+  const ch = document.getElementById("challenge");
+  if (challengeTest) { const ok = !!challengeTest(p); ch.hidden = false; ch.dataset.ok = String(ok);
+    ch.innerHTML = "<b>Challenge:</b> " + CHALLENGE + " &nbsp; " + (ok ? "<b>Done!</b>" : "Not yet.");
+    if (ok !== lastOk) { document.getElementById("status").textContent = ok ? "Challenge done." : "Challenge not yet done."; lastOk = ok; } }
+}
+const box = document.getElementById("controls");
+const inputs = {};
+for (const q of PARAMS) {
+  p[q.id] = q.value;
+  const row = document.createElement("div"); row.className = "row";
+  row.innerHTML = `<label for="${q.id}">${q.label} (${q.unit || "no unit"})</label>` +
+    `<input id="${q.id}" type="range" min="${q.min}" max="${q.max}" step="${q.step}" value="${q.value}">` +
+    `<output for="${q.id}">${q.value}</output>`;
+  const inp = row.querySelector("input"), out = row.querySelector("output");
+  inputs[q.id] = [inp, out];
+  inp.addEventListener("input", () => { p[q.id] = +inp.value; out.textContent = inp.value; draw(); });
+  box.appendChild(row);
+}
+function setAll(vals) { for (const k in vals) { p[k] = vals[k]; if (inputs[k]) { inputs[k][0].value = vals[k]; inputs[k][1].textContent = vals[k]; } } draw(); }
+const DEFAULTS = Object.assign({}, p);
+document.getElementById("reset").addEventListener("click", () => setAll(DEFAULTS));
+for (const g of GRAPHS) {
+  const b = document.createElement("button"); b.type = "button"; b.textContent = g.label;
+  b.setAttribute("aria-pressed", String(g.id === graph));
+  b.addEventListener("click", () => { graph = g.id; for (const x of document.querySelectorAll("#graphs button")) x.setAttribute("aria-pressed", String(x === b)); draw(); });
+  document.getElementById("graphs").appendChild(b);
+}
+for (const pr of PRESETS) {
+  const b = document.createElement("button"); b.type = "button"; b.textContent = pr.label;
+  b.addEventListener("click", () => setAll(pr.values));
+  document.getElementById("presets").appendChild(b);
+}
+matchMedia("(prefers-color-scheme: dark)").addEventListener("change", draw);
+draw();
+</script>
+</body>
+</html>

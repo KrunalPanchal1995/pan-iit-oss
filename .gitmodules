@@ -19,15 +19,9 @@
 [submodule "openvfx"]
 	path = openvfx
 	url = https://github.com/KrunalPanchal1995/openvfx.git
-[submodule "openmapproject"]
-	path = openmapproject
-	url = https://github.com/KrunalPanchal1995/openmapproject.git
 [submodule "openodds"]
 	path = openodds
 	url = https://github.com/KrunalPanchal1995/openodds.git
-[submodule "openmotion"]
-	path = openmotion
-	url = https://github.com/KrunalPanchal1995/openmotion.git
 [submodule "openprojectile"]
 	path = openprojectile
 	url = https://github.com/KrunalPanchal1995/openprojectile.git
@@ -43,9 +37,6 @@
 [submodule "openrcfilter"]
 	path = openrcfilter
 	url = https://github.com/KrunalPanchal1995/openrcfilter.git
-[submodule "openmole"]
-	path = openmole
-	url = https://github.com/KrunalPanchal1995/openmole.git
 [submodule "openphtitration"]
 	path = openphtitration
 	url = https://github.com/KrunalPanchal1995/openphtitration.git
@@ -70,9 +61,6 @@
 [submodule "opensurvey"]
 	path = opensurvey
 	url = https://github.com/KrunalPanchal1995/opensurvey.git
-[submodule "openlinkage"]
-	path = openlinkage
-	url = https://github.com/KrunalPanchal1995/openlinkage.git
 [submodule "opentolerance"]
 	path = opentolerance
 	url = https://github.com/KrunalPanchal1995/opentolerance.git
@@ -85,18 +73,12 @@
 [submodule "opensql"]
 	path = opensql
 	url = https://github.com/KrunalPanchal1995/opensql.git
-[submodule "openneuralnet"]
-	path = openneuralnet
-	url = https://github.com/KrunalPanchal1995/openneuralnet.git
 [submodule "openregression"]
 	path = openregression
 	url = https://github.com/KrunalPanchal1995/openregression.git
 [submodule "opensolarbattery"]
 	path = opensolarbattery
 	url = https://github.com/KrunalPanchal1995/opensolarbattery.git
-[submodule "openloan"]
-	path = openloan
-	url = https://github.com/KrunalPanchal1995/openloan.git
 [submodule "openportfolio"]
 	path = openportfolio
 	url = https://github.com/KrunalPanchal1995/openportfolio.git
@@ -124,12 +106,6 @@
 [submodule "openproteinmd"]
 	path = openproteinmd
 	url = https://github.com/KrunalPanchal1995/openproteinmd.git
-[submodule "openkymo"]
-	path = openkymo
-	url = https://github.com/KrunalPanchal1995/openkymo.git
-[submodule "openmechanism"]
-	path = openmechanism
-	url = https://github.com/KrunalPanchal1995/openmechanism.git
 [submodule "openregularity"]
 	path = openregularity
 	url = https://github.com/KrunalPanchal1995/openregularity.git
@@ -139,12 +115,6 @@
 [submodule "openprocesssim"]
 	path = openprocesssim
 	url = https://github.com/KrunalPanchal1995/openprocesssim.git
-[submodule "openledcontrol"]
-	path = openledcontrol
-	url = https://github.com/KrunalPanchal1995/openledcontrol.git
-[submodule "openneuralode"]
-	path = openneuralode
-	url = https://github.com/KrunalPanchal1995/openneuralode.git
 [submodule "opennutrition"]
 	path = opennutrition
 	url = https://github.com/KrunalPanchal1995/opennutrition.git

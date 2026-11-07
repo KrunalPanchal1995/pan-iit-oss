@@ -1,0 +1,11 @@
+[project]
+name = "openmapproject"
+version = "0.1.0"
+description = "Measure map distortion with the Jacobian and choose a projection for a country: from the orange peel to Tissot ellipses."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+dependencies = ["numpy", "matplotlib"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

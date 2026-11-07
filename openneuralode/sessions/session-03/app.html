@@ -1,0 +1,162 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Session 3: rollout training and stiffness</title>
+<style>
+  :root { --bg:#ffffff; --fg:#14181f; --muted:#5b6472; --card:#f3f5f8; --accent:#1f6feb; --good:#1a7f37; --bad:#b42318; --line:#d7dce3; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#0e1116; --fg:#e6e9ee; --muted:#9aa3b2; --card:#171b22; --accent:#58a6ff; --good:#3fb950; --bad:#f97066; --line:#2a313c; } }
+  * { box-sizing: border-box; }
+  body { margin:0; padding:16px; background:var(--bg); color:var(--fg); font:16px/1.5 system-ui, sans-serif; }
+  main { max-width: 780px; margin: 0 auto; }
+  h1 { font-size: 1.3rem; margin: 0 0 4px; }
+  p.sub { margin: 0 0 12px; color: var(--muted); }
+  .scroll { overflow-x:auto; }
+  canvas { width:100%; min-width:560px; height:auto; background:var(--card); border:1px solid var(--line); border-radius:8px; display:block; }
+  .sr { position:absolute; left:-9999px; }
+  .bar { display:flex; flex-wrap:wrap; gap:8px; margin:10px 0; }
+  button { font:inherit; padding:6px 12px; border:1px solid var(--line); background:var(--card); color:var(--fg); border-radius:6px; cursor:pointer; }
+  button[aria-pressed="true"] { border-color:var(--accent); color:var(--accent); font-weight:600; }
+  button:focus-visible, input:focus-visible { outline:3px solid var(--accent); outline-offset:2px; }
+  .row { display:grid; grid-template-columns: 11rem 1fr 6rem; gap:8px; align-items:center; margin:8px 0; }
+  .row output { text-align:right; font-variant-numeric: tabular-nums; }
+  @media (max-width: 560px) { .row { grid-template-columns: 1fr; gap:2px; } .row output { text-align:left; } }
+  input[type=range] { width:100%; accent-color: var(--accent); }
+  #readout, #challenge, .note { margin-top:10px; padding:10px 12px; background:var(--card); border-radius:8px; border:1px solid var(--line); }
+  #challenge[data-ok="true"] { border-color:var(--good); } #challenge[data-ok="true"] b { color:var(--good); }
+  .note { font-size:.85rem; color:var(--muted); }
+  a { color: var(--accent); }
+</style>
+</head>
+<body>
+<main>
+  <h1>Session 3: rollout training and stiffness</h1>
+  <p class="sub">Precomputed results of the lesson code (error curves) and the exact RK4 stability factor.</p>
+  <div class="bar" id="graphs" role="group" aria-label="Choose a graph"></div>
+  <div class="scroll"><canvas id="c" width="720" height="420" role="img" aria-label="Session 3: rollout training and stiffness: interactive plot"></canvas></div>
+  <div class="bar" id="presets" role="group" aria-label="Presets"></div>
+  <div id="controls"></div>
+  <div class="bar"><button id="reset" type="button">Reset</button></div>
+  <div id="readout"></div>
+  <div id="challenge" hidden></div>
+  <div id="status" class="sr" aria-live="polite"></div>
+  <p class="note">This is a simplified educational model. It is not a validated design tool and must not be used for real structures, electrical installations, vehicles, industrial processes or medical decisions.</p>
+  <p class="sub"><a href="https://github.com/KrunalPanchal1995/pan-iit-oss/tree/main/openneuralode">Back to the repository</a></p>
+</main>
+<script>
+"use strict";
+const PARAMS = [{"id": "sigma", "label": "Noise sigma", "min": 0, "max": 0.1, "step": 0.05, "value": 0.05, "unit": "state units"}, {"id": "m", "label": "Training horizon m", "min": 1, "max": 8, "step": 1, "value": 8, "unit": "steps of 0.1 s"}, {"id": "lam", "label": "Rule speed lambda", "min": -2000, "max": -100, "step": 100, "value": -1000, "unit": "1/s"}, {"id": "h", "label": "RK4 step h", "min": 0.001, "max": 0.02, "step": 0.001, "value": 0.002, "unit": "s"}];
+const GRAPHS = [{"id": "error", "label": "Error against prediction time"}, {"id": "stiff", "label": "RK4 stability factor"}];
+const PRESETS = [{"label": "Lesson values", "values": {"sigma": 0.05, "m": 8, "lam": -1000, "h": 0.002}}, {"label": "Noisy, one-step", "values": {"sigma": 0.1, "m": 1, "lam": -1000, "h": 0.002}}, {"label": "Stiff blow-up", "values": {"sigma": 0.05, "m": 8, "lam": -1000, "h": 0.01}}];
+const CHALLENGE = "Make explicit RK4 blow up on the stiff problem: choose lambda and h so that the factor per step |R(z)| is above 1.";
+const CHALLENGE_SOLUTION = {"sigma": 0.05, "m": 8, "lam": -1000, "h": 0.01};
+const challengeTest = CHALLENGE ? (p) => ((function (z) { return Math.abs(1 + z + z * z / 2 + z * z * z / 6 + z * z * z * z / 24) > 1; })(p.lam * p.h)) : null;
+const cv = document.getElementById("c"), ctx = cv.getContext("2d");
+const W = cv.width, H = cv.height, p = {};
+let graph = GRAPHS.length ? GRAPHS[0].id : "main";
+const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+const fmt = v => (Math.abs(v) >= 1000 || (Math.abs(v) > 0 && Math.abs(v) < 0.01)) ? v.toExponential(2) : String(+v.toPrecision(4));
+function readout(html) {
+  document.getElementById("readout").innerHTML = html;
+  cv.setAttribute("aria-label", document.title + ". " + html.replace(/<[^>]+>/g, " ").replace(/&nbsp;/g, " "));  // screen readers get the numbers
+}
+let lastOk = null;
+// ---- plotting helpers: every graph gets labelled axes with units ----
+function niceTicks(lo, hi, n) {
+  const raw = (hi - lo) / n, mag = Math.pow(10, Math.floor(Math.log10(raw))), f = raw / mag;
+  const step = (f < 1.5 ? 1 : f < 3 ? 2 : f < 7 ? 5 : 10) * mag, out = [];
+  for (let v = Math.ceil(lo / step - 1e-9) * step; v <= hi + 1e-9; v += step) out.push(+v.toPrecision(12));
+  return out;
+}
+function axes(o, C) {
+  const L = 66, R = 16, T = 34, B = 50, w = W - L - R, h = H - T - B;
+  const X = v => L + (v - o.x[0]) / (o.x[1] - o.x[0]) * w, Y = v => T + h - (v - o.y[0]) / (o.y[1] - o.y[0]) * h;
+  ctx.lineWidth = 1; ctx.font = "12px system-ui";
+  for (const xv of niceTicks(o.x[0], o.x[1], 6)) {
+    ctx.strokeStyle = C.line; ctx.beginPath(); ctx.moveTo(X(xv), T); ctx.lineTo(X(xv), T + h); ctx.stroke();
+    ctx.fillStyle = C.muted; ctx.textAlign = "center"; ctx.fillText(fmt(xv), X(xv), T + h + 16);
+  }
+  for (const yv of niceTicks(o.y[0], o.y[1], 5)) {
+    ctx.strokeStyle = C.line; ctx.beginPath(); ctx.moveTo(L, Y(yv)); ctx.lineTo(L + w, Y(yv)); ctx.stroke();
+    ctx.fillStyle = C.muted; ctx.textAlign = "right"; ctx.fillText(fmt(yv), L - 6, Y(yv) + 4);
+  }
+  ctx.strokeStyle = C.fg; ctx.beginPath(); ctx.moveTo(L, T); ctx.lineTo(L, T + h); ctx.lineTo(L + w, T + h); ctx.stroke();
+  ctx.fillStyle = C.fg; ctx.textAlign = "center"; ctx.font = "13px system-ui";
+  ctx.fillText(o.xl, L + w / 2, H - 8);
+  ctx.save(); ctx.translate(14, T + h / 2); ctx.rotate(-Math.PI / 2); ctx.fillText(o.yl, 0, 0); ctx.restore();
+  ctx.font = "bold 13px system-ui"; ctx.fillText(o.title || "", L + w / 2, 20);
+  return { X, Y, L, T, w, h };
+}
+function curve(f, a, color, x0, x1, n) {
+  n = n || 160; ctx.save(); ctx.beginPath(); ctx.rect(a.L, a.T, a.w, a.h); ctx.clip();   // never draw outside the plot area
+  ctx.strokeStyle = color; ctx.lineWidth = 2.5; ctx.beginPath();
+  for (let i = 0; i <= n; i++) { const x = x0 + (x1 - x0) * i / n, y = f(x); i ? ctx.lineTo(a.X(x), a.Y(y)) : ctx.moveTo(a.X(x), a.Y(y)); }
+  ctx.stroke(); ctx.restore();
+}
+function dot(a, x, y, color, label) {
+  ctx.fillStyle = color; ctx.beginPath(); ctx.arc(a.X(x), a.Y(y), 6, 0, 2 * Math.PI); ctx.fill();
+  if (label) { ctx.textAlign = "left"; ctx.font = "12px system-ui"; ctx.fillText(label, a.X(x) + 9, a.Y(y) - 8); }
+}
+function draw() {
+  ctx.clearRect(0, 0, W, H);
+  const C = { fg: css("--fg"), muted: css("--muted"), accent: css("--accent"), line: css("--line"), good: css("--good"), bad: css("--bad") };
+  
+const ERR = [[[0.0,0.061,0.083,0.134,0.108,0.093,0.118,0.087,0.067,0.087,0.074,0.065,0.077],[0.0,0.073,0.118,0.162,0.12,0.088,0.111,0.087,0.092,0.114,0.087,0.056,0.062],[0.0,0.075,0.119,0.163,0.123,0.085,0.108,0.087,0.091,0.113,0.089,0.055,0.059],[0.0,0.058,0.078,0.121,0.094,0.084,0.106,0.075,0.059,0.076,0.057,0.044,0.054],[0.0,0.059,0.085,0.132,0.101,0.094,0.118,0.083,0.065,0.083,0.064,0.053,0.063],[0.0,0.056,0.062,0.101,0.078,0.071,0.088,0.061,0.047,0.06,0.043,0.029,0.039],[0.0,0.055,0.051,0.086,0.067,0.057,0.071,0.049,0.036,0.048,0.037,0.024,0.033],[0.0,0.058,0.054,0.09,0.069,0.059,0.073,0.051,0.039,0.051,0.04,0.027,0.039]],[[0.0,0.156,0.144,0.165,0.198,0.164,0.146,0.149,0.15,0.15,0.141,0.128,0.155],[0.0,0.127,0.109,0.124,0.144,0.121,0.106,0.103,0.103,0.101,0.097,0.096,0.112],[0.0,0.129,0.104,0.094,0.125,0.099,0.073,0.085,0.084,0.067,0.067,0.064,0.065],[0.0,0.112,0.082,0.08,0.103,0.071,0.05,0.072,0.06,0.035,0.046,0.041,0.032],[0.0,0.101,0.067,0.09,0.099,0.061,0.055,0.073,0.052,0.037,0.053,0.041,0.028],[0.0,0.096,0.111,0.158,0.129,0.1,0.115,0.104,0.107,0.119,0.097,0.063,0.063],[0.0,0.083,0.06,0.103,0.096,0.072,0.08,0.072,0.052,0.061,0.066,0.048,0.053],[0.0,0.096,0.071,0.109,0.101,0.067,0.075,0.073,0.058,0.07,0.075,0.058,0.064]],[[0.0,0.438,0.557,0.467,0.525,0.566,0.512,0.517,0.519,0.6,0.612,0.637,0.692],[0.0,0.31,0.352,0.303,0.314,0.3,0.261,0.304,0.361,0.37,0.317,0.316,0.368],[0.0,0.322,0.396,0.268,0.312,0.393,0.285,0.288,0.414,0.365,0.326,0.48,0.494],[0.0,0.292,0.364,0.25,0.28,0.347,0.29,0.243,0.346,0.387,0.322,0.369,0.49],[0.0,0.249,0.297,0.202,0.235,0.273,0.222,0.202,0.256,0.277,0.24,0.259,0.346],[0.0,0.233,0.265,0.166,0.214,0.241,0.188,0.184,0.214,0.205,0.184,0.225,0.277],[0.0,0.221,0.248,0.152,0.205,0.224,0.168,0.168,0.185,0.165,0.155,0.195,0.229],[0.0,0.206,0.214,0.131,0.19,0.196,0.149,0.165,0.171,0.158,0.165,0.192,0.21]]];
+const si = Math.round(p.sigma / 0.05), m = Math.round(p.m), z = p.lam * p.h;
+const R = zz => 1 + zz + zz * zz / 2 + zz * zz * zz / 6 + zz * zz * zz * zz / 24;
+const interp = (row, t) => { const u = Math.min(12, Math.max(0, t / 0.5)), i = Math.min(11, Math.floor(u)); return row[i] + (row[i + 1] - row[i]) * (u - i); };
+if (graph === "error") {
+  const A = axes({ x: [0, 6], y: [0, 0.8], xl: "prediction time (s)", yl: "distance to the true flow (state units)", title: "Error of the learned flow on unseen starts" }, C);
+  curve(t => interp(ERR[si][0], t), A, C.bad, 0, 6, 60);
+  curve(t => interp(ERR[si][m - 1], t), A, C.accent, 0, 6, 60);
+  ctx.font = "12px system-ui"; ctx.textAlign = "left"; ctx.fillStyle = C.bad; ctx.fillText("red: one-step training (m = 1)", A.L + 10, A.T + 16);
+  ctx.fillStyle = C.accent; ctx.fillText("blue: rollout over m = " + m + " steps", A.L + 10, A.T + 32);
+} else {
+  const A = axes({ x: [-10, 0], y: [0, 3], xl: "z = lambda times h (no unit)", yl: "|R(z)|: factor per RK4 step", title: "Explicit RK4 on x' = lambda x: stable while |R| < 1" }, C);
+  curve(zz => Math.abs(R(zz)), A, C.accent, -10, 0, 200);
+  curve(() => 1, A, C.muted, -10, 0, 2);
+  ctx.strokeStyle = C.bad; ctx.setLineDash([4, 4]); ctx.beginPath(); ctx.moveTo(A.X(-2.7853), A.T); ctx.lineTo(A.X(-2.7853), A.T + A.h); ctx.stroke(); ctx.setLineDash([]);
+  ctx.font = "12px system-ui"; ctx.textAlign = "left"; ctx.fillStyle = C.bad; ctx.fillText("stability limit z = -2.785", A.X(-2.7853) + 6, A.T + 16);
+  dot(A, Math.max(-10, z), Math.min(Math.abs(R(z)), 2.95), C.fg, "now");
+}
+const rowE = ERR[si][m - 1][12], rowO = ERR[si][0][12];
+readout("noise " + p.sigma.toFixed(2) + ", horizon m = " + m + ": error after 6 s " + rowE.toFixed(3) + " (one-step training: " + rowO.toFixed(3) + ") &nbsp;|&nbsp; stiff: z = " + z.toFixed(2) + ", |R(z)| = " + Math.abs(R(z)).toPrecision(4) + " per step; largest stable step 2.785/|lambda| = " + (2.7853 / Math.abs(p.lam)).toFixed(5) + " s");
+
+  const ch = document.getElementById("challenge");
+  if (challengeTest) { const ok = !!challengeTest(p); ch.hidden = false; ch.dataset.ok = String(ok);
+    ch.innerHTML = "<b>Challenge:</b> " + CHALLENGE + " &nbsp; " + (ok ? "<b>Done!</b>" : "Not yet.");
+    if (ok !== lastOk) { document.getElementById("status").textContent = ok ? "Challenge done." : "Challenge not yet done."; lastOk = ok; } }
+}
+const box = document.getElementById("controls");
+const inputs = {};
+for (const q of PARAMS) {
+  p[q.id] = q.value;
+  const row = document.createElement("div"); row.className = "row";
+  row.innerHTML = `<label for="${q.id}">${q.label} (${q.unit || "no unit"})</label>` +
+    `<input id="${q.id}" type="range" min="${q.min}" max="${q.max}" step="${q.step}" value="${q.value}">` +
+    `<output for="${q.id}">${q.value}</output>`;
+  const inp = row.querySelector("input"), out = row.querySelector("output");
+  inputs[q.id] = [inp, out];
+  inp.addEventListener("input", () => { p[q.id] = +inp.value; out.textContent = inp.value; draw(); });
+  box.appendChild(row);
+}
+function setAll(vals) { for (const k in vals) { p[k] = vals[k]; if (inputs[k]) { inputs[k][0].value = vals[k]; inputs[k][1].textContent = vals[k]; } } draw(); }
+const DEFAULTS = Object.assign({}, p);
+document.getElementById("reset").addEventListener("click", () => setAll(DEFAULTS));
+for (const g of GRAPHS) {
+  const b = document.createElement("button"); b.type = "button"; b.textContent = g.label;
+  b.setAttribute("aria-pressed", String(g.id === graph));
+  b.addEventListener("click", () => { graph = g.id; for (const x of document.querySelectorAll("#graphs button")) x.setAttribute("aria-pressed", String(x === b)); draw(); });
+  document.getElementById("graphs").appendChild(b);
+}
+for (const pr of PRESETS) {
+  const b = document.createElement("button"); b.type = "button"; b.textContent = pr.label;
+  b.addEventListener("click", () => setAll(pr.values));
+  document.getElementById("presets").appendChild(b);
+}
+matchMedia("(prefers-color-scheme: dark)").addEventListener("change", draw);
+draw();
+</script>
+</body>
+</html>

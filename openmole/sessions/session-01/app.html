@@ -1,0 +1,175 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Session 1: balance the water recipe</title>
+<style>
+  :root { --bg:#ffffff; --fg:#14181f; --muted:#5b6472; --card:#f3f5f8; --accent:#1f6feb; --good:#1a7f37; --bad:#b42318; --line:#d7dce3; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#0e1116; --fg:#e6e9ee; --muted:#9aa3b2; --card:#171b22; --accent:#58a6ff; --good:#3fb950; --bad:#f97066; --line:#2a313c; } }
+  * { box-sizing: border-box; }
+  body { margin:0; padding:16px; background:var(--bg); color:var(--fg); font:16px/1.5 system-ui, sans-serif; }
+  main { max-width: 780px; margin: 0 auto; }
+  h1 { font-size: 1.3rem; margin: 0 0 4px; }
+  p.sub { margin: 0 0 12px; color: var(--muted); }
+  .scroll { overflow-x:auto; }
+  canvas { width:100%; min-width:560px; height:auto; background:var(--card); border:1px solid var(--line); border-radius:8px; display:block; }
+  .sr { position:absolute; left:-9999px; }
+  .bar { display:flex; flex-wrap:wrap; gap:8px; margin:10px 0; }
+  button { font:inherit; padding:6px 12px; border:1px solid var(--line); background:var(--card); color:var(--fg); border-radius:6px; cursor:pointer; }
+  button[aria-pressed="true"] { border-color:var(--accent); color:var(--accent); font-weight:600; }
+  button:focus-visible, input:focus-visible { outline:3px solid var(--accent); outline-offset:2px; }
+  .row { display:grid; grid-template-columns: 11rem 1fr 6rem; gap:8px; align-items:center; margin:8px 0; }
+  .row output { text-align:right; font-variant-numeric: tabular-nums; }
+  @media (max-width: 560px) { .row { grid-template-columns: 1fr; gap:2px; } .row output { text-align:left; } }
+  input[type=range] { width:100%; accent-color: var(--accent); }
+  #readout, #challenge, .note { margin-top:10px; padding:10px 12px; background:var(--card); border-radius:8px; border:1px solid var(--line); }
+  #challenge[data-ok="true"] { border-color:var(--good); } #challenge[data-ok="true"] b { color:var(--good); }
+  .note { font-size:.85rem; color:var(--muted); }
+  a { color: var(--accent); }
+</style>
+</head>
+<body>
+<main>
+  <h1>Session 1: balance the water recipe</h1>
+  <p class="sub">Pick the coefficients a H2 + b O2 -> c H2O; the bars compare the atoms on both sides.</p>
+  <div class="bar" id="graphs" role="group" aria-label="Choose a graph"></div>
+  <div class="scroll"><canvas id="c" width="720" height="420" role="img" aria-label="Session 1: balance the water recipe: interactive plot"></canvas></div>
+  <div class="bar" id="presets" role="group" aria-label="Presets"></div>
+  <div id="controls"></div>
+  <div class="bar"><button id="reset" type="button">Reset</button></div>
+  <div id="readout"></div>
+  <div id="challenge" hidden></div>
+  <div id="status" class="sr" aria-live="polite"></div>
+  <p class="note">This is a simplified educational model. It is not a validated design tool and must not be used for real structures, electrical installations, vehicles, industrial processes or medical decisions.</p>
+  <p class="sub"><a href="https://github.com/KrunalPanchal1995/pan-iit-oss/tree/main/openmole">Back to the repository</a></p>
+</main>
+<script>
+"use strict";
+const PARAMS = [{"id": "a", "label": "Coefficient of H2 (a)", "min": 1, "max": 6, "step": 1, "value": 2, "unit": ""}, {"id": "b", "label": "Coefficient of O2 (b)", "min": 1, "max": 6, "step": 1, "value": 1, "unit": ""}, {"id": "c", "label": "Coefficient of H2O (c)", "min": 1, "max": 6, "step": 1, "value": 1, "unit": ""}];
+const GRAPHS = [{"id": "bars", "label": "Atom-count bars", "diagram": true}, {"id": "lines", "label": "Right counts versus c"}];
+const PRESETS = [{"label": "All ones", "values": {"a": 1, "b": 1, "c": 1}}, {"label": "Balanced", "values": {"a": 2, "b": 1, "c": 2}}, {"label": "Recipe doubled", "values": {"a": 4, "b": 2, "c": 4}}];
+const CHALLENGE = "Balance H2 + O2 -> H2O with the smallest whole numbers.";
+const CHALLENGE_SOLUTION = {"a": 2, "b": 1, "c": 2};
+const challengeTest = CHALLENGE ? (p) => (2*p.a === 2*p.c && 2*p.b === p.c && p.c === 2) : null;
+const cv = document.getElementById("c"), ctx = cv.getContext("2d");
+const W = cv.width, H = cv.height, p = {};
+let graph = GRAPHS.length ? GRAPHS[0].id : "main";
+const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+const fmt = v => (Math.abs(v) >= 1000 || (Math.abs(v) > 0 && Math.abs(v) < 0.01)) ? v.toExponential(2) : String(+v.toPrecision(4));
+function readout(html) {
+  document.getElementById("readout").innerHTML = html;
+  cv.setAttribute("aria-label", document.title + ". " + html.replace(/<[^>]+>/g, " ").replace(/&nbsp;/g, " "));  // screen readers get the numbers
+}
+let lastOk = null;
+// ---- plotting helpers: every graph gets labelled axes with units ----
+function niceTicks(lo, hi, n) {
+  const raw = (hi - lo) / n, mag = Math.pow(10, Math.floor(Math.log10(raw))), f = raw / mag;
+  const step = (f < 1.5 ? 1 : f < 3 ? 2 : f < 7 ? 5 : 10) * mag, out = [];
+  for (let v = Math.ceil(lo / step - 1e-9) * step; v <= hi + 1e-9; v += step) out.push(+v.toPrecision(12));
+  return out;
+}
+function axes(o, C) {
+  const L = 66, R = 16, T = 34, B = 50, w = W - L - R, h = H - T - B;
+  const X = v => L + (v - o.x[0]) / (o.x[1] - o.x[0]) * w, Y = v => T + h - (v - o.y[0]) / (o.y[1] - o.y[0]) * h;
+  ctx.lineWidth = 1; ctx.font = "12px system-ui";
+  for (const xv of niceTicks(o.x[0], o.x[1], 6)) {
+    ctx.strokeStyle = C.line; ctx.beginPath(); ctx.moveTo(X(xv), T); ctx.lineTo(X(xv), T + h); ctx.stroke();
+    ctx.fillStyle = C.muted; ctx.textAlign = "center"; ctx.fillText(fmt(xv), X(xv), T + h + 16);
+  }
+  for (const yv of niceTicks(o.y[0], o.y[1], 5)) {
+    ctx.strokeStyle = C.line; ctx.beginPath(); ctx.moveTo(L, Y(yv)); ctx.lineTo(L + w, Y(yv)); ctx.stroke();
+    ctx.fillStyle = C.muted; ctx.textAlign = "right"; ctx.fillText(fmt(yv), L - 6, Y(yv) + 4);
+  }
+  ctx.strokeStyle = C.fg; ctx.beginPath(); ctx.moveTo(L, T); ctx.lineTo(L, T + h); ctx.lineTo(L + w, T + h); ctx.stroke();
+  ctx.fillStyle = C.fg; ctx.textAlign = "center"; ctx.font = "13px system-ui";
+  ctx.fillText(o.xl, L + w / 2, H - 8);
+  ctx.save(); ctx.translate(14, T + h / 2); ctx.rotate(-Math.PI / 2); ctx.fillText(o.yl, 0, 0); ctx.restore();
+  ctx.font = "bold 13px system-ui"; ctx.fillText(o.title || "", L + w / 2, 20);
+  return { X, Y, L, T, w, h };
+}
+function curve(f, a, color, x0, x1, n) {
+  n = n || 160; ctx.save(); ctx.beginPath(); ctx.rect(a.L, a.T, a.w, a.h); ctx.clip();   // never draw outside the plot area
+  ctx.strokeStyle = color; ctx.lineWidth = 2.5; ctx.beginPath();
+  for (let i = 0; i <= n; i++) { const x = x0 + (x1 - x0) * i / n, y = f(x); i ? ctx.lineTo(a.X(x), a.Y(y)) : ctx.moveTo(a.X(x), a.Y(y)); }
+  ctx.stroke(); ctx.restore();
+}
+function dot(a, x, y, color, label) {
+  ctx.fillStyle = color; ctx.beginPath(); ctx.arc(a.X(x), a.Y(y), 6, 0, 2 * Math.PI); ctx.fill();
+  if (label) { ctx.textAlign = "left"; ctx.font = "12px system-ui"; ctx.fillText(label, a.X(x) + 9, a.Y(y) - 8); }
+}
+function draw() {
+  ctx.clearRect(0, 0, W, H);
+  const C = { fg: css("--fg"), muted: css("--muted"), accent: css("--accent"), line: css("--line"), good: css("--good"), bad: css("--bad") };
+  
+const a = p.a, b = p.b, c = p.c;
+const left = { H: 2 * a, O: 2 * b }, right = { H: 2 * c, O: c };
+const okH = left.H === right.H, okO = left.O === right.O, ok = okH && okO;
+if (graph === "bars") {
+  const base = H - 90, top = 70, S = (base - top) / 12;
+  ctx.font = "15px system-ui"; ctx.textAlign = "center"; ctx.fillStyle = C.fg;
+  ctx.fillText(a + " H2 + " + b + " O2 -> " + c + " H2O", W / 2, 28);
+  ctx.strokeStyle = C.line; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(40, base); ctx.lineTo(W - 40, base); ctx.stroke();
+  const els = [["H", left.H, right.H, okH], ["O", left.O, right.O, okO]];
+  els.forEach((e, i) => {
+    const x0 = 120 + i * 300;
+    [[e[1], x0, C.accent, "left"], [e[2], x0 + 90, e[3] ? C.good : C.bad, "right"]].forEach(q => {
+      const h = S * q[0];
+      ctx.fillStyle = q[2]; ctx.fillRect(q[1], base - h, 70, h);
+      ctx.fillStyle = C.fg; ctx.font = "14px system-ui"; ctx.fillText(String(q[0]), q[1] + 35, base - h - 6);
+      ctx.fillStyle = C.muted; ctx.font = "12px system-ui"; ctx.fillText(q[3], q[1] + 35, base + 16);
+    });
+    ctx.fillStyle = C.fg; ctx.font = "14px system-ui"; ctx.fillText("atoms of " + e[0], x0 + 80, base + 40);
+  });
+  ctx.fillStyle = ok ? C.good : C.bad; ctx.font = "15px system-ui";
+  ctx.fillText(ok ? "balanced: every element has the same count on both sides" : "not balanced: the bars of a red element differ", W / 2, H - 14);
+} else {
+  const A = axes({ x: [0, 6], y: [0, 13], xl: "coefficient of H2O (c)", yl: "number of atoms", title: "Right-hand atom counts grow with c; the left counts are fixed" }, C);
+  curve(x => 2 * x, A, C.accent, 0, 6);
+  curve(x => x, A, C.good, 0, 6);
+  curve(() => left.H, A, C.accent, 0, 6, 2);
+  curve(() => left.O, A, C.good, 0, 6, 2);
+  dot(A, c, 2 * c, C.accent, "H right"); dot(A, c, c, C.good, "O right");
+  ctx.font = "12px system-ui"; ctx.textAlign = "left";
+  ctx.fillStyle = C.accent; ctx.fillText("blue: H atoms (sloping line = right, flat line = left = " + left.H + ")", A.L + 10, A.T + 16);
+  ctx.fillStyle = C.good; ctx.fillText("green: O atoms (sloping line = right, flat line = left = " + left.O + ")", A.L + 10, A.T + 32);
+}
+readout("left: H = " + left.H + ", O = " + left.O + " &nbsp;|&nbsp; right: H = " + right.H + ", O = " + right.O + " &nbsp;|&nbsp; " + (ok ? "balanced" : "NOT balanced (H difference " + (left.H - right.H) + ", O difference " + (left.O - right.O) + ")"));
+
+  const ch = document.getElementById("challenge");
+  if (challengeTest) { const ok = !!challengeTest(p); ch.hidden = false; ch.dataset.ok = String(ok);
+    ch.innerHTML = "<b>Challenge:</b> " + CHALLENGE + " &nbsp; " + (ok ? "<b>Done!</b>" : "Not yet.");
+    if (ok !== lastOk) { document.getElementById("status").textContent = ok ? "Challenge done." : "Challenge not yet done."; lastOk = ok; } }
+}
+const box = document.getElementById("controls");
+const inputs = {};
+for (const q of PARAMS) {
+  p[q.id] = q.value;
+  const row = document.createElement("div"); row.className = "row";
+  row.innerHTML = `<label for="${q.id}">${q.label} (${q.unit || "no unit"})</label>` +
+    `<input id="${q.id}" type="range" min="${q.min}" max="${q.max}" step="${q.step}" value="${q.value}">` +
+    `<output for="${q.id}">${q.value}</output>`;
+  const inp = row.querySelector("input"), out = row.querySelector("output");
+  inputs[q.id] = [inp, out];
+  inp.addEventListener("input", () => { p[q.id] = +inp.value; out.textContent = inp.value; draw(); });
+  box.appendChild(row);
+}
+function setAll(vals) { for (const k in vals) { p[k] = vals[k]; if (inputs[k]) { inputs[k][0].value = vals[k]; inputs[k][1].textContent = vals[k]; } } draw(); }
+const DEFAULTS = Object.assign({}, p);
+document.getElementById("reset").addEventListener("click", () => setAll(DEFAULTS));
+for (const g of GRAPHS) {
+  const b = document.createElement("button"); b.type = "button"; b.textContent = g.label;
+  b.setAttribute("aria-pressed", String(g.id === graph));
+  b.addEventListener("click", () => { graph = g.id; for (const x of document.querySelectorAll("#graphs button")) x.setAttribute("aria-pressed", String(x === b)); draw(); });
+  document.getElementById("graphs").appendChild(b);
+}
+for (const pr of PRESETS) {
+  const b = document.createElement("button"); b.type = "button"; b.textContent = pr.label;
+  b.addEventListener("click", () => setAll(pr.values));
+  document.getElementById("presets").appendChild(b);
+}
+matchMedia("(prefers-color-scheme: dark)").addEventListener("change", draw);
+draw();
+</script>
+</body>
+</html>
