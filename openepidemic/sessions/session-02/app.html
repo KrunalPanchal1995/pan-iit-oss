@@ -1,0 +1,177 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Session 2: SIR, herd immunity and coverage</title>
+<style>
+  :root { --bg:#ffffff; --fg:#14181f; --muted:#5b6472; --card:#f3f5f8; --accent:#1f6feb; --good:#1a7f37; --bad:#b42318; --line:#d7dce3; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#0e1116; --fg:#e6e9ee; --muted:#9aa3b2; --card:#171b22; --accent:#58a6ff; --good:#3fb950; --bad:#f97066; --line:#2a313c; } }
+  * { box-sizing: border-box; }
+  body { margin:0; padding:16px; background:var(--bg); color:var(--fg); font:16px/1.5 system-ui, sans-serif; }
+  main { max-width: 780px; margin: 0 auto; }
+  h1 { font-size: 1.3rem; margin: 0 0 4px; }
+  p.sub { margin: 0 0 12px; color: var(--muted); }
+  .scroll { overflow-x:auto; }
+  canvas { width:100%; min-width:560px; height:auto; background:var(--card); border:1px solid var(--line); border-radius:8px; display:block; }
+  .sr { position:absolute; left:-9999px; }
+  .bar { display:flex; flex-wrap:wrap; gap:8px; margin:10px 0; }
+  button { font:inherit; padding:6px 12px; border:1px solid var(--line); background:var(--card); color:var(--fg); border-radius:6px; cursor:pointer; }
+  button[aria-pressed="true"] { border-color:var(--accent); color:var(--accent); font-weight:600; }
+  button:focus-visible, input:focus-visible { outline:3px solid var(--accent); outline-offset:2px; }
+  .row { display:grid; grid-template-columns: 11rem 1fr 6rem; gap:8px; align-items:center; margin:8px 0; }
+  .row output { text-align:right; font-variant-numeric: tabular-nums; }
+  @media (max-width: 560px) { .row { grid-template-columns: 1fr; gap:2px; } .row output { text-align:left; } }
+  input[type=range] { width:100%; accent-color: var(--accent); }
+  #readout, #challenge, .note { margin-top:10px; padding:10px 12px; background:var(--card); border-radius:8px; border:1px solid var(--line); }
+  #challenge[data-ok="true"] { border-color:var(--good); } #challenge[data-ok="true"] b { color:var(--good); }
+  .note { font-size:.85rem; color:var(--muted); }
+  a { color: var(--accent); }
+</style>
+</head>
+<body>
+<main>
+  <h1>Session 2: SIR, herd immunity and coverage</h1>
+  <p class="sub">Town of 10000, gamma = 0.2 per day. Teaching model: not a forecast and not medical advice.</p>
+  <div class="bar" id="graphs" role="group" aria-label="Choose a graph"></div>
+  <div class="scroll"><canvas id="c" width="720" height="420" role="img" aria-label="Session 2: SIR, herd immunity and coverage: interactive plot"></canvas></div>
+  <div class="bar" id="presets" role="group" aria-label="Presets"></div>
+  <div id="controls"></div>
+  <div class="bar"><button id="reset" type="button">Reset</button></div>
+  <div id="readout"></div>
+  <div id="challenge" hidden></div>
+  <div id="status" class="sr" aria-live="polite"></div>
+  <p class="note">This is a simplified educational model. It is not a validated design tool and must not be used for real structures, electrical installations, vehicles, industrial processes or medical decisions.</p>
+  <p class="sub"><a href="https://github.com/KrunalPanchal1995/pan-iit-oss/tree/main/openepidemic">Back to the repository</a></p>
+</main>
+<script>
+"use strict";
+const PARAMS = [{"id": "R0", "label": "Reproduction number R0", "min": 1.1, "max": 5.0, "step": 0.1, "value": 2.0, "unit": ""}, {"id": "cov", "label": "Vaccination coverage", "min": 0, "max": 95, "step": 1, "value": 0, "unit": "percent of town"}, {"id": "eff", "label": "Vaccine efficacy", "min": 30, "max": 100, "step": 5, "value": 90, "unit": "percent"}];
+const GRAPHS = [{"id": "curves", "label": "S, I, R against time"}, {"id": "bar", "label": "Protected share and threshold", "diagram": true}, {"id": "final", "label": "Final size and coverage needed"}];
+const PRESETS = [{"label": "No vaccination", "values": {"R0": 2.0, "cov": 0, "eff": 90}}, {"label": "30% covered", "values": {"R0": 2.0, "cov": 30, "eff": 90}}, {"label": "50% covered", "values": {"R0": 2.0, "cov": 50, "eff": 90}}, {"label": "R0 = 3", "values": {"R0": 3.0, "cov": 74, "eff": 90}}];
+const CHALLENGE = "Choose R0 = 3, then a coverage and efficacy so that R_eff = R0 (1 - v e) is below 1.";
+const CHALLENGE_SOLUTION = {"R0": 3.0, "cov": 80, "eff": 90};
+const challengeTest = CHALLENGE ? (p) => (p.R0 * (1 - p.cov / 100 * p.eff / 100) < 1) : null;
+const cv = document.getElementById("c"), ctx = cv.getContext("2d");
+const W = cv.width, H = cv.height, p = {};
+let graph = GRAPHS.length ? GRAPHS[0].id : "main";
+const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+const fmt = v => (Math.abs(v) >= 1000 || (Math.abs(v) > 0 && Math.abs(v) < 0.01)) ? v.toExponential(2) : String(+v.toPrecision(4));
+function readout(html) {
+  document.getElementById("readout").innerHTML = html;
+  cv.setAttribute("aria-label", document.title + ". " + html.replace(/<[^>]+>/g, " ").replace(/&nbsp;/g, " "));  // screen readers get the numbers
+}
+let lastOk = null;
+// ---- plotting helpers: every graph gets labelled axes with units ----
+function niceTicks(lo, hi, n) {
+  const raw = (hi - lo) / n, mag = Math.pow(10, Math.floor(Math.log10(raw))), f = raw / mag;
+  const step = (f < 1.5 ? 1 : f < 3 ? 2 : f < 7 ? 5 : 10) * mag, out = [];
+  for (let v = Math.ceil(lo / step - 1e-9) * step; v <= hi + 1e-9; v += step) out.push(+v.toPrecision(12));
+  return out;
+}
+function axes(o, C) {
+  const L = 66, R = 16, T = 34, B = 50, w = W - L - R, h = H - T - B;
+  const X = v => L + (v - o.x[0]) / (o.x[1] - o.x[0]) * w, Y = v => T + h - (v - o.y[0]) / (o.y[1] - o.y[0]) * h;
+  ctx.lineWidth = 1; ctx.font = "12px system-ui";
+  for (const xv of niceTicks(o.x[0], o.x[1], 6)) {
+    ctx.strokeStyle = C.line; ctx.beginPath(); ctx.moveTo(X(xv), T); ctx.lineTo(X(xv), T + h); ctx.stroke();
+    ctx.fillStyle = C.muted; ctx.textAlign = "center"; ctx.fillText(fmt(xv), X(xv), T + h + 16);
+  }
+  for (const yv of niceTicks(o.y[0], o.y[1], 5)) {
+    ctx.strokeStyle = C.line; ctx.beginPath(); ctx.moveTo(L, Y(yv)); ctx.lineTo(L + w, Y(yv)); ctx.stroke();
+    ctx.fillStyle = C.muted; ctx.textAlign = "right"; ctx.fillText(fmt(yv), L - 6, Y(yv) + 4);
+  }
+  ctx.strokeStyle = C.fg; ctx.beginPath(); ctx.moveTo(L, T); ctx.lineTo(L, T + h); ctx.lineTo(L + w, T + h); ctx.stroke();
+  ctx.fillStyle = C.fg; ctx.textAlign = "center"; ctx.font = "13px system-ui";
+  ctx.fillText(o.xl, L + w / 2, H - 8);
+  ctx.save(); ctx.translate(14, T + h / 2); ctx.rotate(-Math.PI / 2); ctx.fillText(o.yl, 0, 0); ctx.restore();
+  ctx.font = "bold 13px system-ui"; ctx.fillText(o.title || "", L + w / 2, 20);
+  return { X, Y, L, T, w, h };
+}
+function curve(f, a, color, x0, x1, n) {
+  n = n || 160; ctx.save(); ctx.beginPath(); ctx.rect(a.L, a.T, a.w, a.h); ctx.clip();   // never draw outside the plot area
+  ctx.strokeStyle = color; ctx.lineWidth = 2.5; ctx.beginPath();
+  for (let i = 0; i <= n; i++) { const x = x0 + (x1 - x0) * i / n, y = f(x); i ? ctx.lineTo(a.X(x), a.Y(y)) : ctx.moveTo(a.X(x), a.Y(y)); }
+  ctx.stroke(); ctx.restore();
+}
+function dot(a, x, y, color, label) {
+  ctx.fillStyle = color; ctx.beginPath(); ctx.arc(a.X(x), a.Y(y), 6, 0, 2 * Math.PI); ctx.fill();
+  if (label) { ctx.textAlign = "left"; ctx.font = "12px system-ui"; ctx.fillText(label, a.X(x) + 9, a.Y(y) - 8); }
+}
+function draw() {
+  ctx.clearRect(0, 0, W, H);
+  const C = { fg: css("--fg"), muted: css("--muted"), accent: css("--accent"), line: css("--line"), good: css("--good"), bad: css("--bad") };
+  
+const N = 10000, I0 = 10, g = 0.2, DAYS = 160, dt = 0.05;
+const b = p.R0 * g, e = p.eff / 100, v = p.cov / 100, Rin = v * e * N;
+const fsize = r0 => { if (r0 <= 1) return 0; let z = 0.9; for (let k = 0; k < 100; k++) { const f = z - (1 - Math.exp(-r0 * z)), df = 1 - r0 * Math.exp(-r0 * z), zn = z - f / df; if (Math.abs(zn - z) < 1e-13) { z = zn; break; } z = zn; } return z; };
+let S = N - I0 - Rin, I = I0, R = Rin; const s = [S], i = [I], r = [R];
+for (let d = 0; d < DAYS; d++) { for (let k = 0; k < 20; k++) { const f = b * S * I / N * dt, c = g * I * dt; S -= f; I += f - c; R += c; } s.push(S); i.push(I); r.push(R); }
+let pk = 0; for (let k = 0; k <= DAYS; k++) { if (i[k] > i[pk]) pk = k; }
+const thr = Math.max(0, 1 - 1 / p.R0), reff = p.R0 * (1 - v * e), need = thr / e;
+if (graph === "bar") {
+  const x0 = 60, w = 600, y0 = 170, hgt = 60;
+  ctx.strokeStyle = C.line; ctx.lineWidth = 2; ctx.strokeRect(x0, y0, w, hgt);
+  ctx.fillStyle = C.accent; ctx.globalAlpha = 0.6; ctx.fillRect(x0, y0, w * v * e, hgt); ctx.globalAlpha = 1;
+  ctx.strokeStyle = C.bad; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(x0 + w * thr, y0 - 20); ctx.lineTo(x0 + w * thr, y0 + hgt + 20); ctx.stroke();
+  ctx.font = "13px system-ui"; ctx.textAlign = "left"; ctx.fillStyle = C.fg;
+  ctx.fillText("0%", x0, y0 + hgt + 36); ctx.textAlign = "right"; ctx.fillText("100% of the town", x0 + w, y0 + hgt + 36);
+  ctx.textAlign = "left"; ctx.fillStyle = C.accent; ctx.fillText("protected share v*e = " + (100 * v * e).toFixed(1) + "% (filled)", x0, y0 - 40);
+  ctx.fillStyle = C.bad; ctx.fillText("herd immunity threshold 1 - 1/R0 = " + (100 * thr).toFixed(1) + "% (red line)", x0, y0 - 60);
+  ctx.fillStyle = C.muted; ctx.fillText("outbreak can grow while the filled bar stops short of the red line", x0, 330);
+} else if (graph === "final") {
+  const A = axes({ x: [1, 5], y: [0, 150], xl: "R0 (no unit)", yl: "percent of the town", title: "Final size, threshold and coverage needed" }, C);
+  curve(x => 100 * fsize(x), A, C.bad, 1, 5, 80);
+  curve(x => 100 * Math.max(0, 1 - 1 / x), A, C.accent, 1, 5, 80);
+  curve(x => 100 * Math.max(0, 1 - 1 / x) / e, A, C.good, 1, 5, 80);
+  dot(A, p.R0, 100 * fsize(p.R0), C.bad, "");
+  dot(A, p.R0, 100 * thr, C.accent, "");
+  if (100 * need <= 150) dot(A, p.R0, 100 * need, C.good, "");
+  curve(x => 100, A, C.muted, 1, 5, 2);
+  ctx.font = "12px system-ui"; ctx.textAlign = "left";
+  ctx.fillStyle = C.bad; ctx.fillText("ever infected (final size)", A.L + 10, A.T + 16); ctx.fillStyle = C.accent; ctx.fillText("herd immunity threshold", A.L + 10, A.T + 32); ctx.fillStyle = C.good; ctx.fillText("coverage needed at this efficacy", A.L + 10, A.T + 48);
+} else {
+  const A = axes({ x: [0, DAYS], y: [0, N], xl: "day", yl: "people (out of 10000)", title: "S, I and R with gamma = 0.2 per day" }, C);
+  [[s, C.accent, "S"], [i, C.bad, "I"], [r, C.good, "R"]].forEach(a => { curve(x => a[0][Math.round(x)], A, a[1], 0, DAYS, 161); });
+  ctx.font = "12px system-ui"; ctx.textAlign = "left";
+  ctx.fillStyle = C.accent; ctx.fillText("S susceptible", A.L + 10, A.T + 16); ctx.fillStyle = C.bad; ctx.fillText("I infected", A.L + 10, A.T + 32); ctx.fillStyle = C.good; ctx.fillText("R recovered (includes protected)", A.L + 10, A.T + 48);
+}
+readout("R0 = " + p.R0.toFixed(1) + " &nbsp; R_eff = R0 (1 - v e) = " + reff.toFixed(2) + " &nbsp; threshold = " + (100 * thr).toFixed(1) + "% &nbsp; coverage needed = " + (100 * need).toFixed(1) + "% &nbsp; peak = " + i[pk].toFixed(0) + " people on day " + pk + " &nbsp; ever infected in theory = " + (100 * fsize(p.R0)).toFixed(1) + "% (no vaccination)");
+
+  const ch = document.getElementById("challenge");
+  if (challengeTest) { const ok = !!challengeTest(p); ch.hidden = false; ch.dataset.ok = String(ok);
+    ch.innerHTML = "<b>Challenge:</b> " + CHALLENGE + " &nbsp; " + (ok ? "<b>Done!</b>" : "Not yet.");
+    if (ok !== lastOk) { document.getElementById("status").textContent = ok ? "Challenge done." : "Challenge not yet done."; lastOk = ok; } }
+}
+const box = document.getElementById("controls");
+const inputs = {};
+for (const q of PARAMS) {
+  p[q.id] = q.value;
+  const row = document.createElement("div"); row.className = "row";
+  row.innerHTML = `<label for="${q.id}">${q.label} (${q.unit || "no unit"})</label>` +
+    `<input id="${q.id}" type="range" min="${q.min}" max="${q.max}" step="${q.step}" value="${q.value}">` +
+    `<output for="${q.id}">${q.value}</output>`;
+  const inp = row.querySelector("input"), out = row.querySelector("output");
+  inputs[q.id] = [inp, out];
+  inp.addEventListener("input", () => { p[q.id] = +inp.value; out.textContent = inp.value; draw(); });
+  box.appendChild(row);
+}
+function setAll(vals) { for (const k in vals) { p[k] = vals[k]; if (inputs[k]) { inputs[k][0].value = vals[k]; inputs[k][1].textContent = vals[k]; } } draw(); }
+const DEFAULTS = Object.assign({}, p);
+document.getElementById("reset").addEventListener("click", () => setAll(DEFAULTS));
+for (const g of GRAPHS) {
+  const b = document.createElement("button"); b.type = "button"; b.textContent = g.label;
+  b.setAttribute("aria-pressed", String(g.id === graph));
+  b.addEventListener("click", () => { graph = g.id; for (const x of document.querySelectorAll("#graphs button")) x.setAttribute("aria-pressed", String(x === b)); draw(); });
+  document.getElementById("graphs").appendChild(b);
+}
+for (const pr of PRESETS) {
+  const b = document.createElement("button"); b.type = "button"; b.textContent = pr.label;
+  b.addEventListener("click", () => setAll(pr.values));
+  document.getElementById("presets").appendChild(b);
+}
+matchMedia("(prefers-color-scheme: dark)").addEventListener("change", draw);
+draw();
+</script>
+</body>
+</html>

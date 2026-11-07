@@ -1,0 +1,11 @@
+[project]
+name = "openexoplanet"
+version = "0.1.0"
+description = "Find exoplanets from dips in starlight: transit depth, duration, period search and false alarms, in 3 sessions."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+dependencies = ["numpy", "matplotlib"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

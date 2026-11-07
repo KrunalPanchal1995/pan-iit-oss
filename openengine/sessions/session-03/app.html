@@ -1,0 +1,214 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Session 3: a crank-angle engine simulation</title>
+<style>
+  :root { --bg:#ffffff; --fg:#14181f; --muted:#5b6472; --card:#f3f5f8; --accent:#1f6feb; --good:#1a7f37; --bad:#b42318; --line:#d7dce3;
+    /* plot series: Okabe-Ito colours (safe for colour-blind readers), always paired with a line style */
+    --s1:#0072B2; --s2:#D55E00; --s3:#009E73; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#0e1116; --fg:#e6e9ee; --muted:#9aa3b2; --card:#171b22; --accent:#58a6ff; --good:#3fb950; --bad:#f97066; --line:#2a313c;
+    --s1:#56B4E9; --s2:#D55E00; --s3:#009E73; } }
+  * { box-sizing: border-box; }
+  body { margin:0; padding:16px; background:var(--bg); color:var(--fg); font:16px/1.5 system-ui, sans-serif; }
+  main { max-width: 780px; margin: 0 auto; }
+  h1 { font-size: 1.3rem; margin: 0 0 4px; }
+  p.sub { margin: 0 0 12px; color: var(--muted); }
+  .scroll { overflow-x:auto; }
+  canvas { width:100%; min-width:560px; height:auto; background:var(--card); border:1px solid var(--line); border-radius:8px; display:block; }
+  .sr { position:absolute; left:-9999px; }
+  .bar { display:flex; flex-wrap:wrap; gap:8px; margin:10px 0; }
+  button { font:inherit; padding:6px 12px; border:1px solid var(--line); background:var(--card); color:var(--fg); border-radius:6px; cursor:pointer; }
+  button[aria-pressed="true"] { border-color:var(--accent); color:var(--accent); font-weight:600; }
+  button:focus-visible, input:focus-visible { outline:3px solid var(--accent); outline-offset:2px; }
+  .row { display:grid; grid-template-columns: 11rem 1fr 6rem; gap:8px; align-items:center; margin:8px 0; }
+  .row output { text-align:right; font-variant-numeric: tabular-nums; }
+  @media (max-width: 560px) { .row { grid-template-columns: 1fr; gap:2px; } .row output { text-align:left; } }
+  input[type=range] { width:100%; accent-color: var(--accent); }
+  #readout, #challenge, .note { margin-top:10px; padding:10px 12px; background:var(--card); border-radius:8px; border:1px solid var(--line); }
+  #challenge[data-ok="true"] { border-color:var(--good); } #challenge[data-ok="true"] b { color:var(--good); }
+  .note { font-size:.85rem; color:var(--muted); }
+  a { color: var(--accent); }
+</style>
+</head>
+<body>
+<main>
+  <h1>Session 3: a crank-angle engine simulation</h1>
+  <p class="sub">Piston picture, simulated loop against the ideal Otto loop, and efficiency against r.</p>
+  <div class="bar" id="graphs" role="group" aria-label="Choose a graph"></div>
+  <div class="scroll"><canvas id="c" width="720" height="420" role="img" aria-label="Session 3: a crank-angle engine simulation: interactive plot"></canvas></div>
+  <div class="bar" id="presets" role="group" aria-label="Presets"></div>
+  <div id="controls"></div>
+  <div class="bar"><button id="reset" type="button">Reset</button></div>
+  <div id="readout"></div>
+  <div id="challenge" hidden></div>
+  <div id="status" class="sr" aria-live="polite"></div>
+  <p class="note">This is a simplified educational model. It is not a validated design tool and must not be used for real structures, electrical installations, vehicles, industrial processes or medical decisions.</p>
+  <p class="sub"><a href="https://github.com/KrunalPanchal1995/pan-iit-oss/tree/main/openengine">Back to the repository</a></p>
+</main>
+<script>
+"use strict";
+const PARAMS = [{"id": "r", "label": "Compression ratio r", "min": 6, "max": 14, "step": 0.5, "value": 9, "unit": ""}, {"id": "start", "label": "Burn starts at", "min": -40, "max": 10, "step": 5, "value": -10, "unit": "degrees"}, {"id": "dur", "label": "Burn duration", "min": 10, "max": 80, "step": 5, "value": 40, "unit": "degrees"}, {"id": "loss", "label": "Heat lost to walls", "min": 0, "max": 30, "step": 5, "value": 10, "unit": "%"}, {"id": "ang", "label": "Crank angle", "min": -180, "max": 180, "step": 5, "value": 60, "unit": "degrees"}];
+const GRAPHS = [{"id": "piston", "label": "Piston and crank", "diagram": true}, {"id": "pv", "label": "P-V loop"}, {"id": "eta", "label": "Efficiency versus r"}];
+const PRESETS = [{"label": "Near ideal", "values": {"r": 9, "start": -5, "dur": 10, "loss": 0, "ang": 0}}, {"label": "Slow burn", "values": {"r": 9, "start": -10, "dur": 80, "loss": 10, "ang": 20}}, {"label": "High r", "values": {"r": 12, "start": -15, "dur": 30, "loss": 10, "ang": 0}}];
+const CHALLENGE = "Make the engine knock-safe for fuel A (T2 at most 720 K) with a burn of at most 25 degrees that starts between 20 and 5 degrees before top dead centre.";
+const CHALLENGE_SOLUTION = {"r": 8.5, "start": -10, "dur": 20, "loss": 10, "ang": 0};
+const challengeTest = CHALLENGE ? (p) => (300 * Math.pow(p.r, 0.4) <= 720 && p.dur <= 25 && p.start >= -20 && p.start <= -5) : null;
+const cv = document.getElementById("c"), ctx = cv.getContext("2d");
+const W = cv.width, H = cv.height, p = {};
+let graph = GRAPHS.length ? GRAPHS[0].id : "main";
+const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+const fmt = v => (Math.abs(v) >= 1000 || (Math.abs(v) > 0 && Math.abs(v) < 0.01)) ? v.toExponential(2) : String(+v.toPrecision(4));
+function readout(html) {
+  document.getElementById("readout").innerHTML = html;
+  cv.setAttribute("aria-label", document.title + ". " + html.replace(/<[^>]+>/g, " ").replace(/&nbsp;/g, " "));  // screen readers get the numbers
+}
+let lastOk = null;
+// ---- plotting helpers: every graph gets labelled axes with units ----
+function niceTicks(lo, hi, n) {
+  const raw = (hi - lo) / n, mag = Math.pow(10, Math.floor(Math.log10(raw))), f = raw / mag;
+  const step = (f < 1.5 ? 1 : f < 3 ? 2 : f < 7 ? 5 : 10) * mag, out = [];
+  for (let v = Math.ceil(lo / step - 1e-9) * step; v <= hi + 1e-9; v += step) out.push(+v.toPrecision(12));
+  return out;
+}
+function axes(o, C) {
+  const L = 66, R = 16, T = 34, B = 50, w = W - L - R, h = H - T - B;
+  const X = v => L + (v - o.x[0]) / (o.x[1] - o.x[0]) * w, Y = v => T + h - (v - o.y[0]) / (o.y[1] - o.y[0]) * h;
+  ctx.lineWidth = 1; ctx.font = "12px system-ui";
+  for (const xv of niceTicks(o.x[0], o.x[1], 6)) {
+    ctx.strokeStyle = C.line; ctx.beginPath(); ctx.moveTo(X(xv), T); ctx.lineTo(X(xv), T + h); ctx.stroke();
+    ctx.fillStyle = C.muted; ctx.textAlign = "center"; ctx.fillText(fmt(xv), X(xv), T + h + 16);
+  }
+  for (const yv of niceTicks(o.y[0], o.y[1], 5)) {
+    ctx.strokeStyle = C.line; ctx.beginPath(); ctx.moveTo(L, Y(yv)); ctx.lineTo(L + w, Y(yv)); ctx.stroke();
+    ctx.fillStyle = C.muted; ctx.textAlign = "right"; ctx.fillText(fmt(yv), L - 6, Y(yv) + 4);
+  }
+  ctx.strokeStyle = C.fg; ctx.beginPath(); ctx.moveTo(L, T); ctx.lineTo(L, T + h); ctx.lineTo(L + w, T + h); ctx.stroke();
+  ctx.fillStyle = C.fg; ctx.textAlign = "center"; ctx.font = "13px system-ui";
+  ctx.fillText(o.xl, L + w / 2, H - 8);
+  ctx.save(); ctx.translate(14, T + h / 2); ctx.rotate(-Math.PI / 2); ctx.fillText(o.yl, 0, 0); ctx.restore();
+  ctx.font = "bold 13px system-ui"; ctx.fillText(o.title || "", L + w / 2, 20);
+  return { X, Y, L, T, w, h };
+}
+// line styles carry the meaning as well as colour, so the plots also read in grayscale
+const SOLID = [], DASHED = [10, 6], DOTTED = [2, 5];
+function curve(f, a, color, x0, x1, n, dash) {
+  n = n || 160; ctx.save(); ctx.beginPath(); ctx.rect(a.L, a.T, a.w, a.h); ctx.clip();   // never draw outside the plot area
+  ctx.strokeStyle = color; ctx.lineWidth = 2.5; ctx.setLineDash(dash || SOLID); ctx.beginPath();
+  for (let i = 0; i <= n; i++) { const x = x0 + (x1 - x0) * i / n, y = f(x); i ? ctx.lineTo(a.X(x), a.Y(y)) : ctx.moveTo(a.X(x), a.Y(y)); }
+  ctx.stroke(); ctx.restore();
+}
+function dot(a, x, y, color, label) {
+  ctx.fillStyle = color; ctx.beginPath(); ctx.arc(a.X(x), a.Y(y), 6, 0, 2 * Math.PI); ctx.fill();
+  if (label) { ctx.textAlign = "left"; ctx.font = "12px system-ui"; ctx.fillText(label, a.X(x) + 9, a.Y(y) - 8); }
+}
+// temperature colour map: Okabe-Ito blue -> orange -> yellow; brightness rises with temperature,
+// so hot and cold also differ in grayscale and for colour-blind readers
+const HEAT = [[0, 114, 178], [230, 159, 0], [240, 228, 66]];
+function heat(z) {
+  const k = Math.min(1, Math.floor(z * 2)), t = z * 2 - k, a = HEAT[k], b = HEAT[k + 1];
+  return "rgb(" + a.map((c, i) => Math.round(c + (b[i] - c) * t)).join(",") + ")";
+}
+function legend(a, items) {   // items: [colour, dash, text]; draws a line sample next to each label
+  ctx.save(); ctx.font = "12px system-ui"; ctx.textAlign = "left"; ctx.lineWidth = 2.5;
+  items.forEach(([color, dash, text], i) => {
+    const y = a.T + 16 + 16 * i;
+    ctx.strokeStyle = color; ctx.setLineDash(dash); ctx.beginPath(); ctx.moveTo(a.L + 12, y - 4); ctx.lineTo(a.L + 40, y - 4); ctx.stroke();
+    ctx.fillStyle = color; ctx.fillText(text, a.L + 46, y);
+  });
+  ctx.restore();
+}
+function draw() {
+  ctx.clearRect(0, 0, W, H);
+  const C = { fg: css("--fg"), muted: css("--muted"), accent: css("--accent"), line: css("--line"), good: css("--good"), bad: css("--bad"),
+              s1: css("--s1"), s2: css("--s2"), s3: css("--s3") };
+  
+const g = 1.4, Rg = 0.287, v1 = Rg * 300 / 100, q = 1100, h = 0.5, ROD = 3.5, cvv = Rg / (g - 1);
+const vr = (a, r) => { const t = a * Math.PI / 180; return 1 + 0.5 * (r - 1) * (ROD + 1 - Math.cos(t) - Math.sqrt(ROD * ROD - Math.sin(t) * Math.sin(t))); };
+const dvr = (a, r) => { const t = a * Math.PI / 180; return 0.5 * (r - 1) * (Math.sin(t) + Math.sin(t) * Math.cos(t) / Math.sqrt(ROD * ROD - Math.sin(t) * Math.sin(t))) * Math.PI / 180; };
+const wb = (a, st, du) => { const z = (a - st) / du; if (z <= 0 || z >= 1) return 0; return 6.908 * 3 * z * z * Math.exp(-6.908 * z * z * z) / (du * (1 - Math.exp(-6.908))); };
+const sim = (r, st, du, loss) => {
+  const vc = v1 / r, qg = (1 - loss) * q, n = 360 / h, f = (a, pp) => ((g - 1) * qg * wb(a, st, du) - g * pp * vc * dvr(a, r)) / (vc * vr(a, r));
+  const ang = [], P = [], V = []; let pp = 100, w = 0, pm = 100;
+  for (let i = 0; i <= n; i++) {
+    const a = -180 + i * h; ang.push(a); P.push(pp); V.push(vc * vr(a, r)); if (pp > pm) pm = pp;
+    if (i < n) { const k1 = f(a, pp), k2 = f(a + h / 2, pp + h / 2 * k1), k3 = f(a + h / 2, pp + h / 2 * k2), k4 = f(a + h, pp + h * k3); pp += h * (k1 + 2 * k2 + 2 * k3 + k4) / 6; }
+  }
+  for (let i = 0; i < n; i++) w += 0.5 * (P[i] + P[i + 1]) * (V[i + 1] - V[i]);
+  w += 0.5 * (P[n] + P[0]) * (V[0] - V[n]);
+  return { ang, P, V, eta: w / q, pmax: pm, resid: w - (qg - v1 * (P[n] - 100) / (g - 1)) };
+};
+const s = sim(p.r, p.start, p.dur, p.loss / 100), eO = 1 - Math.pow(p.r, 1 - g), T2 = 300 * Math.pow(p.r, g - 1);
+const idx = Math.round((p.ang + 180) / h), Pn = s.P[idx], Vn = s.V[idx], Tn = Pn * Vn / Rg;
+if (graph === "piston") {
+  const a = 50, l = 175, cx = 360, cy = 360, t = p.ang * Math.PI / 180;
+  const pinY = cy - (a * Math.cos(t) + Math.sqrt(l * l - a * a * Math.sin(t) * Math.sin(t)));
+  const crownTDC = cy - (a + l) - 30, head = crownTDC - 100 / (p.r - 1), crown = pinY - 30;
+  ctx.fillStyle = heat(Math.min(1, Math.max(0, (Tn - 300) / 2300))); ctx.fillRect(cx - 45, head, 90, crown - head);
+  ctx.strokeStyle = C.fg; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(cx - 45, head - 4); ctx.lineTo(cx + 45, head - 4); ctx.moveTo(cx - 45, head - 4); ctx.lineTo(cx - 45, 300); ctx.moveTo(cx + 45, head - 4); ctx.lineTo(cx + 45, 300); ctx.stroke();
+  ctx.fillStyle = C.muted; ctx.fillRect(cx - 45, crown, 90, 30);
+  const px = cx + a * Math.sin(t), py = cy - a * Math.cos(t);
+  ctx.strokeStyle = C.fg; ctx.lineWidth = 4; ctx.beginPath(); ctx.moveTo(cx, pinY); ctx.lineTo(px, py); ctx.stroke();
+  ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(cx, cy, a, 0, 2 * Math.PI); ctx.stroke();
+  ctx.fillStyle = C.fg; ctx.beginPath(); ctx.arc(px, py, 6, 0, 2 * Math.PI); ctx.fill();
+  ctx.font = "13px system-ui"; ctx.textAlign = "left";
+  ctx.fillText("crank angle " + p.ang + " degrees (0 = top dead centre)", 20, 30);
+  ctx.fillText("gas pressure " + Pn.toFixed(0) + " kPa", 20, 52); ctx.fillText("gas temperature " + Tn.toFixed(0) + " K", 20, 74);
+  ctx.fillStyle = C.muted; ctx.fillText("colour: dark blue cold, bright yellow hot", 20, 96);
+} else if (graph === "pv") {
+  const q2 = 100 * Math.pow(p.r, g), P3 = q2 * (1 + q / (cvv * T2)), vc = v1 / p.r;
+  const A = axes({ x: [0, 0.9], y: [0, 1.08 * Math.max(s.pmax, P3)], xl: "specific volume v (m3/kg)", yl: "pressure P (kPa)", title: "Simulated loop against the ideal Otto loop" }, C);
+  curve(v => 100 * Math.pow(v1 / v, g), A, C.muted, vc, v1, 0, DASHED); curve(v => P3 * Math.pow(vc / v, g), A, C.muted, vc, v1, 0, DASHED);
+  ctx.strokeStyle = C.muted; ctx.lineWidth = 2; ctx.setLineDash(DASHED); ctx.beginPath(); ctx.moveTo(A.X(vc), A.Y(q2)); ctx.lineTo(A.X(vc), A.Y(P3)); ctx.stroke();
+  ctx.strokeStyle = C.s1; ctx.lineWidth = 2.5; ctx.setLineDash(SOLID); ctx.beginPath();
+  s.V.forEach((v, i) => { const x = A.X(v), y = A.Y(s.P[i]); i ? ctx.lineTo(x, y) : ctx.moveTo(x, y); }); ctx.stroke();
+  dot(A, Vn, Pn, C.s2, "now");
+  legend(A, [[C.s1, SOLID, "crank-angle simulation"], [C.muted, DASHED, "ideal Otto (instant heat)"]]);
+} else {
+  const A = axes({ x: [6, 14], y: [0.3, 0.7], xl: "compression ratio r", yl: "indicated efficiency (no unit)", title: "Simulation against the Otto formula" }, C);
+  curve(x => 1 - Math.pow(x, 1 - g), A, C.muted, 6, 14, 0, DASHED);
+  ctx.strokeStyle = C.s1; ctx.lineWidth = 2.5; ctx.setLineDash(SOLID); ctx.beginPath();
+  for (let i = 0; i <= 8; i++) { const rr = 6 + i, e = sim(rr, p.start, p.dur, p.loss / 100).eta; i ? ctx.lineTo(A.X(rr), A.Y(e)) : ctx.moveTo(A.X(rr), A.Y(e)); } ctx.stroke();
+  dot(A, p.r, s.eta, C.s1, "now");
+  legend(A, [[C.muted, DASHED, "Otto formula"], [C.s1, SOLID, "simulation with your burn and loss"]]);
+}
+readout("indicated efficiency = " + s.eta.toFixed(3) + " (ideal Otto " + eO.toFixed(3) + ") &nbsp; peak pressure = " + s.pmax.toFixed(0) + " kPa &nbsp; end-of-compression T2 = " + T2.toFixed(0) + " K (illustrative knock limit with margin: 720 K) " + (T2 > 720 ? "<b>too hot</b>" : "ok") + " &nbsp; first-law error = " + s.resid.toFixed(2) + " kJ/kg");
+
+  const ch = document.getElementById("challenge");
+  if (challengeTest) { const ok = !!challengeTest(p); ch.hidden = false; ch.dataset.ok = String(ok);
+    ch.innerHTML = "<b>Challenge:</b> " + CHALLENGE + " &nbsp; " + (ok ? "<b>Done!</b>" : "Not yet.");
+    if (ok !== lastOk) { document.getElementById("status").textContent = ok ? "Challenge done." : "Challenge not yet done."; lastOk = ok; } }
+}
+const box = document.getElementById("controls");
+const inputs = {};
+for (const q of PARAMS) {
+  p[q.id] = q.value;
+  const row = document.createElement("div"); row.className = "row";
+  row.innerHTML = `<label for="${q.id}">${q.label} (${q.unit || "no unit"})</label>` +
+    `<input id="${q.id}" type="range" min="${q.min}" max="${q.max}" step="${q.step}" value="${q.value}">` +
+    `<output for="${q.id}">${q.value}</output>`;
+  const inp = row.querySelector("input"), out = row.querySelector("output");
+  inputs[q.id] = [inp, out];
+  inp.addEventListener("input", () => { p[q.id] = +inp.value; out.textContent = inp.value; draw(); });
+  box.appendChild(row);
+}
+function setAll(vals) { for (const k in vals) { p[k] = vals[k]; if (inputs[k]) { inputs[k][0].value = vals[k]; inputs[k][1].textContent = vals[k]; } } draw(); }
+const DEFAULTS = Object.assign({}, p);
+document.getElementById("reset").addEventListener("click", () => setAll(DEFAULTS));
+for (const g of GRAPHS) {
+  const b = document.createElement("button"); b.type = "button"; b.textContent = g.label;
+  b.setAttribute("aria-pressed", String(g.id === graph));
+  b.addEventListener("click", () => { graph = g.id; for (const x of document.querySelectorAll("#graphs button")) x.setAttribute("aria-pressed", String(x === b)); draw(); });
+  document.getElementById("graphs").appendChild(b);
+}
+for (const pr of PRESETS) {
+  const b = document.createElement("button"); b.type = "button"; b.textContent = pr.label;
+  b.addEventListener("click", () => setAll(pr.values));
+  document.getElementById("presets").appendChild(b);
+}
+matchMedia("(prefers-color-scheme: dark)").addEventListener("change", draw);
+draw();
+</script>
+</body>
+</html>

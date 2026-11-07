@@ -1,0 +1,190 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Session 3: a synthetic video, its trace and its spectrum</title>
+<style>
+  :root { --bg:#ffffff; --fg:#14181f; --muted:#5b6472; --card:#f3f5f8; --accent:#1f6feb; --good:#1a7f37; --bad:#b42318; --line:#d7dce3; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#0e1116; --fg:#e6e9ee; --muted:#9aa3b2; --card:#171b22; --accent:#58a6ff; --good:#3fb950; --bad:#f97066; --line:#2a313c; } }
+  * { box-sizing: border-box; }
+  body { margin:0; padding:16px; background:var(--bg); color:var(--fg); font:16px/1.5 system-ui, sans-serif; }
+  main { max-width: 780px; margin: 0 auto; }
+  h1 { font-size: 1.3rem; margin: 0 0 4px; }
+  p.sub { margin: 0 0 12px; color: var(--muted); }
+  .scroll { overflow-x:auto; }
+  canvas { width:100%; min-width:560px; height:auto; background:var(--card); border:1px solid var(--line); border-radius:8px; display:block; }
+  .sr { position:absolute; left:-9999px; }
+  .bar { display:flex; flex-wrap:wrap; gap:8px; margin:10px 0; }
+  button { font:inherit; padding:6px 12px; border:1px solid var(--line); background:var(--card); color:var(--fg); border-radius:6px; cursor:pointer; }
+  button[aria-pressed="true"] { border-color:var(--accent); color:var(--accent); font-weight:600; }
+  button:focus-visible, input:focus-visible { outline:3px solid var(--accent); outline-offset:2px; }
+  .row { display:grid; grid-template-columns: 11rem 1fr 6rem; gap:8px; align-items:center; margin:8px 0; }
+  .row output { text-align:right; font-variant-numeric: tabular-nums; }
+  @media (max-width: 560px) { .row { grid-template-columns: 1fr; gap:2px; } .row output { text-align:left; } }
+  input[type=range] { width:100%; accent-color: var(--accent); }
+  #readout, #challenge, .note { margin-top:10px; padding:10px 12px; background:var(--card); border-radius:8px; border:1px solid var(--line); }
+  #challenge[data-ok="true"] { border-color:var(--good); } #challenge[data-ok="true"] b { color:var(--good); }
+  .note { font-size:.85rem; color:var(--muted); }
+  a { color: var(--accent); }
+</style>
+</head>
+<body>
+<main>
+  <h1>Session 3: a synthetic video, its trace and its spectrum</h1>
+  <p class="sub">The spectrum peak follows the true flicker up to the Nyquist limit, then aliases. The threshold shifts the mean height only.</p>
+  <div class="bar" id="graphs" role="group" aria-label="Choose a graph"></div>
+  <div class="scroll"><canvas id="c" width="720" height="420" role="img" aria-label="Session 3: a synthetic video, its trace and its spectrum: interactive plot"></canvas></div>
+  <div class="bar" id="presets" role="group" aria-label="Presets"></div>
+  <div id="controls"></div>
+  <div class="bar"><button id="reset" type="button">Reset</button></div>
+  <div id="readout"></div>
+  <div id="challenge" hidden></div>
+  <div id="status" class="sr" aria-live="polite"></div>
+  <p class="note">This is a simplified educational model. It is not a validated design tool and must not be used for real structures, electrical installations, vehicles, industrial processes or medical decisions.</p>
+  <p class="sub"><a href="https://github.com/KrunalPanchal1995/pan-iit-oss/tree/main/openflame">Back to the repository</a></p>
+</main>
+<script>
+"use strict";
+const PARAMS = [{"id": "f", "label": "True flicker frequency", "min": 0.5, "max": 12, "step": 0.1, "value": 2.7, "unit": "Hz"}, {"id": "fs", "label": "Camera frame rate", "min": 8, "max": 60, "step": 1, "value": 30, "unit": "frames per second"}, {"id": "noise", "label": "Height noise", "min": 0, "max": 1.5, "step": 0.1, "value": 0.4, "unit": "px"}, {"id": "thr", "label": "Threshold", "min": 0.1, "max": 0.9, "step": 0.05, "value": 0.5, "unit": "fraction"}];
+const GRAPHS = [{"id": "flame", "label": "Tip and threshold", "diagram": true}, {"id": "trace", "label": "Height trace"}, {"id": "spectrum", "label": "Spectrum"}];
+const PRESETS = [{"label": "Clean 2.7 Hz", "values": {"f": 2.7, "fs": 30, "noise": 0.4, "thr": 0.5}}, {"label": "9 Hz at 15 fps", "values": {"f": 9, "fs": 15, "noise": 0.4, "thr": 0.5}}, {"label": "Low threshold", "values": {"f": 2.7, "fs": 30, "noise": 0.4, "thr": 0.2}}];
+const CHALLENGE = "Make the camera report a frequency at least 2 Hz away from the true flicker.";
+const CHALLENGE_SOLUTION = {"f": 9, "fs": 15, "noise": 0.4, "thr": 0.5};
+const challengeTest = CHALLENGE ? (p) => (Math.abs(p.f - Math.abs(p.f - p.fs * Math.round(p.f / p.fs))) >= 2) : null;
+const cv = document.getElementById("c"), ctx = cv.getContext("2d");
+const W = cv.width, H = cv.height, p = {};
+let graph = GRAPHS.length ? GRAPHS[0].id : "main";
+const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+const fmt = v => (Math.abs(v) >= 1000 || (Math.abs(v) > 0 && Math.abs(v) < 0.01)) ? v.toExponential(2) : String(+v.toPrecision(4));
+function readout(html) {
+  document.getElementById("readout").innerHTML = html;
+  cv.setAttribute("aria-label", document.title + ". " + html.replace(/<[^>]+>/g, " ").replace(/&nbsp;/g, " "));  // screen readers get the numbers
+}
+let lastOk = null;
+// ---- plotting helpers: every graph gets labelled axes with units ----
+function niceTicks(lo, hi, n) {
+  const raw = (hi - lo) / n, mag = Math.pow(10, Math.floor(Math.log10(raw))), f = raw / mag;
+  const step = (f < 1.5 ? 1 : f < 3 ? 2 : f < 7 ? 5 : 10) * mag, out = [];
+  for (let v = Math.ceil(lo / step - 1e-9) * step; v <= hi + 1e-9; v += step) out.push(+v.toPrecision(12));
+  return out;
+}
+function axes(o, C) {
+  const L = 66, R = 16, T = 34, B = 50, w = W - L - R, h = H - T - B;
+  const X = v => L + (v - o.x[0]) / (o.x[1] - o.x[0]) * w, Y = v => T + h - (v - o.y[0]) / (o.y[1] - o.y[0]) * h;
+  ctx.lineWidth = 1; ctx.font = "12px system-ui";
+  for (const xv of niceTicks(o.x[0], o.x[1], 6)) {
+    ctx.strokeStyle = C.line; ctx.beginPath(); ctx.moveTo(X(xv), T); ctx.lineTo(X(xv), T + h); ctx.stroke();
+    ctx.fillStyle = C.muted; ctx.textAlign = "center"; ctx.fillText(fmt(xv), X(xv), T + h + 16);
+  }
+  for (const yv of niceTicks(o.y[0], o.y[1], 5)) {
+    ctx.strokeStyle = C.line; ctx.beginPath(); ctx.moveTo(L, Y(yv)); ctx.lineTo(L + w, Y(yv)); ctx.stroke();
+    ctx.fillStyle = C.muted; ctx.textAlign = "right"; ctx.fillText(fmt(yv), L - 6, Y(yv) + 4);
+  }
+  ctx.strokeStyle = C.fg; ctx.beginPath(); ctx.moveTo(L, T); ctx.lineTo(L, T + h); ctx.lineTo(L + w, T + h); ctx.stroke();
+  ctx.fillStyle = C.fg; ctx.textAlign = "center"; ctx.font = "13px system-ui";
+  ctx.fillText(o.xl, L + w / 2, H - 8);
+  ctx.save(); ctx.translate(14, T + h / 2); ctx.rotate(-Math.PI / 2); ctx.fillText(o.yl, 0, 0); ctx.restore();
+  ctx.font = "bold 13px system-ui"; ctx.fillText(o.title || "", L + w / 2, 20);
+  return { X, Y, L, T, w, h };
+}
+function curve(f, a, color, x0, x1, n) {
+  n = n || 160; ctx.save(); ctx.beginPath(); ctx.rect(a.L, a.T, a.w, a.h); ctx.clip();   // never draw outside the plot area
+  ctx.strokeStyle = color; ctx.lineWidth = 2.5; ctx.beginPath();
+  for (let i = 0; i <= n; i++) { const x = x0 + (x1 - x0) * i / n, y = f(x); i ? ctx.lineTo(a.X(x), a.Y(y)) : ctx.moveTo(a.X(x), a.Y(y)); }
+  ctx.stroke(); ctx.restore();
+}
+function dot(a, x, y, color, label) {
+  ctx.fillStyle = color; ctx.beginPath(); ctx.arc(a.X(x), a.Y(y), 6, 0, 2 * Math.PI); ctx.fill();
+  if (label) { ctx.textAlign = "left"; ctx.font = "12px system-ui"; ctx.fillText(label, a.X(x) + 9, a.Y(y) - 8); }
+}
+function draw() {
+  ctx.clearRect(0, 0, W, H);
+  const C = { fg: css("--fg"), muted: css("--muted"), accent: css("--accent"), line: css("--line"), good: css("--good"), bad: css("--bad") };
+  
+const T = 10, h0 = 55.5, A0 = 2.0, soft = 2.0;
+const bias = soft * Math.log((1 - p.thr) / p.thr);
+const N = Math.round(p.fs * T);
+let sd = 12345; const rnd = () => { sd = (sd * 1664525 + 1013904223) % 4294967296; return sd / 4294967296; };
+const g = []; for (let i = 0; i < 700; i++) { const u = Math.max(rnd(), 1e-9), v = rnd(); g.push(Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v)); }
+const y = []; for (let k = 0; k < N; k++) y.push(h0 + bias + A0 * Math.sin(2 * Math.PI * p.f * k / p.fs) + p.noise * g[k]);
+const ymean = y.reduce((a, b) => a + b, 0) / N;
+const df = 0.05, nf = Math.round(p.fs / 2 / df), spec = [];
+let wsum = 0; for (let k = 0; k < N; k++) wsum += 0.5 - 0.5 * Math.cos(2 * Math.PI * k / (N - 1));
+for (let i = 0; i <= nf; i++) {
+  let re = 0, im = 0;
+  for (let k = 0; k < N; k++) { const w = 0.5 - 0.5 * Math.cos(2 * Math.PI * k / (N - 1)), ph = 2 * Math.PI * i * df * k / p.fs, v = (y[k] - ymean) * w; re += v * Math.cos(ph); im -= v * Math.sin(ph); }
+  spec.push(2 * Math.hypot(re, im) / wsum);
+}
+let ip = 6; for (let i = 6; i < nf; i++) if (spec[i] > spec[ip]) ip = i;
+const den = spec[ip - 1] - 2 * spec[ip] + spec[Math.min(nf, ip + 1)], fhat = (ip + (den === 0 ? 0 : 0.5 * (spec[ip - 1] - spec[Math.min(nf, ip + 1)]) / den)) * df;
+const fa = Math.abs(p.f - p.fs * Math.round(p.f / p.fs));
+if (graph === "flame") {
+  const S = 4, base = 390, cx = 300, d = 60, tt = base - h0 * S, tm = base - (h0 + bias) * S;
+  ctx.fillStyle = C.muted; ctx.fillRect(cx - d / 2, base, d, 10);
+  ctx.fillStyle = C.accent; ctx.globalAlpha = 0.65; ctx.beginPath(); ctx.moveTo(cx - d / 2, base);
+  ctx.bezierCurveTo(cx - d / 2 - 14, base - 0.45 * h0 * S, cx - 12, tt + 40, cx, tt);
+  ctx.bezierCurveTo(cx + 12, tt + 40, cx + d / 2 + 14, base - 0.45 * h0 * S, cx + d / 2, base); ctx.closePath(); ctx.fill(); ctx.globalAlpha = 1;
+  ctx.fillStyle = C.bad; ctx.globalAlpha = 0.18; ctx.fillRect(cx - 90, tm - A0 * S, 180, 2 * A0 * S); ctx.globalAlpha = 1;
+  ctx.lineWidth = 2; ctx.setLineDash([6, 4]); ctx.strokeStyle = C.good; ctx.beginPath(); ctx.moveTo(cx - 100, tt); ctx.lineTo(cx + 100, tt); ctx.stroke(); ctx.setLineDash([]);
+  ctx.strokeStyle = C.bad; ctx.beginPath(); ctx.moveTo(cx - 100, tm); ctx.lineTo(cx + 100, tm); ctx.stroke();
+  ctx.font = "12px system-ui"; ctx.textAlign = "left";
+  ctx.fillStyle = C.good; ctx.fillText("green dashed: true tip (half brightness) 55.5 px", 420, 60);
+  ctx.fillStyle = C.bad; ctx.fillText("red: measured mean tip at this threshold", 420, 82); ctx.fillText("pink band: flicker range +-2 px", 420, 104);
+  ctx.fillStyle = C.muted; ctx.fillText("scale: 4 screen px per picture pixel", 420, 140);
+} else if (graph === "trace") {
+  const A = axes({ x: [0, 2], y: [30, 80], xl: "time (s)", yl: "extracted flame height (px)", title: "Height trace: one dot per frame" }, C);
+  curve(t => h0 + A0 * Math.sin(2 * Math.PI * p.f * t), A, C.muted, 0, 2, 600);
+  curve(() => h0 + bias, A, C.bad, 0, 2, 2);
+  ctx.fillStyle = C.accent;
+  for (let k = 0; k / p.fs <= 2 && k < N; k++) { ctx.beginPath(); ctx.arc(A.X(k / p.fs), A.Y(Math.max(30, Math.min(80, y[k]))), 3.5, 0, 2 * Math.PI); ctx.fill(); }
+  ctx.font = "12px system-ui"; ctx.textAlign = "left"; ctx.fillStyle = C.muted; ctx.fillText("grey: true height", A.L + 10, A.T + 16); ctx.fillStyle = C.bad; ctx.fillText("red: mean measured height", A.L + 10, A.T + 32);
+} else {
+  const A = axes({ x: [0, 30], y: [0, 3], xl: "frequency (Hz)", yl: "amplitude (px)", title: "Spectrum of 10 s of height trace" }, C);
+  curve(x => Math.min(3, spec[Math.min(nf, Math.round(x / df))]), A, C.accent, 0, p.fs / 2, 400);
+  ctx.lineWidth = 1.5; ctx.setLineDash([5, 4]);
+  ctx.strokeStyle = C.good; ctx.beginPath(); ctx.moveTo(A.X(p.f), A.T); ctx.lineTo(A.X(p.f), A.T + A.h); ctx.stroke();
+  ctx.strokeStyle = C.muted; ctx.beginPath(); ctx.moveTo(A.X(p.fs / 2), A.T); ctx.lineTo(A.X(p.fs / 2), A.T + A.h); ctx.stroke(); ctx.setLineDash([]);
+  ctx.font = "12px system-ui"; ctx.textAlign = "left"; ctx.fillStyle = C.good; ctx.fillText("green: true " + p.f.toFixed(1) + " Hz", A.L + 10, A.T + 16);
+  ctx.fillStyle = C.muted; ctx.fillText("grey: Nyquist " + (p.fs / 2).toFixed(1) + " Hz (spectrum stops here)", A.L + 10, A.T + 32);
+  dot(A, Math.min(fhat, 30), Math.min(3, spec[ip]), C.bad, "peak " + fhat.toFixed(2) + " Hz");
+}
+readout("mean measured height = " + (h0 + bias).toFixed(1) + " px (true 55.5, shift " + bias.toFixed(2) + " px) &nbsp; spectrum peak = " + fhat.toFixed(2) + " Hz &nbsp; true flicker = " + p.f.toFixed(1) + " Hz &nbsp; alias prediction = " + fa.toFixed(2) + " Hz &nbsp; Nyquist = " + (p.fs / 2).toFixed(1) + " Hz");
+
+  const ch = document.getElementById("challenge");
+  if (challengeTest) { const ok = !!challengeTest(p); ch.hidden = false; ch.dataset.ok = String(ok);
+    ch.innerHTML = "<b>Challenge:</b> " + CHALLENGE + " &nbsp; " + (ok ? "<b>Done!</b>" : "Not yet.");
+    if (ok !== lastOk) { document.getElementById("status").textContent = ok ? "Challenge done." : "Challenge not yet done."; lastOk = ok; } }
+}
+const box = document.getElementById("controls");
+const inputs = {};
+for (const q of PARAMS) {
+  p[q.id] = q.value;
+  const row = document.createElement("div"); row.className = "row";
+  row.innerHTML = `<label for="${q.id}">${q.label} (${q.unit || "no unit"})</label>` +
+    `<input id="${q.id}" type="range" min="${q.min}" max="${q.max}" step="${q.step}" value="${q.value}">` +
+    `<output for="${q.id}">${q.value}</output>`;
+  const inp = row.querySelector("input"), out = row.querySelector("output");
+  inputs[q.id] = [inp, out];
+  inp.addEventListener("input", () => { p[q.id] = +inp.value; out.textContent = inp.value; draw(); });
+  box.appendChild(row);
+}
+function setAll(vals) { for (const k in vals) { p[k] = vals[k]; if (inputs[k]) { inputs[k][0].value = vals[k]; inputs[k][1].textContent = vals[k]; } } draw(); }
+const DEFAULTS = Object.assign({}, p);
+document.getElementById("reset").addEventListener("click", () => setAll(DEFAULTS));
+for (const g of GRAPHS) {
+  const b = document.createElement("button"); b.type = "button"; b.textContent = g.label;
+  b.setAttribute("aria-pressed", String(g.id === graph));
+  b.addEventListener("click", () => { graph = g.id; for (const x of document.querySelectorAll("#graphs button")) x.setAttribute("aria-pressed", String(x === b)); draw(); });
+  document.getElementById("graphs").appendChild(b);
+}
+for (const pr of PRESETS) {
+  const b = document.createElement("button"); b.type = "button"; b.textContent = pr.label;
+  b.addEventListener("click", () => setAll(pr.values));
+  document.getElementById("presets").appendChild(b);
+}
+matchMedia("(prefers-color-scheme: dark)").addEventListener("change", draw);
+draw();
+</script>
+</body>
+</html>

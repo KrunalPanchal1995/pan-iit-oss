@@ -7,9 +7,6 @@
 [submodule "openpressurecooker"]
 	path = openpressurecooker
 	url = https://github.com/KrunalPanchal1995/openpressurecooker.git
-[submodule "openelevator"]
-	path = openelevator
-	url = https://github.com/KrunalPanchal1995/openelevator.git
 [submodule "opentrafficsignal"]
 	path = opentrafficsignal
 	url = https://github.com/KrunalPanchal1995/opentrafficsignal.git
@@ -64,9 +61,6 @@
 [submodule "openheatspread"]
 	path = openheatspread
 	url = https://github.com/KrunalPanchal1995/openheatspread.git
-[submodule "openengine"]
-	path = openengine
-	url = https://github.com/KrunalPanchal1995/openengine.git
 [submodule "openheatpump"]
 	path = openheatpump
 	url = https://github.com/KrunalPanchal1995/openheatpump.git
@@ -82,9 +76,6 @@
 [submodule "openrcfilter"]
 	path = openrcfilter
 	url = https://github.com/KrunalPanchal1995/openrcfilter.git
-[submodule "openemwave"]
-	path = openemwave
-	url = https://github.com/KrunalPanchal1995/openemwave.git
 [submodule "openinduction"]
 	path = openinduction
 	url = https://github.com/KrunalPanchal1995/openinduction.git
@@ -115,9 +106,6 @@
 [submodule "opengenetics"]
 	path = opengenetics
 	url = https://github.com/KrunalPanchal1995/opengenetics.git
-[submodule "openepidemic"]
-	path = openepidemic
-	url = https://github.com/KrunalPanchal1995/openepidemic.git
 [submodule "opentruss"]
 	path = opentruss
 	url = https://github.com/KrunalPanchal1995/opentruss.git
@@ -136,9 +124,6 @@
 [submodule "opentolerance"]
 	path = opentolerance
 	url = https://github.com/KrunalPanchal1995/opentolerance.git
-[submodule "openfatigue"]
-	path = openfatigue
-	url = https://github.com/KrunalPanchal1995/openfatigue.git
 [submodule "opensculpt"]
 	path = opensculpt
 	url = https://github.com/KrunalPanchal1995/opensculpt.git
@@ -178,15 +163,6 @@
 [submodule "openseasons"]
 	path = openseasons
 	url = https://github.com/KrunalPanchal1995/openseasons.git
-[submodule "openeclipse"]
-	path = openeclipse
-	url = https://github.com/KrunalPanchal1995/openeclipse.git
-[submodule "openexoplanet"]
-	path = openexoplanet
-	url = https://github.com/KrunalPanchal1995/openexoplanet.git
-[submodule "openexperiment"]
-	path = openexperiment
-	url = https://github.com/KrunalPanchal1995/openexperiment.git
 [submodule "openuncertainty"]
 	path = openuncertainty
 	url = https://github.com/KrunalPanchal1995/openuncertainty.git
@@ -196,9 +172,6 @@
 [submodule "openproteinmd"]
 	path = openproteinmd
 	url = https://github.com/KrunalPanchal1995/openproteinmd.git
-[submodule "openflame"]
-	path = openflame
-	url = https://github.com/KrunalPanchal1995/openflame.git
 [submodule "openkymo"]
 	path = openkymo
 	url = https://github.com/KrunalPanchal1995/openkymo.git
@@ -253,6 +226,3 @@
 [submodule "openflamevolume"]
 	path = openflamevolume
 	url = https://github.com/KrunalPanchal1995/openflamevolume.git
-[submodule "openevacuation"]
-	path = openevacuation
-	url = https://github.com/KrunalPanchal1995/openevacuation.git

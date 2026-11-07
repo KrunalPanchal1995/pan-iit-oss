@@ -1,0 +1,11 @@
+[project]
+name = "openfatigue"
+version = "0.1.0"
+description = "Learn fatigue: S-N curves, damage counting and crack growth, from scratch in 3 sessions."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+dependencies = ["numpy", "matplotlib"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

@@ -1,0 +1,11 @@
+[project]
+name = "openflame"
+version = "0.1.0"
+description = "Measure flame height and flicker frequency from video: thresholds, FFT, aliasing and error bars, in 3 sessions."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+dependencies = ["numpy", "matplotlib"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
