@@ -1,0 +1,265 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Session 5: where is the axis?</title>
+<style>
+  :root { --bg:#ffffff; --fg:#14181f; --muted:#5b6472; --card:#f3f5f8; --accent:#003f7f; --good:#c86a00; --bad:#d81b60; --line:#d7dce3; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#0e1116; --fg:#e6e9ee; --muted:#9aa3b2; --card:#171b22; --accent:#3b8fe0; --good:#ffc857; --bad:#e0457b; --line:#2a313c; } }
+  * { box-sizing: border-box; }
+  body { margin:0; padding:16px; background:var(--bg); color:var(--fg); font:16px/1.5 system-ui, sans-serif; }
+  main { max-width: 780px; margin: 0 auto; }
+  h1 { font-size: 1.3rem; margin: 0 0 4px; }
+  p.sub { margin: 0 0 12px; color: var(--muted); }
+  .scroll { overflow-x:auto; }
+  canvas { width:100%; min-width:560px; height:auto; background:var(--card); border:1px solid var(--line); border-radius:8px; display:block; }
+  .sr { position:absolute; left:-9999px; }
+  .bar { display:flex; flex-wrap:wrap; gap:8px; margin:10px 0; }
+  button { font:inherit; padding:6px 12px; border:1px solid var(--line); background:var(--card); color:var(--fg); border-radius:6px; cursor:pointer; }
+  button[aria-pressed="true"] { border-color:var(--accent); color:var(--accent); font-weight:600; }
+  button:focus-visible, input:focus-visible { outline:3px solid var(--accent); outline-offset:2px; }
+  .row { display:grid; grid-template-columns: 11rem 1fr 6rem; gap:8px; align-items:center; margin:8px 0; }
+  .row output { text-align:right; font-variant-numeric: tabular-nums; }
+  @media (max-width: 560px) { .row { grid-template-columns: 1fr; gap:2px; } .row output { text-align:left; } }
+  input[type=range] { width:100%; accent-color: var(--accent); }
+  #readout, #challenge, .note { margin-top:10px; padding:10px 12px; background:var(--card); border-radius:8px; border:1px solid var(--line); }
+  #challenge[data-ok="true"] { border-color:var(--good); } #challenge[data-ok="true"] b { color:var(--good); }
+  .note { font-size:.85rem; color:var(--muted); }
+  a { color: var(--accent); }
+</style>
+</head>
+<body>
+<main>
+  <h1>Session 5: where is the axis?</h1>
+  <p class="sub">A noisy candle photo, 79 pixel columns and 20 rows, whose axis is not in the middle. Two finders look for the axis in the photo alone; the dashed line, which they never see, is the truth.</p>
+  <div class="bar" id="graphs" role="group" aria-label="Choose a graph"></div>
+  <div class="scroll"><canvas id="c" width="720" height="420" role="img" aria-label="Session 5: where is the axis?: interactive plot"></canvas></div>
+  <div class="bar" id="presets" role="group" aria-label="Presets"></div>
+  <div id="controls"></div>
+  <div class="bar"><button id="reset" type="button">Reset</button></div>
+  <div id="readout"></div>
+  <div id="challenge" hidden></div>
+  <div id="status" class="sr" aria-live="polite"></div>
+  <p class="note">This is a simplified educational model. It is not a validated design tool and must not be used for real structures, electrical installations, vehicles, industrial processes or medical decisions.</p>
+  <p class="sub"><a href="https://github.com/KrunalPanchal1995/pan-iit-oss/tree/main/openabel">Back to the repository</a></p>
+</main>
+<script>
+"use strict";
+const PARAMS = [{"id": "noise", "label": "Photo noise (share of the peak brightness)", "min": 0.5, "max": 6, "step": 0.5, "value": 3, "unit": "%"}, {"id": "seed", "label": "Noise draw (a new random photo)", "min": 1, "max": 20, "step": 1, "value": 3, "unit": ""}, {"id": "shift", "label": "True axis position (pixels right of the middle)", "min": -2.5, "max": 2.5, "step": 0.25, "value": 1, "unit": "px"}, {"id": "method", "label": "Axis used: 1 middle, 2 centroid, 3 mirror, 4 true", "min": 1, "max": 4, "step": 1, "value": 3, "unit": ""}, {"id": "halves", "label": "Halves of the photo used (1 or 2)", "min": 1, "max": 2, "step": 1, "value": 2, "unit": ""}, {"id": "rows", "label": "Photo rows the finders may look at", "min": 1, "max": 20, "step": 1, "value": 20, "unit": "rows"}, {"id": "z", "label": "Height shown", "min": 1, "max": 20, "step": 1, "value": 8, "unit": "mm"}];
+const GRAPHS = [{"id": "photo", "label": "Photo and mirror image"}, {"id": "cost", "label": "Mirror mismatch"}, {"id": "profile", "label": "Recovered profile"}];
+const PRESETS = [{"label": "Assume the middle", "values": {"noise": 3, "seed": 3, "shift": 1, "method": 1, "halves": 1, "rows": 20, "z": 8}}, {"label": "Mirror, both halves", "values": {"noise": 3, "seed": 3, "shift": 1, "method": 3, "halves": 2, "rows": 20, "z": 8}}, {"label": "Mirror, one half", "values": {"noise": 3, "seed": 3, "shift": 1, "method": 3, "halves": 1, "rows": 20, "z": 8}}, {"label": "Finder sees one row", "values": {"noise": 3, "seed": 3, "shift": 1, "method": 3, "halves": 2, "rows": 1, "z": 8}}, {"label": "Noisy photo (6%)", "values": {"noise": 6, "seed": 3, "shift": 1, "method": 3, "halves": 2, "rows": 20, "z": 8}}];
+const CHALLENGE = "The real axis is 1 pixel (0.15 mm) right of the middle, noise 3 percent, draw 16. Choose how to find the axis (not the true axis: nobody knows it) and how many halves to use so that the worst-row error is at or below 0.045, the line from the roadmap.";
+const CHALLENGE_SOLUTION = {"noise": 3, "seed": 16, "shift": 1, "method": 3, "halves": 2, "rows": 20, "z": 8};
+let LAST = { err: 1, method: 0 };
+const challengeTest = CHALLENGE ? (p) => (p.noise === 3 && p.shift === 1 && p.seed === 16 && p.method !== 4 && LAST.err <= 0.045) : null;
+// ---- the model: a full photo of 79 columns (N = 40 rings on each side), R = 6 mm, 20 rows, all computed here ----
+const NP = 40, RMM = 6, NROW = 20, DR = RMM / NP, NX = 2 * NP - 1, HGT = [4, 8, 12], LAMV = 3;
+const XS = Array.from({ length: NX }, (_, i) => i - (NP - 1));
+const emis = (r, z) => { const s = 3.2 * (z / 6) * Math.exp(1 - z / 6), r0 = 0.7 * s * Math.max(0, 1 - z / 10), e = Math.exp(-Math.pow(z / 22, 2)); return e * Math.exp(-Math.pow((r - r0) / (0.55 * s), 2)); };
+const rmid = j => DR * (j + 0.5);
+function photoAt(y, z) {                                   // brightness at offset y (mm): 2 * integral of the emission along the line of sight
+  y = Math.abs(y); if (y >= RMM) return 0;
+  const top = Math.sqrt(RMM * RMM - y * y), n = 300; let s = 0, prev = emis(y, z);
+  for (let q = 1; q <= n; q++) { const u = top * q / n, cur = emis(Math.sqrt(y * y + u * u), z); s += 0.5 * (prev + cur) * top / n; prev = cur; }
+  return 2 * s;
+}
+const cleanCache = {};
+function cleanFull(shift) {                                // rows = heights 1..20 mm; the axis is `shift` pixels right of the middle column
+  const key = shift.toFixed(3); if (cleanCache[key]) return cleanCache[key];
+  const rows = Array.from({ length: NROW }, (_, k) => Float64Array.from(XS, x => photoAt((x - shift) * DR, k + 1)));
+  const mx = Math.max.apply(null, rows.map(r => Math.max.apply(null, r)));
+  return (cleanCache[key] = { rows, mx });
+}
+function ringMat(offs) {                                   // rows = pixels, columns = rings: chord lengths
+  return offs.map(o => { const y = Math.abs(o); return Array.from({ length: NP }, (_, j) => { const e0 = j * DR, e1 = (j + 1) * DR; return 2 * (Math.sqrt(Math.max(e1 * e1 - y * y, 0)) - Math.sqrt(Math.max(e0 * e0 - y * y, 0))); }); });
+}
+function solveMulti(M, B) {                                // M x = b for each column list in B (Gaussian elimination, partial pivoting)
+  const N = M.length, A = M.map(r => Float64Array.from(r)), X = B.map(b => Float64Array.from(b));
+  for (let c = 0; c < N; c++) {
+    let pv = c; for (let i = c + 1; i < N; i++) if (Math.abs(A[i][c]) > Math.abs(A[pv][c])) pv = i;
+    [A[c], A[pv]] = [A[pv], A[c]]; for (const x of X) [x[c], x[pv]] = [x[pv], x[c]];
+    for (let i = c + 1; i < N; i++) { const f = A[i][c] / A[c][c]; if (f === 0) continue; for (let j = c; j < N; j++) A[i][j] -= f * A[c][j]; for (const x of X) x[i] -= f * x[c]; }
+  }
+  for (const x of X) for (let i = N - 1; i >= 0; i--) { let s = x[i]; for (let k = i + 1; k < N; k++) s -= A[i][k] * x[k]; x[i] = s / A[i][i]; }
+  return X;
+}
+const DtD = Array.from({ length: NP }, () => new Float64Array(NP));
+for (let k = 0; k < NP - 2; k++) { const c = [1, -2, 1]; for (let a = 0; a < 3; a++) for (let b = 0; b < 3; b++) DtD[k + a][k + b] += c[a] * c[b]; }
+function invertRows(img, axis, both, zs) {                 // smoothed inversion of the rows at heights zs, taking the axis at `axis` pixels
+  const offs = XS.map(x => (x - axis) * DR), keep = XS.map((_, i) => both || offs[i] >= 0), idx = [];
+  keep.forEach((k, i) => { if (k) idx.push(i); });
+  const W = ringMat(idx.map(i => offs[i]));
+  const WtW = Array.from({ length: NP }, (_, a) => Float64Array.from({ length: NP }, (_, b) => { let s = 0; for (const r of W) s += r[a] * r[b]; return s; }));
+  let tr = 0; for (let a = 0; a < NP; a++) tr += WtW[a][a];
+  const sc = tr / NP, M = WtW.map((r, a) => Float64Array.from(r, (v, b) => v + LAMV * sc * DtD[a][b]));
+  const B = zs.map(z => Float64Array.from({ length: NP }, (_, a) => { let s = 0; idx.forEach((i, q) => { s += W[q][a] * img[z - 1][i]; }); return s; }));
+  return solveMulti(M, B);
+}
+const truthRow = z => Float64Array.from({ length: NP }, (_, j) => emis(rmid(j), z));
+function relRms(est, truth) { let s = 0, mx = 0; for (let j = 0; j < est.length; j++) { s += (est[j] - truth[j]) ** 2; mx = Math.max(mx, Math.abs(truth[j])); } return Math.sqrt(s / est.length) / mx; }
+function worstErr(img, axis, both) { const E = invertRows(img, axis, both, HGT); return Math.max.apply(null, HGT.map((z, q) => relRms(E[q], truthRow(z)))); }
+// ---- the two axis finders: they get the photo and nothing else ----
+function convSame(a, k) { const n = a.length, h = (k.length - 1) / 2, o = new Float64Array(n); for (let i = 0; i < n; i++) { let s = 0; for (let q = 0; q < k.length; q++) { const j = i + q - h; if (j >= 0 && j < n) s += a[j] * k[q]; } o[i] = s; } return o; }
+function axisCentroid(rows) {
+  const n = rows[0].length, mean = Float64Array.from({ length: n }, (_, i) => rows.reduce((t, r) => t + r[i], 0) / rows.length);
+  const m = convSame(mean, [0.2, 0.2, 0.2, 0.2, 0.2]), mx = Math.max.apply(null, m); let tw = 0, tx = 0;
+  for (let i = 0; i < n; i++) if (m[i] > 0.1 * mx) { const w = rows.reduce((t, r) => t + r[i], 0); tw += w; tx += w * (i - (n - 1) / 2); }
+  return tw > 0 ? tx / tw : NaN;
+}
+const BLUR = 2, PAD = 6, KER = (() => { const k = []; for (let q = -PAD; q <= PAD; q++) k.push(Math.exp(-0.5 * (q / BLUR) ** 2)); const s = k.reduce((a, b) => a + b, 0); return k.map(v => v / s); })();
+function blurRows(rows) { return rows.map(r => convSame(r, KER)); }
+function mirrorCost(sm, c) {
+  const n = sm[0].length, half = (n - 1) / 2 - PAD; let tot = 0, cnt = 0;
+  for (let i = 0; i < n; i++) {
+    const x = i - (n - 1) / 2; if (Math.abs(x) > half) continue;
+    const xm = 2 * c - x; if (Math.abs(xm) > half) continue;
+    const t = xm + (n - 1) / 2, i0 = Math.max(0, Math.min(n - 2, Math.floor(t))), f = t - i0;
+    for (const r of sm) { const refl = r[i0] * (1 - f) + r[i0 + 1] * f; tot += (r[i] - refl) ** 2; cnt++; }
+  }
+  return cnt ? tot / cnt : NaN;
+}
+const SEARCH = 3, STEPS = 121, GRID = Array.from({ length: STEPS }, (_, i) => -SEARCH + 2 * SEARCH * i / (STEPS - 1));
+function axisMirror(rows) {                                // returns {axis, grid cost}; axis is NaN when the minimum sits at the edge of the search range
+  const sm = blurRows(rows), cost = GRID.map(c => mirrorCost(sm, c));
+  let j = 0; cost.forEach((v, i) => { if (v < cost[j]) j = i; });
+  if (j < 3 || j > STEPS - 4) return { axis: NaN, cost };
+  const lo = Math.max(0, j - 6), hi = Math.min(STEPS, j + 7), g0 = GRID[j];
+  let s0 = 0, s1 = 0, s2 = 0, s3 = 0, s4 = 0, t0 = 0, t1 = 0, t2 = 0;
+  for (let i = lo; i < hi; i++) { const x = GRID[i] - g0, y = cost[i]; s0++; s1 += x; s2 += x * x; s3 += x ** 3; s4 += x ** 4; t0 += y; t1 += x * y; t2 += x * x * y; }
+  const [c0, b, a] = solveMulti([[s0, s1, s2], [s1, s2, s3], [s2, s3, s4]], [[t0, t1, t2]])[0];
+  return { axis: a > 0 ? g0 - b / (2 * a) : g0, cost };
+}
+function mulberry(seed) { let a = (seed * 2654435761) >>> 0; return () => { a = (a + 0x6D2B79F5) | 0; let t = Math.imul(a ^ (a >>> 15), 1 | a); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; }
+function makePhoto(noisePct, seed, shift) {
+  const cl = cleanFull(shift), u = mulberry(seed), sigma = noisePct / 100 * cl.mx;
+  const randn = () => Math.sqrt(-2 * Math.log(1 - u())) * Math.cos(2 * Math.PI * u());
+  return { img: cl.rows.map(r => Float64Array.from(r, v => v + sigma * randn())), clean: cl.rows, sigma };
+}
+const cv = document.getElementById("c"), ctx = cv.getContext("2d");
+const W = cv.width, H = cv.height, p = {};
+let graph = GRAPHS.length ? GRAPHS[0].id : "main";
+const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+const fmt = v => (Math.abs(v) >= 1000 || (Math.abs(v) > 0 && Math.abs(v) < 0.01)) ? v.toExponential(2) : String(+v.toPrecision(4));
+function readout(html) {
+  document.getElementById("readout").innerHTML = html;
+  cv.setAttribute("aria-label", document.title + ". " + html.replace(/<[^>]+>/g, " ").replace(/&nbsp;/g, " "));  // screen readers get the numbers
+}
+let lastOk = null;
+// ---- plotting helpers: every graph gets labelled axes with units ----
+function niceTicks(lo, hi, n) {
+  const raw = (hi - lo) / n, mag = Math.pow(10, Math.floor(Math.log10(raw))), f = raw / mag;
+  const step = (f < 1.5 ? 1 : f < 3 ? 2 : f < 7 ? 5 : 10) * mag, out = [];
+  for (let v = Math.ceil(lo / step - 1e-9) * step; v <= hi + 1e-9; v += step) out.push(+v.toPrecision(12));
+  return out;
+}
+function axes(o, C) {
+  const L = 66, R = 16, T = 34, B = 50, w = W - L - R, h = H - T - B;
+  const X = v => L + (v - o.x[0]) / (o.x[1] - o.x[0]) * w, Y = v => T + h - (v - o.y[0]) / (o.y[1] - o.y[0]) * h;
+  ctx.lineWidth = 1; ctx.font = "12px system-ui";
+  for (const xv of niceTicks(o.x[0], o.x[1], 6)) {
+    ctx.strokeStyle = C.line; ctx.beginPath(); ctx.moveTo(X(xv), T); ctx.lineTo(X(xv), T + h); ctx.stroke();
+    ctx.fillStyle = C.muted; ctx.textAlign = "center"; ctx.fillText(fmt(xv), X(xv), T + h + 16);
+  }
+  for (const yv of niceTicks(o.y[0], o.y[1], 5)) {
+    ctx.strokeStyle = C.line; ctx.beginPath(); ctx.moveTo(L, Y(yv)); ctx.lineTo(L + w, Y(yv)); ctx.stroke();
+    ctx.fillStyle = C.muted; ctx.textAlign = "right"; ctx.fillText(fmt(yv), L - 6, Y(yv) + 4);
+  }
+  ctx.strokeStyle = C.fg; ctx.beginPath(); ctx.moveTo(L, T); ctx.lineTo(L, T + h); ctx.lineTo(L + w, T + h); ctx.stroke();
+  ctx.fillStyle = C.fg; ctx.textAlign = "center"; ctx.font = "13px system-ui";
+  ctx.fillText(o.xl, L + w / 2, H - 8);
+  ctx.save(); ctx.translate(14, T + h / 2); ctx.rotate(-Math.PI / 2); ctx.fillText(o.yl, 0, 0); ctx.restore();
+  ctx.font = "bold 13px system-ui"; ctx.fillText(o.title || "", L + w / 2, 20);
+  return { X, Y, L, T, w, h };
+}
+function curve(f, a, color, x0, x1, n) {
+  n = n || 160; ctx.save(); ctx.beginPath(); ctx.rect(a.L, a.T, a.w, a.h); ctx.clip();   // never draw outside the plot area
+  ctx.strokeStyle = color; ctx.lineWidth = 2.5; ctx.beginPath();
+  for (let i = 0; i <= n; i++) { const x = x0 + (x1 - x0) * i / n, y = f(x); i ? ctx.lineTo(a.X(x), a.Y(y)) : ctx.moveTo(a.X(x), a.Y(y)); }
+  ctx.stroke(); ctx.restore();
+}
+function dot(a, x, y, color, label) {
+  ctx.fillStyle = color; ctx.beginPath(); ctx.arc(a.X(x), a.Y(y), 6, 0, 2 * Math.PI); ctx.fill();
+  if (label) { ctx.textAlign = "left"; ctx.font = "12px system-ui"; ctx.fillText(label, a.X(x) + 9, a.Y(y) - 8); }
+}
+function draw() {
+  ctx.clearRect(0, 0, W, H);
+  const C = { fg: css("--fg"), muted: css("--muted"), accent: css("--accent"), line: css("--line"), good: css("--good"), bad: css("--bad") };
+  const ph = makePhoto(p.noise, p.seed, p.shift), img = ph.img;
+  const k = p.rows; let a0 = Math.round(p.z - (k - 1) / 2); a0 = Math.max(1, Math.min(NROW - k + 1, a0));
+  const used = img.slice(a0 - 1, a0 - 1 + k);
+  const cen = axisCentroid(used), mir = axisMirror(used);
+  const pick = [0, 0, cen, mir.axis, p.shift][p.method], failed = !isFinite(pick), axis = failed ? 0 : pick, both = p.halves === 2;
+  const nz = v => isFinite(v) ? v : 0;
+  const eSel = worstErr(img, axis, both);
+  const eMid = worstErr(img, 0, false), eCB = worstErr(img, nz(cen), true), eMO = worstErr(img, nz(mir.axis), false), eMB = worstErr(img, nz(mir.axis), true), eTB = worstErr(img, p.shift, true);
+  LAST = { err: eSel, method: p.method };
+  const names = ["", "the middle (no search)", "the centroid", "mirror matching", "the true axis (cheating)"];
+  const row = img[p.z - 1], cl = ph.clean[p.z - 1], lin = (arr, t) => { const i = Math.max(0, Math.min(arr.length - 2, Math.floor(t))), f = Math.min(1, Math.max(0, t - i)); return arr[i] * (1 - f) + arr[i + 1] * f; };
+  if (graph === "photo") {
+    const ymax = Math.max.apply(null, row) * 1.15, ymin = Math.min(0, Math.min.apply(null, row) * 1.2);
+    const A = axes({ x: [-40, 40], y: [ymin, ymax], xl: "pixel column (from the middle of the picture)", yl: "brightness (a.u.)", title: "Height " + p.z + " mm: photo (filled) and its mirror image about the axis used (hollow)" }, C);
+    curve(x => lin(cl, x + NP - 1), A, C.muted, -(NP - 1), NP - 1, 200);
+    const vl = (x, col, dash, w) => { ctx.save(); ctx.setLineDash(dash); ctx.strokeStyle = col; ctx.lineWidth = w; ctx.beginPath(); ctx.moveTo(A.X(x), A.T); ctx.lineTo(A.X(x), A.T + A.h); ctx.stroke(); ctx.restore(); };
+    vl(0, C.muted, [2, 3], 1.5); vl(p.shift, C.fg, [6, 4], 1.5); vl(axis, C.accent, [], 2.5);
+    ctx.save(); ctx.beginPath(); ctx.rect(A.L, A.T, A.w, A.h); ctx.clip();
+    ctx.strokeStyle = C.bad; ctx.lineWidth = 1.5;
+    for (let i = 0; i < NX; i++) { ctx.beginPath(); ctx.arc(A.X(2 * axis - XS[i]), A.Y(row[i]), 3.5, 0, 6.2832); ctx.stroke(); }
+    ctx.fillStyle = C.good; for (let i = 0; i < NX; i++) { ctx.beginPath(); ctx.arc(A.X(XS[i]), A.Y(row[i]), 3, 0, 6.2832); ctx.fill(); }
+    ctx.restore();
+    ctx.fillStyle = C.muted; ctx.font = "12px system-ui"; ctx.textAlign = "left";
+    ctx.fillText("dotted: middle; dashed: true axis; blue: axis used", A.L + 8, A.T + 16);
+  } else if (graph === "cost") {
+    const cost = mir.cost, top = Math.max.apply(null, cost.filter(isFinite)) * 1.05;
+    const A = axes({ x: [-SEARCH, SEARCH], y: [0, top], xl: "trial axis position c (pixels from the middle)", yl: "mismatch with the mirror image (a.u.^2)", title: "Mirror matching with " + k + " row" + (k > 1 ? "s" : "") + ": the lowest point is the axis" }, C);
+    curve(x => lin(cost, (x + SEARCH) / (2 * SEARCH) * (STEPS - 1)), A, C.accent, -SEARCH, SEARCH, 240);
+    const vl = (x, col, dash, w) => { ctx.save(); ctx.setLineDash(dash); ctx.strokeStyle = col; ctx.lineWidth = w; ctx.beginPath(); ctx.moveTo(A.X(x), A.T); ctx.lineTo(A.X(x), A.T + A.h); ctx.stroke(); ctx.restore(); };
+    vl(p.shift, C.fg, [6, 4], 1.5); if (isFinite(cen) && Math.abs(cen) < SEARCH) vl(cen, C.good, [2, 3], 2); if (isFinite(mir.axis)) vl(mir.axis, C.bad, [], 2.5);
+    ctx.fillStyle = C.muted; ctx.font = "12px system-ui"; ctx.textAlign = "left";
+    ctx.fillText("dashed: true axis; dotted orange: centroid; solid red: lowest point", A.L + 8, A.T + 16);
+  } else {
+    const tr = truthRow(p.z), mid = invertRows(img, 0, false, [p.z])[0], est = invertRows(img, axis, both, [p.z])[0];
+    const A = axes({ x: [0, RMM], y: [-0.5, 1.4], xl: "radius r (mm)", yl: "emission (a.u. per mm)", title: "Height " + p.z + " mm: truth, middle assumed (dotted), axis used (blue)" }, C);
+    curve(x => lin(tr, (x - rmid(0)) / DR), A, C.fg, rmid(0), rmid(NP - 1), 160);
+    ctx.save(); ctx.setLineDash([3, 3]); curve(x => lin(mid, (x - rmid(0)) / DR), A, C.bad, rmid(0), rmid(NP - 1), 160); ctx.restore();
+    curve(x => lin(est, (x - rmid(0)) / DR), A, C.accent, rmid(0), rmid(NP - 1), 160);
+  }
+  const f3 = v => isFinite(v) ? (v >= 0 ? "+" : "") + v.toFixed(3) : "none found";
+  readout("true axis " + p.shift.toFixed(2) + " px; finders (" + k + " row" + (k > 1 ? "s" : "") + "): centroid " + f3(cen) + " (error " + f3(cen - p.shift) + "), mirror " + f3(mir.axis) + " (error " + f3(mir.axis - p.shift) + "). Using " + names[p.method] + (failed ? " (no axis found, middle used)" : "") + ", " + (both ? "both halves" : "one half") + ": worst-row error <b>" + eSel.toFixed(3) + "</b>. &nbsp; Compare: middle assumed, one half " + eMid.toFixed(3) + "; centroid, both " + eCB.toFixed(3) + "; mirror, one half " + eMO.toFixed(3) + "; mirror, both " + eMB.toFixed(3) + "; true axis, both " + eTB.toFixed(3) + ".");
+  const ch = document.getElementById("challenge");
+  if (challengeTest) { const ok = !!challengeTest(p); ch.hidden = false; ch.dataset.ok = String(ok);
+    ch.innerHTML = "<b>Challenge:</b> " + CHALLENGE + " &nbsp; " + (ok ? "<b>Done!</b>" : "Not yet.");
+    if (ok !== lastOk) { document.getElementById("status").textContent = ok ? "Challenge done." : "Challenge not yet done."; lastOk = ok; } }
+}
+const box = document.getElementById("controls");
+const inputs = {};
+for (const q of PARAMS) {
+  p[q.id] = q.value;
+  const row = document.createElement("div"); row.className = "row";
+  row.innerHTML = `<label for="${q.id}">${q.label} (${q.unit || "no unit"})</label>` +
+    `<input id="${q.id}" type="range" min="${q.min}" max="${q.max}" step="${q.step}" value="${q.value}">` +
+    `<output for="${q.id}">${q.value}</output>`;
+  const inp = row.querySelector("input"), out = row.querySelector("output");
+  inputs[q.id] = [inp, out];
+  inp.addEventListener("input", () => { p[q.id] = +inp.value; out.textContent = inp.value; draw(); });
+  box.appendChild(row);
+}
+function setAll(vals) { for (const k in vals) { p[k] = vals[k]; if (inputs[k]) { inputs[k][0].value = vals[k]; inputs[k][1].textContent = vals[k]; } } draw(); }
+const DEFAULTS = Object.assign({}, p);
+document.getElementById("reset").addEventListener("click", () => setAll(DEFAULTS));
+for (const g of GRAPHS) {
+  const b = document.createElement("button"); b.type = "button"; b.textContent = g.label;
+  b.setAttribute("aria-pressed", String(g.id === graph));
+  b.addEventListener("click", () => { graph = g.id; for (const x of document.querySelectorAll("#graphs button")) x.setAttribute("aria-pressed", String(x === b)); draw(); });
+  document.getElementById("graphs").appendChild(b);
+}
+for (const pr of PRESETS) {
+  const b = document.createElement("button"); b.type = "button"; b.textContent = pr.label;
+  b.addEventListener("click", () => setAll(pr.values));
+  document.getElementById("presets").appendChild(b);
+}
+matchMedia("(prefers-color-scheme: dark)").addEventListener("change", draw);
+draw();
+</script>
+</body>
+</html>

@@ -1,0 +1,201 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Session 5: a 4-bit multiplier</title>
+<style>
+  :root { --bg:#ffffff; --fg:#14181f; --muted:#5b6472; --card:#f3f5f8; --accent:#003f7f; --good:#c86a00; --bad:#d81b60; --line:#d7dce3; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#0e1116; --fg:#e6e9ee; --muted:#9aa3b2; --card:#171b22; --accent:#3b8fe0; --good:#ffc857; --bad:#e0457b; --line:#2a313c; } }
+  * { box-sizing: border-box; }
+  body { margin:0; padding:16px; background:var(--bg); color:var(--fg); font:16px/1.5 system-ui, sans-serif; }
+  main { max-width: 780px; margin: 0 auto; }
+  h1 { font-size: 1.3rem; margin: 0 0 4px; }
+  p.sub { margin: 0 0 12px; color: var(--muted); }
+  .scroll { overflow-x:auto; }
+  canvas { width:100%; min-width:560px; height:auto; background:var(--card); border:1px solid var(--line); border-radius:8px; display:block; }
+  .sr { position:absolute; left:-9999px; }
+  .bar { display:flex; flex-wrap:wrap; gap:8px; margin:10px 0; }
+  button { font:inherit; padding:6px 12px; border:1px solid var(--line); background:var(--card); color:var(--fg); border-radius:6px; cursor:pointer; }
+  button[aria-pressed="true"] { border-color:var(--accent); color:var(--accent); font-weight:600; }
+  button:focus-visible, input:focus-visible { outline:3px solid var(--accent); outline-offset:2px; }
+  .row { display:grid; grid-template-columns: 11rem 1fr 6rem; gap:8px; align-items:center; margin:8px 0; }
+  .row output { text-align:right; font-variant-numeric: tabular-nums; }
+  @media (max-width: 560px) { .row { grid-template-columns: 1fr; gap:2px; } .row output { text-align:left; } }
+  input[type=range] { width:100%; accent-color: var(--accent); }
+  #readout, #challenge, .note { margin-top:10px; padding:10px 12px; background:var(--card); border-radius:8px; border:1px solid var(--line); }
+  #challenge[data-ok="true"] { border-color:var(--good); } #challenge[data-ok="true"] b { color:var(--good); }
+  .note { font-size:.85rem; color:var(--muted); }
+  a { color: var(--accent); }
+</style>
+</head>
+<body>
+<main>
+  <h1>Session 5: a 4-bit multiplier</h1>
+  <p class="sub">Multiplying is adding shifted copies: 16 AND gates make the partial products and half and full adders add them. See the columns, then what the multiplier costs.</p>
+  <div class="bar" id="graphs" role="group" aria-label="Choose a graph"></div>
+  <div class="scroll"><canvas id="c" width="720" height="420" role="img" aria-label="Session 5: a 4-bit multiplier: interactive plot"></canvas></div>
+  <div class="bar" id="presets" role="group" aria-label="Presets"></div>
+  <div id="controls"></div>
+  <div class="bar"><button id="reset" type="button">Reset</button></div>
+  <div id="readout"></div>
+  <div id="challenge" hidden></div>
+  <div id="status" class="sr" aria-live="polite"></div>
+  <p class="note">This is a simplified educational model. It is not a validated design tool and must not be used for real structures, electrical installations, vehicles, industrial processes or medical decisions.</p>
+  <p class="sub"><a href="https://github.com/KrunalPanchal1995/pan-iit-oss/tree/main/openbinary">Back to the repository</a></p>
+</main>
+<script>
+"use strict";
+const PARAMS = [{"id": "a", "label": "Input a (4 bits)", "min": 0, "max": 15, "step": 1, "value": 11, "unit": "0 to 15"}, {"id": "b", "label": "Input b (4 bits)", "min": 0, "max": 15, "step": 1, "value": 13, "unit": "0 to 15"}, {"id": "n", "label": "Multiplier width n for the size and delay views", "min": 2, "max": 10, "step": 1, "value": 8, "unit": "bits"}];
+const GRAPHS = [{"id": "paper", "label": "Partial products and columns", "diagram": true}, {"id": "gates", "label": "Gates versus width"}, {"id": "delay", "label": "Delay versus width"}];
+const PRESETS = [{"label": "13 x 11 = 143", "values": {"a": 13, "b": 11}}, {"label": "7 x 3 = 21", "values": {"a": 7, "b": 3}}, {"label": "15 x 15 (largest)", "values": {"a": 15, "b": 15}}, {"label": "5 x 8 (a shift)", "values": {"a": 5, "b": 8}}];
+const CHALLENGE = "Find the widest multiplier whose slowest product bit is ready within 20 gate delays (10 ns at 0.5 ns per gate). Use the width slider.";
+const CHALLENGE_SOLUTION = {"a": 11, "b": 13, "n": 4};
+const TABLE = [{"n": 2, "gates": 8, "depth": 3}, {"n": 3, "gates": 30, "depth": 10}, {"n": 4, "gates": 64, "depth": 16}, {"n": 5, "gates": 110, "depth": 22}, {"n": 6, "gates": 168, "depth": 28}, {"n": 7, "gates": 238, "depth": 34}, {"n": 8, "gates": 320, "depth": 40}, {"n": 9, "gates": 414, "depth": 46}, {"n": 10, "gates": 520, "depth": 52}];
+const trow = n => TABLE.find(r => r.n === n);
+const challengeTest = CHALLENGE ? (p) => { const n = Math.round(p.n), nx = trow(n + 1); return trow(n).depth <= 20 && (!nx || nx.depth > 20); } : null;
+// the paper method: add the partial products column by column (same rules as column_addition in lesson.py)
+function columnsOf(a, b) {
+  const cols = []; let carry = 0;
+  for (let k = 0; k < 8; k++) {
+    let ones = 0; for (let i = 0; i < 4; i++) if (k - i >= 0 && k - i < 4) ones += ((a >> i) & 1) & ((b >> (k - i)) & 1);
+    const total = ones + carry;
+    cols.push({ ones, carryIn: carry, total, bit: total % 2, carryOut: Math.floor(total / 2) }); carry = Math.floor(total / 2);
+  }
+  return cols;
+}
+const cv = document.getElementById("c"), ctx = cv.getContext("2d");
+const W = cv.width, H = cv.height, p = {};
+let graph = GRAPHS.length ? GRAPHS[0].id : "main";
+const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+const fmt = v => (Math.abs(v) >= 1000 || (Math.abs(v) > 0 && Math.abs(v) < 0.01)) ? v.toExponential(2) : String(+v.toPrecision(4));
+function readout(html) {
+  document.getElementById("readout").innerHTML = html;
+  cv.setAttribute("aria-label", document.title + ". " + html.replace(/<[^>]+>/g, " ").replace(/&nbsp;/g, " "));  // screen readers get the numbers
+}
+let lastOk = null;
+// ---- plotting helpers: every graph gets labelled axes with units ----
+function niceTicks(lo, hi, n) {
+  const raw = (hi - lo) / n, mag = Math.pow(10, Math.floor(Math.log10(raw))), f = raw / mag;
+  const step = (f < 1.5 ? 1 : f < 3 ? 2 : f < 7 ? 5 : 10) * mag, out = [];
+  for (let v = Math.ceil(lo / step - 1e-9) * step; v <= hi + 1e-9; v += step) out.push(+v.toPrecision(12));
+  return out;
+}
+function axes(o, C) {
+  const L = 66, R = 16, T = 34, B = 50, w = W - L - R, h = H - T - B;
+  const X = v => L + (v - o.x[0]) / (o.x[1] - o.x[0]) * w, Y = v => T + h - (v - o.y[0]) / (o.y[1] - o.y[0]) * h;
+  ctx.lineWidth = 1; ctx.font = "12px system-ui";
+  for (const xv of niceTicks(o.x[0], o.x[1], 6)) {
+    ctx.strokeStyle = C.line; ctx.beginPath(); ctx.moveTo(X(xv), T); ctx.lineTo(X(xv), T + h); ctx.stroke();
+    ctx.fillStyle = C.muted; ctx.textAlign = "center"; ctx.fillText(fmt(xv), X(xv), T + h + 16);
+  }
+  for (const yv of niceTicks(o.y[0], o.y[1], 5)) {
+    ctx.strokeStyle = C.line; ctx.beginPath(); ctx.moveTo(L, Y(yv)); ctx.lineTo(L + w, Y(yv)); ctx.stroke();
+    ctx.fillStyle = C.muted; ctx.textAlign = "right"; ctx.fillText((o.yf || fmt)(yv), L - 6, Y(yv) + 4);
+  }
+  ctx.strokeStyle = C.fg; ctx.beginPath(); ctx.moveTo(L, T); ctx.lineTo(L, T + h); ctx.lineTo(L + w, T + h); ctx.stroke();
+  ctx.fillStyle = C.fg; ctx.textAlign = "center"; ctx.font = "13px system-ui";
+  ctx.fillText(o.xl, L + w / 2, H - 8);
+  ctx.save(); ctx.translate(14, T + h / 2); ctx.rotate(-Math.PI / 2); ctx.fillText(o.yl, 0, 0); ctx.restore();
+  ctx.font = "bold 13px system-ui"; ctx.fillText(o.title || "", L + w / 2, 20);
+  return { X, Y, L, T, w, h };
+}
+function curve(f, a, color, x0, x1, n) {
+  n = n || 160; ctx.save(); ctx.beginPath(); ctx.rect(a.L, a.T, a.w, a.h); ctx.clip();   // never draw outside the plot area
+  ctx.strokeStyle = color; ctx.lineWidth = 2.5; ctx.beginPath();
+  for (let i = 0; i <= n; i++) { const x = x0 + (x1 - x0) * i / n, y = f(x); i ? ctx.lineTo(a.X(x), a.Y(y)) : ctx.moveTo(a.X(x), a.Y(y)); }
+  ctx.stroke(); ctx.restore();
+}
+function dot(a, x, y, color, label) {
+  ctx.fillStyle = color; ctx.beginPath(); ctx.arc(a.X(x), a.Y(y), 6, 0, 2 * Math.PI); ctx.fill();
+  if (label) { ctx.textAlign = "left"; ctx.font = "12px system-ui"; ctx.fillText(label, a.X(x) + 9, a.Y(y) - 8); }
+}
+function draw() {
+  ctx.clearRect(0, 0, W, H);
+  const C = { fg: css("--fg"), muted: css("--muted"), accent: css("--accent"), line: css("--line"), good: css("--good"), bad: css("--bad"), bg: css("--bg") };
+  const prod = p.a * p.b, bin = prod.toString(2).padStart(8, "0"), nn = Math.round(p.n), row = trow(nn);
+  if (graph === "paper") {
+    const cols = columnsOf(p.a, p.b), colX = k => 130 + (7 - k) * 74;
+    const cell = (x, y, fill, txt, dark) => {
+      ctx.fillStyle = fill; ctx.fillRect(x - 15, y - 15, 30, 30);
+      ctx.strokeStyle = C.fg; ctx.lineWidth = 1; ctx.strokeRect(x - 15, y - 15, 30, 30);
+      ctx.fillStyle = dark ? C.bg : C.fg; ctx.font = "bold 14px system-ui"; ctx.textAlign = "center"; ctx.fillText(txt, x, y + 5);
+    };
+    ctx.font = "bold 13px system-ui"; ctx.fillStyle = C.fg; ctx.textAlign = "center";
+    ctx.fillText("Each cell is one AND gate (a_i AND b_j); the columns are added with carries", W / 2, 20);
+    ctx.font = "12px system-ui"; ctx.fillStyle = C.muted;
+    for (let k = 7; k >= 0; k--) ctx.fillText("col " + k, colX(k), 48);
+    for (let j = 0; j < 4; j++) {
+      const y = 82 + 34 * j, bj = (p.b >> j) & 1;
+      ctx.fillStyle = C.muted; ctx.textAlign = "left"; ctx.fillText("b" + j + " = " + bj, 8, y + 4);
+      for (let i = 0; i < 4; i++) { const v = ((p.a >> i) & 1) & bj; cell(colX(i + j), y, v ? C.accent : C.line, String(v), !!v); }
+    }
+    ctx.strokeStyle = C.fg; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(60, 212); ctx.lineTo(W - 12, 212); ctx.stroke();
+    ctx.fillStyle = C.muted; ctx.font = "12px system-ui"; ctx.textAlign = "left";
+    ctx.fillText("carry in", 8, 244); ctx.fillText("column total", 8, 282); ctx.fillText("product bit", 8, 322);
+    for (let k = 0; k < 8; k++) {
+      const c = cols[k], x = colX(k);
+      cell(x, 240, c.carryIn ? C.good : C.line, String(c.carryIn), !!c.carryIn);
+      cell(x, 278, C.line, String(c.total), false);
+      cell(x, 318, c.bit ? C.accent : C.line, String(c.bit), !!c.bit);
+    }
+    ctx.fillStyle = C.fg; ctx.font = "13px system-ui"; ctx.textAlign = "left";
+    ctx.fillText("total = ones in the column + carry in; write total mod 2, carry total div 2", 8, 358);
+    ctx.fillStyle = C.muted; ctx.font = "12px system-ui";
+    ctx.fillText(p.a + " x " + p.b + " = " + prod + " = " + bin + " in binary. 16 AND gates make the 16 cells; adder cells add the rows (64 gates in all, 16 gate delays).", 8, 384);
+    ctx.fillText("On paper a carry can be 2 or 3; in the gate version each half or full adder passes on one carry bit.", 8, 406);
+  } else {
+    const gv = graph === "gates";
+    const A = axes(gv
+      ? { x: [1, 11], y: [0, 560], xl: "multiplier width n (bits)", yl: "gates", title: "Gates in an n x n array multiplier (6n^2 - 8n)" }
+      : { x: [1, 11], y: [0, 56], xl: "multiplier width n (bits)", yl: "slowest product bit (gate delays)", title: "Delay of an n x n array multiplier (6n - 8)" }, C);
+    const f = r => gv ? r.gates : r.depth;
+    ctx.save(); ctx.beginPath(); ctx.rect(A.L, A.T, A.w, A.h); ctx.clip();
+    ctx.strokeStyle = gv ? C.accent : C.bad; ctx.lineWidth = 2.5; ctx.beginPath();
+    TABLE.forEach((r, i) => { i ? ctx.lineTo(A.X(r.n), A.Y(f(r))) : ctx.moveTo(A.X(r.n), A.Y(f(r))); }); ctx.stroke();
+    TABLE.forEach(r => { ctx.fillStyle = gv ? C.accent : C.bad; ctx.beginPath(); ctx.arc(A.X(r.n), A.Y(f(r)), 4, 0, 2 * Math.PI); ctx.fill(); });
+    if (!gv) { ctx.strokeStyle = C.good; ctx.lineWidth = 2; ctx.setLineDash([6, 5]); ctx.beginPath(); ctx.moveTo(A.L, A.Y(20)); ctx.lineTo(A.L + A.w, A.Y(20)); ctx.stroke(); ctx.setLineDash([]); }
+    ctx.restore();
+    if (!gv) { ctx.fillStyle = C.good; ctx.font = "12px system-ui"; ctx.textAlign = "left"; ctx.fillText("budget: 20 gate delays = 10 ns", A.L + 10, A.Y(20) - 6); }
+    ctx.strokeStyle = C.fg; ctx.lineWidth = 1; ctx.setLineDash([4, 4]); ctx.beginPath(); ctx.moveTo(A.X(nn), A.T); ctx.lineTo(A.X(nn), A.T + A.h); ctx.stroke(); ctx.setLineDash([]);
+    dot(A, nn, f(row), C.fg, "n = " + nn + ": " + f(row));
+  }
+  readout("a = " + p.a + ", b = " + p.b + ": product " + prod + " (binary " + bin + ", 8 bits) &nbsp;|&nbsp; at n = " + nn + ": " + row.gates + " gates, slowest product bit after " + row.depth + " gate delays (" + (row.depth * 0.5).toFixed(1) + " ns at 0.5 ns per gate), " + 2 * nn + " product bits");
+  const ch = document.getElementById("challenge");
+  if (challengeTest) { const ok = !!challengeTest(p); ch.hidden = false; ch.dataset.ok = String(ok);
+    ch.innerHTML = "<b>Challenge:</b> " + CHALLENGE + " &nbsp; " + (ok ? "<b>Done!</b>" : "Not yet.");
+    if (ok !== lastOk) { document.getElementById("status").textContent = ok ? "Challenge done." : "Challenge not yet done."; lastOk = ok; } }
+}
+
+const box = document.getElementById("controls");
+const inputs = {};
+for (const q of PARAMS) {
+  p[q.id] = q.value;
+  const row = document.createElement("div"); row.className = "row";
+  row.innerHTML = `<label for="${q.id}">${q.label} (${q.unit || "no unit"})</label>` +
+    `<input id="${q.id}" type="range" min="${q.min}" max="${q.max}" step="${q.step}" value="${q.value}">` +
+    `<output for="${q.id}">${q.value}</output>`;
+  const inp = row.querySelector("input"), out = row.querySelector("output");
+  inputs[q.id] = [inp, out];
+  inp.addEventListener("input", () => { p[q.id] = +inp.value; out.textContent = inp.value; draw(); });
+  box.appendChild(row);
+}
+function setAll(vals) { for (const k in vals) { p[k] = vals[k]; if (inputs[k]) { inputs[k][0].value = vals[k]; inputs[k][1].textContent = vals[k]; } } draw(); }
+const DEFAULTS = Object.assign({}, p);
+document.getElementById("reset").addEventListener("click", () => setAll(DEFAULTS));
+for (const g of GRAPHS) {
+  const b = document.createElement("button"); b.type = "button"; b.textContent = g.label;
+  b.setAttribute("aria-pressed", String(g.id === graph));
+  b.addEventListener("click", () => { graph = g.id; for (const x of document.querySelectorAll("#graphs button")) x.setAttribute("aria-pressed", String(x === b)); draw(); });
+  document.getElementById("graphs").appendChild(b);
+}
+for (const pr of PRESETS) {
+  const b = document.createElement("button"); b.type = "button"; b.textContent = pr.label;
+  b.addEventListener("click", () => setAll(pr.values));
+  document.getElementById("presets").appendChild(b);
+}
+matchMedia("(prefers-color-scheme: dark)").addEventListener("change", draw);
+draw();
+</script>
+</body>
+</html>

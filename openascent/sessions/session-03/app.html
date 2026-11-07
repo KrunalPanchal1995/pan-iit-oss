@@ -1,0 +1,199 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Session 3: fly to orbit with staging</title>
+<style>
+  :root { --bg:#ffffff; --fg:#14181f; --muted:#5b6472; --card:#f3f5f8; --accent:#1f6feb; --good:#1a7f37; --bad:#b42318; --line:#d7dce3; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#0e1116; --fg:#e6e9ee; --muted:#9aa3b2; --card:#171b22; --accent:#58a6ff; --good:#3fb950; --bad:#f97066; --line:#2a313c; } }
+  * { box-sizing: border-box; }
+  body { margin:0; padding:16px; background:var(--bg); color:var(--fg); font:16px/1.5 system-ui, sans-serif; }
+  main { max-width: 780px; margin: 0 auto; }
+  h1 { font-size: 1.3rem; margin: 0 0 4px; }
+  p.sub { margin: 0 0 12px; color: var(--muted); }
+  .scroll { overflow-x:auto; }
+  canvas { width:100%; min-width:560px; height:auto; background:var(--card); border:1px solid var(--line); border-radius:8px; display:block; }
+  .sr { position:absolute; left:-9999px; }
+  .bar { display:flex; flex-wrap:wrap; gap:8px; margin:10px 0; }
+  button { font:inherit; padding:6px 12px; border:1px solid var(--line); background:var(--card); color:var(--fg); border-radius:6px; cursor:pointer; }
+  button[aria-pressed="true"] { border-color:var(--accent); color:var(--accent); font-weight:600; }
+  button:focus-visible, input:focus-visible { outline:3px solid var(--accent); outline-offset:2px; }
+  .row { display:grid; grid-template-columns: 11rem 1fr 6rem; gap:8px; align-items:center; margin:8px 0; }
+  .row output { text-align:right; font-variant-numeric: tabular-nums; }
+  @media (max-width: 560px) { .row { grid-template-columns: 1fr; gap:2px; } .row output { text-align:left; } }
+  input[type=range] { width:100%; accent-color: var(--accent); }
+  #readout, #challenge, .note { margin-top:10px; padding:10px 12px; background:var(--card); border-radius:8px; border:1px solid var(--line); }
+  #challenge[data-ok="true"] { border-color:var(--good); } #challenge[data-ok="true"] b { color:var(--good); }
+  .note { font-size:.85rem; color:var(--muted); }
+  a { color: var(--accent); }
+</style>
+</head>
+<body>
+<main>
+  <h1>Session 3: fly to orbit with staging</h1>
+  <p class="sub">Pitch over, drop stage 1, hold 200 km with stage 2, and cut off in orbit.</p>
+  <div class="bar" id="graphs" role="group" aria-label="Choose a graph"></div>
+  <div class="scroll"><canvas id="c" width="720" height="420" role="img" aria-label="Session 3: fly to orbit with staging: interactive plot"></canvas></div>
+  <div class="bar" id="presets" role="group" aria-label="Presets"></div>
+  <div id="controls"></div>
+  <div class="bar"><button id="reset" type="button">Reset</button></div>
+  <div id="readout"></div>
+  <div id="challenge" hidden></div>
+  <div id="status" class="sr" aria-live="polite"></div>
+  <p class="note">This is a simplified educational model. It is not a validated design tool and must not be used for real structures, electrical installations, vehicles, industrial processes or medical decisions.</p>
+  <p class="sub"><a href="https://github.com/KrunalPanchal1995/pan-iit-oss/tree/main/openascent">Back to the repository</a></p>
+</main>
+<script>
+"use strict";
+const PARAMS = [{"id": "kick", "label": "Pitch kick", "min": 0, "max": 6, "step": 0.25, "value": 3, "unit": "degrees"}, {"id": "pay", "label": "Payload", "min": 0, "max": 3000, "step": 250, "value": 1000, "unit": "kg"}, {"id": "prop2", "label": "Stage 2 propellant", "min": 10, "max": 20, "step": 0.5, "value": 15, "unit": "t"}, {"id": "isp2", "label": "Stage 2 Isp", "min": 300, "max": 450, "step": 5, "value": 340, "unit": "s"}];
+const GRAPHS = [{"id": "path", "label": "Ascent trajectory"}, {"id": "earth", "label": "Orbit around Earth", "diagram": true}, {"id": "budget", "label": "Delta-v budget"}];
+const PRESETS = [{"label": "Reference flight", "values": {"kick": 3, "pay": 1000, "prop2": 15, "isp2": 340}}, {"label": "No pitch kick", "values": {"kick": 0, "pay": 1000, "prop2": 15, "isp2": 340}}, {"label": "Too much kick", "values": {"kick": 5, "pay": 1000, "prop2": 15, "isp2": 340}}];
+const CHALLENGE = "Put a 2000 kg payload into orbit with the standard stage 2 (15 t, Isp 340 s).";
+const CHALLENGE_SOLUTION = {"kick": 2.5, "pay": 2000, "prop2": 15, "isp2": 340};
+let lastFlight = null;
+const challengeTest = CHALLENGE ? (p) => (p.pay >= 2000 && p.prop2 === 15 && p.isp2 === 340 && !!lastFlight && lastFlight.orbit) : null;
+const cv = document.getElementById("c"), ctx = cv.getContext("2d");
+const W = cv.width, H = cv.height, p = {};
+let graph = GRAPHS.length ? GRAPHS[0].id : "main";
+const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+const fmt = v => (Math.abs(v) >= 1000 || (Math.abs(v) > 0 && Math.abs(v) < 0.01)) ? v.toExponential(2) : String(+v.toPrecision(4));
+function readout(html) {
+  document.getElementById("readout").innerHTML = html;
+  cv.setAttribute("aria-label", document.title + ". " + html.replace(/<[^>]+>/g, " ").replace(/&nbsp;/g, " "));  // screen readers get the numbers
+}
+let lastOk = null;
+// ---- plotting helpers: every graph gets labelled axes with units ----
+function niceTicks(lo, hi, n) {
+  const raw = (hi - lo) / n, mag = Math.pow(10, Math.floor(Math.log10(raw))), f = raw / mag;
+  const step = (f < 1.5 ? 1 : f < 3 ? 2 : f < 7 ? 5 : 10) * mag, out = [];
+  for (let v = Math.ceil(lo / step - 1e-9) * step; v <= hi + 1e-9; v += step) out.push(+v.toPrecision(12));
+  return out;
+}
+function axes(o, C) {
+  const L = 66, R = 16, T = 34, B = 50, w = W - L - R, h = H - T - B;
+  const X = v => L + (v - o.x[0]) / (o.x[1] - o.x[0]) * w, Y = v => T + h - (v - o.y[0]) / (o.y[1] - o.y[0]) * h;
+  ctx.lineWidth = 1; ctx.font = "12px system-ui";
+  for (const xv of niceTicks(o.x[0], o.x[1], 6)) {
+    ctx.strokeStyle = C.line; ctx.beginPath(); ctx.moveTo(X(xv), T); ctx.lineTo(X(xv), T + h); ctx.stroke();
+    ctx.fillStyle = C.muted; ctx.textAlign = "center"; ctx.fillText(fmt(xv), X(xv), T + h + 16);
+  }
+  for (const yv of niceTicks(o.y[0], o.y[1], 5)) {
+    ctx.strokeStyle = C.line; ctx.beginPath(); ctx.moveTo(L, Y(yv)); ctx.lineTo(L + w, Y(yv)); ctx.stroke();
+    ctx.fillStyle = C.muted; ctx.textAlign = "right"; ctx.fillText(fmt(yv), L - 6, Y(yv) + 4);
+  }
+  ctx.strokeStyle = C.fg; ctx.beginPath(); ctx.moveTo(L, T); ctx.lineTo(L, T + h); ctx.lineTo(L + w, T + h); ctx.stroke();
+  ctx.fillStyle = C.fg; ctx.textAlign = "center"; ctx.font = "13px system-ui";
+  ctx.fillText(o.xl, L + w / 2, H - 8);
+  ctx.save(); ctx.translate(14, T + h / 2); ctx.rotate(-Math.PI / 2); ctx.fillText(o.yl, 0, 0); ctx.restore();
+  ctx.font = "bold 13px system-ui"; ctx.fillText(o.title || "", L + w / 2, 20);
+  return { X, Y, L, T, w, h };
+}
+function curve(f, a, color, x0, x1, n) {
+  n = n || 160; ctx.save(); ctx.beginPath(); ctx.rect(a.L, a.T, a.w, a.h); ctx.clip();   // never draw outside the plot area
+  ctx.strokeStyle = color; ctx.lineWidth = 2.5; ctx.beginPath();
+  for (let i = 0; i <= n; i++) { const x = x0 + (x1 - x0) * i / n, y = f(x); i ? ctx.lineTo(a.X(x), a.Y(y)) : ctx.moveTo(a.X(x), a.Y(y)); }
+  ctx.stroke(); ctx.restore();
+}
+function dot(a, x, y, color, label) {
+  ctx.fillStyle = color; ctx.beginPath(); ctx.arc(a.X(x), a.Y(y), 6, 0, 2 * Math.PI); ctx.fill();
+  if (label) { ctx.textAlign = "left"; ctx.font = "12px system-ui"; ctx.fillText(label, a.X(x) + 9, a.Y(y) - 8); }
+}
+function draw() {
+  ctx.clearRect(0, 0, W, H);
+  const C = { fg: css("--fg"), muted: css("--muted"), accent: css("--accent"), line: css("--line"), good: css("--good"), bad: css("--bad") };
+const g0 = 9.80665, mu = 3.986004418e14, Re = 6.371e6, hT = 200e3, om = 0.04, cda = 2.5;
+const ST = [{ prop: 90000, dry: 7000, isp: 290, F: 1.6e6 }, { prop: p.prop2 * 1000, dry: 1500, isp: p.isp2, F: 150e3 }];
+const elem = (x, y, vx, vy) => { const r = Math.hypot(x, y), eps = 0.5 * (vx * vx + vy * vy) - mu / r, h = x * vy - y * vx, e = Math.sqrt(Math.max(0, 1 + 2 * eps * h * h / mu / mu));
+  if (eps >= 0) return { a: Infinity, hp: h * h / mu / (1 + e) - Re, ha: Infinity, e }; const a = -mu / (2 * eps); return { a, hp: a * (1 - e) - Re, ha: a * (1 + e) - Re, e }; };
+const fly = (kick, pay, keep) => {
+  let x = 0, y = Re, vx = 0, vy = 0, m = pay + ST[0].prop + ST[0].dry + ST[1].prop + ST[1].dry, t = 0, k = 0, dt = 0.5; const prop = [ST[0].prop, ST[1].prop];
+  const kk = kick * Math.PI / 180, X = [x], Y = [y], K = [0], B = [0, 0, 0, 0]; let maxq = 0, tst = 0, cut = false;
+  const acc = (x, y, vx, vy, m, F, mode) => {
+    const r = Math.hypot(x, y), ux = x / r, uy = y / r, ex = uy, ey = -ux, v = Math.hypot(vx, vy), g = mu / r / r; let dx, dy;
+    if (mode === 0) { dx = ux; dy = uy; } else if (mode === 1) { dx = Math.cos(kk) * ux + Math.sin(kk) * ex; dy = Math.cos(kk) * uy + Math.sin(kk) * ey; }
+    else if (mode === 2) { if (v > 1) { dx = vx / v; dy = vy / v; } else { dx = ux; dy = uy; } }
+    else { const vr = vx * ux + vy * uy, vh = vx * ex + vy * ey, ac = om * om * (hT - (r - Re)) - 2 * om * vr; let s = F > 0 ? (g - vh * vh / r + ac) * m / F : 0; s = Math.max(-0.5, Math.min(0.95, s)); const c = Math.sqrt(1 - s * s); dx = s * ux + c * ex; dy = s * uy + c * ey; }
+    const D = 0.5 * 1.225 * Math.exp(-Math.max(r - Re, 0) / 8500) * v * v * cda, hx = v > 1e-9 ? vx / v : dx, hy = v > 1e-9 ? vy / v : dy;
+    return [vx, vy, F * dx / m - D * hx / m - g * ux, F * dy / m - D * hy / m - g * uy, F / m, g * (ux * hx + uy * hy), D / m, F / m * (1 - (dx * hx + dy * hy))];
+  };
+  while (t < 1500) {
+    const F = k < 2 ? ST[k].F : 0, md = k < 2 ? F / (ST[k].isp * g0) : 0;
+    const mode = k === 0 ? (t < 10 ? 0 : (t < 20 && kick > 0 ? 1 : 2)) : 3;
+    const h = md > 0 && prop[k] < md * dt ? prop[k] / md : dt;
+    const f = s => { const a = acc(s[0], s[1], s[2], s[3], s[4], F, mode); return [a[0], a[1], a[2], a[3], -md, a[4], a[5], a[6], a[7]]; };
+    const s0 = [x, y, vx, vy, m, ...B], k1 = f(s0), k2 = f(s0.map((q, i) => q + h / 2 * k1[i])), k3 = f(s0.map((q, i) => q + h / 2 * k2[i])), k4 = f(s0.map((q, i) => q + h * k3[i]));
+    const s1 = s0.map((q, i) => q + h * (k1[i] + 2 * k2[i] + 2 * k3[i] + k4[i]) / 6);
+    [x, y, vx, vy, m] = s1; for (let i = 0; i < 4; i++) B[i] = s1[5 + i]; t += h; if (md > 0) prop[k] -= md * h;
+    const r = Math.hypot(x, y), v = Math.hypot(vx, vy), q = 0.5 * 1.225 * Math.exp(-Math.max(r - Re, 0) / 8500) * v * v; if (q > maxq) maxq = q;
+    X.push(x); Y.push(y); K.push(k);
+    if (r < Re) break;
+    if (k < 2 && prop[k] <= 1e-6) { if (k === 1) break; if (!keep) m -= ST[0].dry; tst = t; k = 1; }
+    if (k === 1 && elem(x, y, vx, vy).a >= Re + hT) { cut = true; break; }
+  }
+  const el = elem(x, y, vx, vy), v = Math.hypot(vx, vy);
+  return { X, Y, K, el, B, v, t, maxq, tst, left: prop[1], cx: x, cy: y, cvx: vx, cvy: vy, orbit: el.hp >= 150e3 && Math.hypot(x, y) >= Re };
+};
+const s = fly(p.kick, p.pay, false); lastFlight = s;
+if (graph === "path") {
+  const dr = s.X.map((x, i) => Re * Math.atan2(x, s.Y[i]) / 1000), al = s.X.map((x, i) => (Math.hypot(x, s.Y[i]) - Re) / 1000);
+  const A = axes({ x: [0, Math.max(1600, Math.max(...dr) * 1.05)], y: [0, 320], xl: "downrange distance (km)", yl: "altitude (km)", title: "Ascent trajectory (blue: stage 1, green: stage 2)" }, C);
+  ctx.save(); ctx.beginPath(); ctx.rect(A.L, A.T, A.w, A.h); ctx.clip(); ctx.lineWidth = 2.5;
+  for (let i = 1; i < dr.length; i++) { ctx.strokeStyle = s.K[i] === 0 ? C.accent : C.good; ctx.beginPath(); ctx.moveTo(A.X(dr[i - 1]), A.Y(al[i - 1])); ctx.lineTo(A.X(dr[i]), A.Y(al[i])); ctx.stroke(); }
+  ctx.strokeStyle = C.muted; ctx.setLineDash([6, 4]); ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(A.L, A.Y(200)); ctx.lineTo(A.L + A.w, A.Y(200)); ctx.stroke(); ctx.setLineDash([]); ctx.restore();
+  ctx.fillStyle = C.muted; ctx.font = "12px system-ui"; ctx.textAlign = "left"; ctx.fillText("target 200 km", A.L + 8, A.Y(200) - 6);
+  dot(A, dr[dr.length - 1], Math.max(0, al[al.length - 1]), s.orbit ? C.good : C.bad, s.orbit ? "in orbit" : "not in orbit");
+} else if (graph === "earth") {
+  const A = axes({ x: [-8000, 8000], y: [-6800, 7600], xl: "x (km)", yl: "y (km)", title: "Seen from far away: the orbit after cut-off" }, C);
+  const R = Re / 1000; ctx.fillStyle = C.accent; ctx.globalAlpha = 0.2; ctx.beginPath(); ctx.ellipse(A.X(0), A.Y(0), A.X(R) - A.X(0), A.Y(0) - A.Y(R), 0, 0, 2 * Math.PI); ctx.fill(); ctx.globalAlpha = 1;
+  // coast after cut-off for about one orbit (semi-implicit Euler, 15 s steps), or until impact
+  ctx.strokeStyle = C.good; ctx.lineWidth = 1.5; ctx.setLineDash([4, 4]); ctx.beginPath();
+  let cx = s.cx, cy = s.cy, cvx = s.cvx, cvy = s.cvy;
+  for (let i = 0; i < 400; i++) { const r3 = Math.pow(Math.hypot(cx, cy), 3), d = 15; cvx -= mu * cx / r3 * d; cvy -= mu * cy / r3 * d; cx += cvx * d; cy += cvy * d; i ? ctx.lineTo(A.X(cx / 1000), A.Y(cy / 1000)) : ctx.moveTo(A.X(cx / 1000), A.Y(cy / 1000)); if (Math.hypot(cx, cy) < Re) break; }
+  ctx.stroke(); ctx.setLineDash([]);
+  ctx.strokeStyle = C.fg; ctx.lineWidth = 2.5; ctx.beginPath(); s.X.forEach((x, i) => { i ? ctx.lineTo(A.X(x / 1000), A.Y(s.Y[i] / 1000)) : ctx.moveTo(A.X(x / 1000), A.Y(s.Y[i] / 1000)); }); ctx.stroke();
+} else {
+  const A = axes({ x: [0, 5], y: [0, 11000], xl: "", yl: "delta-v (m/s)", title: "Delta-v budget: ideal - gravity - drag - steering = final speed" }, C);
+  const vals = [s.B[0], s.B[1], s.B[2], s.B[3], s.v], names = ["ideal", "gravity", "drag", "steering", "final speed"], cols = [C.fg, C.bad, C.muted, C.accent, C.good];
+  ctx.font = "12px system-ui"; ctx.textAlign = "center";
+  vals.forEach((v, i) => { const x0 = A.X(i + 0.15), x1 = A.X(i + 0.85); ctx.fillStyle = cols[i]; ctx.globalAlpha = 0.6; ctx.fillRect(x0, A.Y(Math.min(v, 11000)), x1 - x0, A.Y(0) - A.Y(Math.min(v, 11000))); ctx.globalAlpha = 1; ctx.fillStyle = C.fg; ctx.fillText(names[i] + " " + v.toFixed(0), A.X(i + 0.5), A.Y(Math.min(v, 11000)) - 6); });
+}
+readout((s.orbit ? "<b>in orbit</b>" : "<b>not in orbit</b>") + " &nbsp; perigee " + (s.el.hp / 1000).toFixed(0) + " km, apogee " + (isFinite(s.el.ha) ? (s.el.ha / 1000).toFixed(0) : "escape") + " km &nbsp; staging at t = " + s.tst.toFixed(0) + " s &nbsp; stage-2 propellant left " + s.left.toFixed(0) + " kg &nbsp; losses: gravity " + s.B[1].toFixed(0) + ", drag " + s.B[2].toFixed(0) + ", steering " + s.B[3].toFixed(0) + " m/s &nbsp; max dynamic pressure " + (s.maxq / 1000).toFixed(1) + " kPa");
+
+  const ch = document.getElementById("challenge");
+  if (challengeTest) { const ok = !!challengeTest(p); ch.hidden = false; ch.dataset.ok = String(ok);
+    ch.innerHTML = "<b>Challenge:</b> " + CHALLENGE + " &nbsp; " + (ok ? "<b>Done!</b>" : "Not yet.");
+    if (ok !== lastOk) { document.getElementById("status").textContent = ok ? "Challenge done." : "Challenge not yet done."; lastOk = ok; } }
+}
+const box = document.getElementById("controls");
+const inputs = {};
+for (const q of PARAMS) {
+  p[q.id] = q.value;
+  const row = document.createElement("div"); row.className = "row";
+  row.innerHTML = `<label for="${q.id}">${q.label} (${q.unit || "no unit"})</label>` +
+    `<input id="${q.id}" type="range" min="${q.min}" max="${q.max}" step="${q.step}" value="${q.value}">` +
+    `<output for="${q.id}">${q.value}</output>`;
+  const inp = row.querySelector("input"), out = row.querySelector("output");
+  inputs[q.id] = [inp, out];
+  inp.addEventListener("input", () => { p[q.id] = +inp.value; out.textContent = inp.value; draw(); });
+  box.appendChild(row);
+}
+function setAll(vals) { for (const k in vals) { p[k] = vals[k]; if (inputs[k]) { inputs[k][0].value = vals[k]; inputs[k][1].textContent = vals[k]; } } draw(); }
+const DEFAULTS = Object.assign({}, p);
+document.getElementById("reset").addEventListener("click", () => setAll(DEFAULTS));
+for (const g of GRAPHS) {
+  const b = document.createElement("button"); b.type = "button"; b.textContent = g.label;
+  b.setAttribute("aria-pressed", String(g.id === graph));
+  b.addEventListener("click", () => { graph = g.id; for (const x of document.querySelectorAll("#graphs button")) x.setAttribute("aria-pressed", String(x === b)); draw(); });
+  document.getElementById("graphs").appendChild(b);
+}
+for (const pr of PRESETS) {
+  const b = document.createElement("button"); b.type = "button"; b.textContent = pr.label;
+  b.addEventListener("click", () => setAll(pr.values));
+  document.getElementById("presets").appendChild(b);
+}
+matchMedia("(prefers-color-scheme: dark)").addEventListener("change", draw);
+draw();
+</script>
+</body>
+</html>

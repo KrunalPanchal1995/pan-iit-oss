@@ -1,0 +1,281 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Session 4: fit a curved Arrhenius plot</title>
+<style>
+  :root { --bg:#ffffff; --fg:#14181f; --muted:#5b6472; --card:#f3f5f8; --accent:#003f7f; --good:#c86a00; --bad:#d81b60; --line:#d7dce3; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#0e1116; --fg:#e6e9ee; --muted:#9aa3b2; --card:#171b22; --accent:#3b8fe0; --good:#ffc857; --bad:#e0457b; --line:#2a313c; } }
+  * { box-sizing: border-box; }
+  body { margin:0; padding:16px; background:var(--bg); color:var(--fg); font:16px/1.5 system-ui, sans-serif; }
+  main { max-width: 780px; margin: 0 auto; }
+  h1 { font-size: 1.3rem; margin: 0 0 4px; }
+  p.sub { margin: 0 0 12px; color: var(--muted); }
+  .scroll { overflow-x:auto; }
+  canvas { width:100%; min-width:560px; height:auto; background:var(--card); border:1px solid var(--line); border-radius:8px; display:block; }
+  .sr { position:absolute; left:-9999px; }
+  .bar { display:flex; flex-wrap:wrap; gap:8px; margin:10px 0; }
+  button { font:inherit; padding:6px 12px; border:1px solid var(--line); background:var(--card); color:var(--fg); border-radius:6px; cursor:pointer; }
+  button[aria-pressed="true"] { border-color:var(--accent); color:var(--accent); font-weight:600; }
+  button:focus-visible, input:focus-visible { outline:3px solid var(--accent); outline-offset:2px; }
+  .row { display:grid; grid-template-columns: 11rem 1fr 6rem; gap:8px; align-items:center; margin:8px 0; }
+  .row output { text-align:right; font-variant-numeric: tabular-nums; }
+  @media (max-width: 560px) { .row { grid-template-columns: 1fr; gap:2px; } .row output { text-align:left; } }
+  input[type=range] { width:100%; accent-color: var(--accent); }
+  #readout, #challenge, .note { margin-top:10px; padding:10px 12px; background:var(--card); border-radius:8px; border:1px solid var(--line); }
+  #challenge[data-ok="true"] { border-color:var(--good); } #challenge[data-ok="true"] b { color:var(--good); }
+  .note { font-size:.85rem; color:var(--muted); }
+  a { color: var(--accent); }
+</style>
+</head>
+<body>
+<main>
+  <h1>Session 4: fit a curved Arrhenius plot</h1>
+  <p class="sub">Two parallel reactions bend the Arrhenius plot. Fit both channels, see the band at 2000 K, and find out how hot the data must go.</p>
+  <div class="bar" id="graphs" role="group" aria-label="Choose a graph"></div>
+  <div class="scroll"><canvas id="c" width="720" height="420" role="img" aria-label="Session 4: fit a curved Arrhenius plot: interactive plot"></canvas></div>
+  <div class="bar" id="presets" role="group" aria-label="Presets"></div>
+  <div id="controls"></div>
+  <div class="bar"><button id="reset" type="button">Reset</button></div>
+  <div id="readout"></div>
+  <div id="challenge" hidden></div>
+  <div id="status" class="sr" aria-live="polite"></div>
+  <p class="note">This is a simplified educational model. It is not a validated design tool and must not be used for real structures, electrical installations, vehicles, industrial processes or medical decisions.</p>
+  <p class="sub"><a href="https://github.com/KrunalPanchal1995/pan-iit-oss/tree/main/openarrhenius">Back to the repository</a></p>
+</main>
+<script>
+"use strict";
+const PARAMS = [{"id": "noise", "label": "Error of each k", "min": 1, "max": 20, "step": 1, "value": 3, "unit": "percent"}, {"id": "n", "label": "Number of points", "min": 5, "max": 20, "step": 1, "value": 12, "unit": ""}, {"id": "Thot", "label": "Hottest temperature measured", "min": 700, "max": 1600, "step": 100, "value": 1600, "unit": "K"}, {"id": "seed", "label": "Noise draw (a new random measurement)", "min": 1, "max": 30, "step": 1, "value": 1, "unit": ""}];
+const GRAPHS = [{"id": "fit", "label": "Data and fit"}, {"id": "repeats", "label": "100 repeats at 2000 K"}, {"id": "channels", "label": "The two channels", "diagram": true}];
+const PRESETS = [{"label": "Roadmap data (500 to 1600 K)", "values": {"noise": 3, "n": 12, "Thot": 1600, "seed": 1}}, {"label": "Stop at the crossover (1100 K)", "values": {"noise": 3, "n": 12, "Thot": 1100, "seed": 1}}, {"label": "Stop at 900 K", "values": {"noise": 3, "n": 12, "Thot": 900, "seed": 1}}, {"label": "Noisy (20 percent)", "values": {"noise": 20, "n": 12, "Thot": 1600, "seed": 1}}];
+const CHALLENGE = "With 3 percent error or more and at most 12 points, find the hottest temperature to stop at so that at least 95 of 100 repeated experiments predict k(2000 K) within a factor 1.5, as low as the slider allows (the furnace is expensive).";
+const CHALLENGE_SOLUTION = {"noise": 3, "n": 12, "Thot": 1300, "seed": 1};
+const challengeTest = CHALLENGE ? (p) => (p.noise >= 3 && p.n <= 12 && p.Thot <= 1300 && repeatsFor(p).within15 >= 0.95) : null;
+// ---- the model: two Arrhenius channels, Levenberg-Marquardt fit of ln k, delta-method band ----
+const RG = 8.314462618, PT = [Math.log(1e7), 50, Math.log(1e14), 200], TT2 = 2000;
+const TTAB = [[1, 12.706], [2, 4.303], [3, 3.182], [4, 2.776], [5, 2.571], [6, 2.447], [7, 2.365], [8, 2.306], [9, 2.262], [10, 2.228], [12, 2.179], [15, 2.131], [20, 2.086], [30, 2.042]];
+const t95 = df => { if (df >= 30) return df < 120 ? 2.042 : 1.98; let t = 12.706; TTAB.forEach(r => { if (r[0] <= df) t = r[1]; }); return t; };
+const lse = (a, b) => Math.max(a, b) + Math.log1p(Math.exp(-Math.abs(a - b)));
+const lnk = (q, T) => { const x = 1000 / T; return lse(q[0] - q[1] * x / RG, q[2] - q[3] * x / RG); };
+function jac(q, T) {
+  const x = 1000 / T, t1 = q[0] - q[1] * x / RG, t2 = q[2] - q[3] * x / RG, y = lse(t1, t2), w1 = Math.exp(t1 - y), w2 = Math.exp(t2 - y);
+  return [w1, -w1 * x / RG, w2, -w2 * x / RG];
+}
+function solve(A, b) {                     // Gaussian elimination with partial pivoting; throws if singular
+  const n = b.length, M = A.map((r, i) => r.concat([b[i]]));
+  for (let c = 0; c < n; c++) {
+    let piv = c; for (let r = c + 1; r < n; r++) if (Math.abs(M[r][c]) > Math.abs(M[piv][c])) piv = r;
+    if (!(Math.abs(M[piv][c]) > 1e-300)) throw new Error("singular");
+    [M[c], M[piv]] = [M[piv], M[c]];
+    for (let r = c + 1; r < n; r++) { const f = M[r][c] / M[c][c]; for (let k = c; k <= n; k++) M[r][k] -= f * M[c][k]; }
+  }
+  const x = new Array(n).fill(0);
+  for (let r = n - 1; r >= 0; r--) { let s = M[r][n]; for (let k = r + 1; k < n; k++) s -= M[r][k] * x[k]; x[r] = s / M[r][r]; }
+  return x;
+}
+function inv4(A) { const n = A.length, cols = []; for (let j = 0; j < n; j++) cols.push(solve(A, A.map((_, i) => i === j ? 1 : 0))); return A.map((_, i) => cols.map(c => c[i])); }
+const dot2 = (a, b) => a.reduce((s, v, i) => s + v * b[i], 0);
+function lm(y, T, p0) {
+  let q = p0.slice(), res = y.map((v, i) => v - lnk(q, T[i])), cur = dot2(res, res), lam = 1e-2;
+  for (let it = 0; it < 400; it++) {
+    const J = T.map(t => jac(q, t)), s = [0, 1, 2, 3].map(c => Math.sqrt(J.reduce((a, r) => a + r[c] * r[c], 0)) + 1e-12);
+    const Js = J.map(r => r.map((v, c) => v / s[c])), A = [0, 1, 2, 3].map(a => [0, 1, 2, 3].map(b => Js.reduce((t, r) => t + r[a] * r[b], 0)));
+    const g = [0, 1, 2, 3].map(a => Js.reduce((t, r, i) => t + r[a] * res[i], 0));
+    let moved = false, done = false;
+    for (let tr = 0; tr < 60; tr++) {
+      let step; try { step = solve(A.map((r, i) => r.map((v, j) => v + (i === j ? lam * (A[i][i] + 1e-12) : 0))), g).map((v, c) => v / s[c]); } catch (e) { lam *= 10; continue; }
+      const qn = q.map((v, c) => v + step[c]), rn = y.map((v, i) => v - lnk(qn, T[i])), nw = dot2(rn, rn);
+      if (isFinite(nw) && nw < cur) { done = cur - nw < 1e-14 * Math.max(cur, 1e-300) || Math.max(...step.map((v, c) => Math.abs(v / s[c]))) < 1e-10; q = qn; res = rn; cur = nw; lam = Math.max(lam / 3, 1e-12); moved = true; break; }
+      lam *= 4;
+    }
+    if (!moved || done) break;
+  }
+  return [q, cur];
+}
+function polyfit1(x, y) { const n = x.length, mx = x.reduce((a, b) => a + b, 0) / n, my = y.reduce((a, b) => a + b, 0) / n; let sxy = 0, sxx = 0; for (let i = 0; i < n; i++) { sxy += (x[i] - mx) * (y[i] - my); sxx += (x[i] - mx) ** 2; } const b1 = sxy / sxx; return [b1, my - b1 * mx]; }
+function startVals(T, k) {
+  const idx = T.map((_, i) => i).sort((a, b) => T[a] - T[b]), Ts = idx.map(i => T[i]), ys = idx.map(i => Math.log(k[i])), xs = Ts.map(t => 1000 / t), n = Ts.length, out = [];
+  [...new Set([Math.max(2, Math.floor(n / 3)), Math.max(2, Math.floor(n / 2)), Math.max(2, Math.floor(2 * n / 3))])].sort((a, b) => a - b).forEach(h0 => {
+    const h = Math.min(h0, n - 2), [b1h, b0h] = polyfit1(xs.slice(0, h), ys.slice(0, h)), [b1c, b0c] = polyfit1(xs.slice(h), ys.slice(h));
+    out.push([b0c, -b1c * RG, b0h, -b1h * RG]);
+  });
+  return out;
+}
+function fit2(T, k) {                      // null if fewer than 5 points
+  const n = T.length; if (n < 5) return null;
+  const y = k.map(Math.log); let best = null;
+  startVals(T, k).forEach(p0 => { const r = lm(y, T, p0); if (!best || r[1] < best[1]) best = r; });
+  let [q, rss] = best; if (q[1] > q[3]) q = [q[2], q[3], q[0], q[1]];
+  const df = n - 4, s = Math.sqrt(rss / df), J = T.map(t => jac(q, t)), sc = [0, 1, 2, 3].map(c => Math.sqrt(J.reduce((a, r) => a + r[c] * r[c], 0)) + 1e-300);
+  const A = [0, 1, 2, 3].map(a => [0, 1, 2, 3].map(b => J.reduce((t, r) => t + r[a] * r[b] / (sc[a] * sc[b]), 0) + (a === b ? 1e-13 : 0)));
+  let cov; try { const I = inv4(A); cov = I.map((r, i) => r.map((v, j) => s * s * v / (sc[i] * sc[j]))); } catch (e) { cov = A.map(r => r.map(() => NaN)); }
+  return { p: q, cov, df, s, rss };
+}
+function bandAt(f, T) {                    // [central, lower, upper] in k
+  const g = jac(f.p, T); let v = 0; for (let i = 0; i < 4; i++) for (let j = 0; j < 4; j++) v += g[i] * f.cov[i][j] * g[j];
+  const m = lnk(f.p, T), h = t95(f.df) * Math.sqrt(Math.max(v, 0)); return [Math.exp(m), Math.exp(m - h), Math.exp(m + h)];
+}
+function lineFit(T, k) { const x = T.map(t => 1000 / t), y = k.map(Math.log), [b1, b0] = polyfit1(x, y); let rss = 0; x.forEach((v, i) => { rss += (y[i] - b0 - b1 * v) ** 2; }); return { b0, b1, rss, s: Math.sqrt(rss / (T.length - 2)) }; }
+const aicc = (rss, n, m) => n * Math.log(Math.max(rss, 1e-300) / n) + 2 * m + 2 * m * (m + 1) / (n - m - 1);
+function crossover(q) { const dE = q[1] - q[3]; if (dE === 0) return null; const x = RG * (q[0] - q[2]) / dE; return x > 0 ? 1000 / x : null; }
+function mulberry(seed) { let a = (seed * 2654435761) >>> 0; return () => { a = (a + 0x6D2B79F5) | 0; let t = Math.imul(a ^ (a >>> 15), 1 | a); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; }
+const gauss = u => Math.sqrt(-2 * Math.log(1 - u())) * Math.cos(2 * Math.PI * u());
+const grid = (n, hot) => Array.from({ length: n }, (_, i) => 500 + (hot - 500) * i / (n - 1));
+const trueLnk = T => lnk(PT, T);
+function experiment(p, seed) {             // one noisy data set and its fits
+  const u = mulberry(seed * 7919), T = grid(p.n, p.Thot), k = T.map(t => Math.exp(trueLnk(t) + p.noise / 100 * gauss(u)));
+  let f = null; try { f = fit2(T, k); } catch (e) { f = null; }
+  return { T, k, f, line: lineFit(T, k) };
+}
+const REP = { key: "", out: null };
+function repeatsFor(p) {                   // 100 repeated experiments (cached while the parameters stay the same)
+  const key = [p.noise, p.n, p.Thot].join("|"); if (REP.key === key) return REP.out;
+  const tr = Math.exp(trueLnk(TT2)), ratios = []; let w = 0, c = 0; const facs = [];
+  for (let r = 0; r < 100; r++) {
+    const e = experiment(p, 1000 + r); let ok = false;
+    if (e.f && isFinite(e.f.p[0])) { const b = bandAt(e.f, TT2); if (isFinite(b[0]) && isFinite(b[1]) && isFinite(b[2])) { ok = true; const q = b[0] / tr; ratios.push(q); facs.push(b[2] / b[1]); if (q > 1 / 1.5 && q < 1.5) w++; if (b[1] <= tr && tr <= b[2]) c++; } }
+    if (!ok) { ratios.push(NaN); facs.push(NaN); }
+  }
+  const fin = facs.filter(isFinite).sort((a, b) => a - b);
+  REP.key = key; REP.out = { ratios, within15: w / 100, coverage: c / 100, medFactor: fin.length ? fin[Math.floor(fin.length / 2)] : NaN };
+  return REP.out;
+}
+const cv = document.getElementById("c"), ctx = cv.getContext("2d");
+const W = cv.width, H = cv.height, p = {};
+let graph = GRAPHS.length ? GRAPHS[0].id : "main";
+const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+const fmt = v => (Math.abs(v) >= 1000 || (Math.abs(v) > 0 && Math.abs(v) < 0.01)) ? v.toExponential(2) : String(+v.toPrecision(4));
+function readout(html) {
+  document.getElementById("readout").innerHTML = html;
+  cv.setAttribute("aria-label", document.title + ". " + html.replace(/<[^>]+>/g, " ").replace(/&nbsp;/g, " "));  // screen readers get the numbers
+}
+let lastOk = null;
+// ---- plotting helpers: every graph gets labelled axes with units ----
+function niceTicks(lo, hi, n) {
+  const raw = (hi - lo) / n, mag = Math.pow(10, Math.floor(Math.log10(raw))), f = raw / mag;
+  const step = (f < 1.5 ? 1 : f < 3 ? 2 : f < 7 ? 5 : 10) * mag, out = [];
+  for (let v = Math.ceil(lo / step - 1e-9) * step; v <= hi + 1e-9; v += step) out.push(+v.toPrecision(12));
+  return out;
+}
+function axes(o, C) {
+  const L = 66, R = 16, T = 34, B = 50, w = W - L - R, h = H - T - B;
+  const X = v => L + (v - o.x[0]) / (o.x[1] - o.x[0]) * w, Y = v => T + h - (v - o.y[0]) / (o.y[1] - o.y[0]) * h;
+  ctx.lineWidth = 1; ctx.font = "12px system-ui";
+  for (const xv of niceTicks(o.x[0], o.x[1], 6)) {
+    ctx.strokeStyle = C.line; ctx.beginPath(); ctx.moveTo(X(xv), T); ctx.lineTo(X(xv), T + h); ctx.stroke();
+    ctx.fillStyle = C.muted; ctx.textAlign = "center"; ctx.fillText(fmt(xv), X(xv), T + h + 16);
+  }
+  for (const yv of niceTicks(o.y[0], o.y[1], 5)) {
+    ctx.strokeStyle = C.line; ctx.beginPath(); ctx.moveTo(L, Y(yv)); ctx.lineTo(L + w, Y(yv)); ctx.stroke();
+    ctx.fillStyle = C.muted; ctx.textAlign = "right"; ctx.fillText(fmt(yv), L - 6, Y(yv) + 4);
+  }
+  ctx.strokeStyle = C.fg; ctx.beginPath(); ctx.moveTo(L, T); ctx.lineTo(L, T + h); ctx.lineTo(L + w, T + h); ctx.stroke();
+  ctx.fillStyle = C.fg; ctx.textAlign = "center"; ctx.font = "13px system-ui";
+  ctx.fillText(o.xl, L + w / 2, H - 8);
+  ctx.save(); ctx.translate(14, T + h / 2); ctx.rotate(-Math.PI / 2); ctx.fillText(o.yl, 0, 0); ctx.restore();
+  ctx.font = "bold 13px system-ui"; ctx.fillText(o.title || "", L + w / 2, 20);
+  return { X, Y, L, T, w, h };
+}
+function curve(f, a, color, x0, x1, n) {
+  n = n || 160; ctx.save(); ctx.beginPath(); ctx.rect(a.L, a.T, a.w, a.h); ctx.clip();   // never draw outside the plot area
+  ctx.strokeStyle = color; ctx.lineWidth = 2.5; ctx.beginPath();
+  for (let i = 0; i <= n; i++) { const x = x0 + (x1 - x0) * i / n, y = f(x); i ? ctx.lineTo(a.X(x), a.Y(y)) : ctx.moveTo(a.X(x), a.Y(y)); }
+  ctx.stroke(); ctx.restore();
+}
+function dot(a, x, y, color, label) {
+  ctx.fillStyle = color; ctx.beginPath(); ctx.arc(a.X(x), a.Y(y), 6, 0, 2 * Math.PI); ctx.fill();
+  if (label) { ctx.textAlign = "left"; ctx.font = "12px system-ui"; ctx.fillText(label, a.X(x) + 9, a.Y(y) - 8); }
+}
+function draw() {
+  ctx.clearRect(0, 0, W, H);
+  const C = { fg: css("--fg"), muted: css("--muted"), accent: css("--accent"), line: css("--line"), good: css("--good"), bad: css("--bad") };
+  const trK = Math.exp(trueLnk(TT2)), xc = 1000 / crossover(PT);
+  let msg = "";
+  if (graph === "fit") {
+    const e = experiment(p, p.seed), f = e.f;
+    const A = axes({ x: [0.4, 2.1], y: [2, 24], xl: "1000 / T (1/K x 1000), hot on the left", yl: "ln k (k in 1/s)", title: "Data, straight line and two-channel fit" }, C);
+    curve(x => trueLnk(1000 / x), A, C.muted, 0.4, 2.1);
+    curve(x => e.line.b0 + e.line.b1 * x, A, C.bad, 0.4, 2.1);
+    if (f) {
+      curve(x => lnk(f.p, 1000 / x), A, C.accent, 0.4, 2.1);
+      const lo = x => { const b = bandAt(f, 1000 / x); return Math.log(b[1]); }, hi = x => { const b = bandAt(f, 1000 / x); return Math.log(b[2]); };
+      ctx.save(); ctx.globalAlpha = 0.45; curve(lo, A, C.accent, 0.4, 2.1); curve(hi, A, C.accent, 0.4, 2.1); ctx.restore();
+    }
+    ctx.fillStyle = C.good; e.T.forEach(t => { ctx.beginPath(); ctx.arc(A.X(1000 / t), A.Y(Math.log(e.k[e.T.indexOf(t)])), 4.5, 0, 2 * Math.PI); ctx.fill(); });
+    ctx.strokeStyle = C.fg; ctx.lineWidth = 1.5; ctx.setLineDash([4, 4]); ctx.beginPath(); ctx.moveTo(A.X(0.5), A.T); ctx.lineTo(A.X(0.5), A.T + A.h); ctx.stroke(); ctx.setLineDash([]);
+    ctx.font = "12px system-ui"; ctx.textAlign = "left";
+    const lx = A.X(0.56), ly = A.T + A.h - 76;
+    ctx.fillStyle = C.good; ctx.fillText("orange dots: data", lx, ly);
+    ctx.fillStyle = C.muted; ctx.fillText("grey: true law", lx, ly + 16);
+    ctx.fillStyle = C.bad; ctx.fillText("red: straight line", lx, ly + 32);
+    ctx.fillStyle = C.accent; ctx.fillText("blue: two-channel fit and band", lx, ly + 48);
+    ctx.fillStyle = C.fg; ctx.textAlign = "right"; ctx.fillText("2000 K", A.X(0.5) - 4, A.T + A.h - 8);
+    const lineK = Math.exp(e.line.b0 + e.line.b1 * 0.5);
+    msg = "straight line: k(2000 K) is " + (trK / lineK).toFixed(1) + " times too " + (lineK < trK ? "low" : "high") + " (s = " + e.line.s.toFixed(3) + "). ";
+    if (f) {
+      const b = bandAt(f, TT2), ao = aicc(e.line.rss, p.n, 2), at = p.n > 5 ? aicc(f.rss, p.n, 4) : NaN, xo = crossover(f.p);
+      msg += "Two channels: Ea1 = " + f.p[1].toFixed(1) + ", Ea2 = " + f.p[3].toFixed(1) + " kJ/mol (true 50 and 200), s = " + f.s.toFixed(4) + ", crossover " + (xo && xo > 100 ? xo.toFixed(0) + " K" : "none") + ". k(2000 K) = " + fmt(b[0]) + " per s, " + (isFinite(b[1]) && isFinite(b[2]) ? "95 percent interval " + fmt(b[1]) + " to " + fmt(b[2]) + " (true " + fmt(trK) + (b[1] <= trK && trK <= b[2] ? ", inside" : ", OUTSIDE") + "; " : "no usable interval: the two channels cannot be told apart (true " + fmt(trK) + "; ") + "fit/true = " + (b[0] / trK).toFixed(2) + ")." + (isFinite(at) ? " AICc line minus two channels: " + (ao - at).toFixed(1) + "." : "");
+    } else msg += "The two-channel fit failed for this data set.";
+  } else if (graph === "repeats") {
+    const R = repeatsFor(p), L2 = Math.log10(1.5);
+    const A = axes({ x: [0, 100], y: [-1, 1], xl: "repeated experiment (sorted by prediction)", yl: "log10 of fitted k / true k at 2000 K", title: "100 repeated experiments: where does the prediction land?" }, C);
+    const v = R.ratios.map(r => isFinite(r) ? Math.max(-1, Math.min(1, Math.log10(r))) : null).filter(r => r !== null).sort((a, b) => a - b);
+    [[0, C.muted], [L2, C.good], [-L2, C.good]].forEach(l => { ctx.strokeStyle = l[1]; ctx.lineWidth = 1.5; ctx.setLineDash(l[0] ? [5, 4] : []); ctx.beginPath(); ctx.moveTo(A.L, A.Y(l[0])); ctx.lineTo(A.L + A.w, A.Y(l[0])); ctx.stroke(); });
+    ctx.setLineDash([]);
+    v.forEach((y, i) => { ctx.fillStyle = Math.abs(y) < L2 ? C.accent : C.bad; ctx.beginPath(); ctx.arc(A.X(i + 0.5), A.Y(y), 3.5, 0, 2 * Math.PI); ctx.fill(); });
+    ctx.font = "12px system-ui"; ctx.textAlign = "left"; ctx.fillStyle = C.good; ctx.fillText("orange: a factor 1.5 either way", A.L + 8, A.T + 16);
+    ctx.fillStyle = C.bad; ctx.fillText("red: outside (beyond a factor 10: drawn at the edge)", A.L + 8, A.T + 32);
+    msg = "Within a factor 1.5: " + Math.round(100 * R.within15) + " of 100. The 95 percent interval holds the true k in " + Math.round(100 * R.coverage) + " of 100 (about 95 expected). Median interval factor (upper/lower): " + fmt(R.medFactor) + ".";
+  } else {
+    const A = axes({ x: [0.4, 2.1], y: [-6, 24], xl: "1000 / T (1/K x 1000), hot on the left", yl: "ln k (k in 1/s)", title: "Two Arrhenius lines add up to a curve" }, C);
+    ctx.fillStyle = C.good; ctx.globalAlpha = 0.18; ctx.fillRect(A.X(2.0), A.T, A.X(1000 / p.Thot) - A.X(2.0), A.h); ctx.globalAlpha = 1;
+    curve(x => PT[0] - PT[1] * x / RG, A, C.accent, 0.4, 2.1); curve(x => PT[2] - PT[3] * x / RG, A, C.bad, 0.4, 2.1); curve(x => trueLnk(1000 / x), A, C.fg, 0.4, 2.1);
+    ctx.strokeStyle = C.muted; ctx.lineWidth = 1.5; ctx.setLineDash([4, 4]); ctx.beginPath(); ctx.moveTo(A.X(xc), A.T); ctx.lineTo(A.X(xc), A.Y(trueLnk(1000 / xc))); ctx.stroke(); ctx.setLineDash([]);
+    ctx.font = "12px system-ui"; ctx.textAlign = "left";
+    ctx.fillStyle = C.muted; ctx.fillText("crossover " + (1000 / xc).toFixed(0) + " K", A.X(xc) + 6, A.T + 16);
+    const ly = A.T + A.h - 66, lx = A.L + 10;
+    ctx.fillStyle = C.accent; ctx.fillText("blue: channel 1, Ea = 50 kJ/mol", lx, ly);
+    ctx.fillStyle = C.bad; ctx.fillText("red: channel 2, Ea = 200 kJ/mol", lx, ly + 16);
+    ctx.fillStyle = C.fg; ctx.fillText("black: the sum, what the lab measures", lx, ly + 32);
+    ctx.fillStyle = C.good; ctx.fillText("shaded: data window (500 to " + p.Thot + " K)", lx, ly + 48);
+    msg = "The data window ends at " + p.Thot + " K; the crossover is at " + (1000 / xc).toFixed(0) + " K. " + (p.Thot < 1000 / xc ? "The window stops before the crossover: the second channel is almost invisible in the data." : p.Thot < 1000 / xc + 150 ? "The window ends just past the crossover: the second channel shows only a little." : "The window reaches well past the crossover, so both channels are visible.") + " At 2000 K the second channel carries " + (100 * Math.exp(PT[2] - PT[3] * 0.5 / RG - trueLnk(TT2))).toFixed(1) + " percent of k.";
+  }
+  readout(msg);
+  const ch = document.getElementById("challenge");
+  if (challengeTest) { const ok = !!challengeTest(p); ch.hidden = false; ch.dataset.ok = String(ok);
+    ch.innerHTML = "<b>Challenge:</b> " + CHALLENGE + " &nbsp; " + (ok ? "<b>Done!</b>" : "Not yet.");
+    if (ok !== lastOk) { document.getElementById("status").textContent = ok ? "Challenge done." : "Challenge not yet done."; lastOk = ok; } }
+}
+const box = document.getElementById("controls");
+const inputs = {};
+for (const q of PARAMS) {
+  p[q.id] = q.value;
+  const row = document.createElement("div"); row.className = "row";
+  row.innerHTML = `<label for="${q.id}">${q.label} (${q.unit || "no unit"})</label>` +
+    `<input id="${q.id}" type="range" min="${q.min}" max="${q.max}" step="${q.step}" value="${q.value}">` +
+    `<output for="${q.id}">${q.value}</output>`;
+  const inp = row.querySelector("input"), out = row.querySelector("output");
+  inputs[q.id] = [inp, out];
+  inp.addEventListener("input", () => { p[q.id] = +inp.value; out.textContent = inp.value; draw(); });
+  box.appendChild(row);
+}
+function setAll(vals) { for (const k in vals) { p[k] = vals[k]; if (inputs[k]) { inputs[k][0].value = vals[k]; inputs[k][1].textContent = vals[k]; } } draw(); }
+const DEFAULTS = Object.assign({}, p);
+document.getElementById("reset").addEventListener("click", () => setAll(DEFAULTS));
+for (const g of GRAPHS) {
+  const b = document.createElement("button"); b.type = "button"; b.textContent = g.label;
+  b.setAttribute("aria-pressed", String(g.id === graph));
+  b.addEventListener("click", () => { graph = g.id; for (const x of document.querySelectorAll("#graphs button")) x.setAttribute("aria-pressed", String(x === b)); draw(); });
+  document.getElementById("graphs").appendChild(b);
+}
+for (const pr of PRESETS) {
+  const b = document.createElement("button"); b.type = "button"; b.textContent = pr.label;
+  b.addEventListener("click", () => setAll(pr.values));
+  document.getElementById("presets").appendChild(b);
+}
+matchMedia("(prefers-color-scheme: dark)").addEventListener("change", draw);
+draw();
+</script>
+</body>
+</html>

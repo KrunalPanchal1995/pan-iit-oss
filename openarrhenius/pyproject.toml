@@ -1,0 +1,11 @@
+[project]
+name = "openarrhenius"
+version = "0.1.0"
+description = "Fit k(T) with the Arrhenius law and report Ea and A with uncertainty bands, from scratch in 4 sessions."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+dependencies = ["numpy", "matplotlib"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

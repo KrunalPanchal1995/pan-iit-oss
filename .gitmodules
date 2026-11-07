@@ -118,15 +118,9 @@
 [submodule "openphtitration"]
 	path = openphtitration
 	url = https://github.com/KrunalPanchal1995/openphtitration.git
-[submodule "openbatterycell"]
-	path = openbatterycell
-	url = https://github.com/KrunalPanchal1995/openbatterycell.git
 [submodule "openreactionrate"]
 	path = openreactionrate
 	url = https://github.com/KrunalPanchal1995/openreactionrate.git
-[submodule "openarrhenius"]
-	path = openarrhenius
-	url = https://github.com/KrunalPanchal1995/openarrhenius.git
 [submodule "openignition"]
 	path = openignition
 	url = https://github.com/KrunalPanchal1995/openignition.git
@@ -148,9 +142,6 @@
 [submodule "openepidemic"]
 	path = openepidemic
 	url = https://github.com/KrunalPanchal1995/openepidemic.git
-[submodule "openbeam"]
-	path = openbeam
-	url = https://github.com/KrunalPanchal1995/openbeam.git
 [submodule "opentruss"]
 	path = opentruss
 	url = https://github.com/KrunalPanchal1995/opentruss.git
@@ -181,9 +172,6 @@
 [submodule "opensculpt"]
 	path = opensculpt
 	url = https://github.com/KrunalPanchal1995/opensculpt.git
-[submodule "openbinary"]
-	path = openbinary
-	url = https://github.com/KrunalPanchal1995/openbinary.git
 [submodule "openpacket"]
 	path = openpacket
 	url = https://github.com/KrunalPanchal1995/openpacket.git
@@ -250,12 +238,6 @@
 [submodule "openkymo"]
 	path = openkymo
 	url = https://github.com/KrunalPanchal1995/openkymo.git
-[submodule "openabel"]
-	path = openabel
-	url = https://github.com/KrunalPanchal1995/openabel.git
-[submodule "openalias"]
-	path = openalias
-	url = https://github.com/KrunalPanchal1995/openalias.git
 [submodule "openmechanism"]
 	path = openmechanism
 	url = https://github.com/KrunalPanchal1995/openmechanism.git
@@ -313,12 +295,6 @@
 [submodule "openflamevolume"]
 	path = openflamevolume
 	url = https://github.com/KrunalPanchal1995/openflamevolume.git
-[submodule "openairfoil"]
-	path = openairfoil
-	url = https://github.com/KrunalPanchal1995/openairfoil.git
-[submodule "openascent"]
-	path = openascent
-	url = https://github.com/KrunalPanchal1995/openascent.git
 [submodule "openclimate"]
 	path = openclimate
 	url = https://github.com/KrunalPanchal1995/openclimate.git

@@ -1,0 +1,233 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Session 4: carries in parallel</title>
+<style>
+  :root { --bg:#ffffff; --fg:#14181f; --muted:#5b6472; --card:#f3f5f8; --accent:#003f7f; --good:#c86a00; --bad:#d81b60; --line:#d7dce3; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#0e1116; --fg:#e6e9ee; --muted:#9aa3b2; --card:#171b22; --accent:#3b8fe0; --good:#ffc857; --bad:#e0457b; --line:#2a313c; } }
+  * { box-sizing: border-box; }
+  body { margin:0; padding:16px; background:var(--bg); color:var(--fg); font:16px/1.5 system-ui, sans-serif; }
+  main { max-width: 780px; margin: 0 auto; }
+  h1 { font-size: 1.3rem; margin: 0 0 4px; }
+  p.sub { margin: 0 0 12px; color: var(--muted); }
+  .scroll { overflow-x:auto; }
+  canvas { width:100%; min-width:560px; height:auto; background:var(--card); border:1px solid var(--line); border-radius:8px; display:block; }
+  .sr { position:absolute; left:-9999px; }
+  .bar { display:flex; flex-wrap:wrap; gap:8px; margin:10px 0; }
+  button { font:inherit; padding:6px 12px; border:1px solid var(--line); background:var(--card); color:var(--fg); border-radius:6px; cursor:pointer; }
+  button[aria-pressed="true"] { border-color:var(--accent); color:var(--accent); font-weight:600; }
+  button:focus-visible, input:focus-visible { outline:3px solid var(--accent); outline-offset:2px; }
+  .row { display:grid; grid-template-columns: 11rem 1fr 6rem; gap:8px; align-items:center; margin:8px 0; }
+  .row output { text-align:right; font-variant-numeric: tabular-nums; }
+  @media (max-width: 560px) { .row { grid-template-columns: 1fr; gap:2px; } .row output { text-align:left; } }
+  input[type=range] { width:100%; accent-color: var(--accent); }
+  #readout, #challenge, .note { margin-top:10px; padding:10px 12px; background:var(--card); border-radius:8px; border:1px solid var(--line); }
+  #challenge[data-ok="true"] { border-color:var(--good); } #challenge[data-ok="true"] b { color:var(--good); }
+  .note { font-size:.85rem; color:var(--muted); }
+  a { color: var(--accent); }
+</style>
+</head>
+<body>
+<main>
+  <h1>Session 4: carries in parallel</h1>
+  <p class="sub">Every stage says whether it generates, passes on or kills a carry; lookahead adders use that to find all carries at once. Compare delay and gates for three designs.</p>
+  <div class="bar" id="graphs" role="group" aria-label="Choose a graph"></div>
+  <div class="scroll"><canvas id="c" width="720" height="420" role="img" aria-label="Session 4: carries in parallel: interactive plot"></canvas></div>
+  <div class="bar" id="presets" role="group" aria-label="Presets"></div>
+  <div id="controls"></div>
+  <div class="bar"><button id="reset" type="button">Reset</button></div>
+  <div id="readout"></div>
+  <div id="challenge" hidden></div>
+  <div id="status" class="sr" aria-live="polite"></div>
+  <p class="note">This is a simplified educational model. It is not a validated design tool and must not be used for real structures, electrical installations, vehicles, industrial processes or medical decisions.</p>
+  <p class="sub"><a href="https://github.com/KrunalPanchal1995/pan-iit-oss/tree/main/openbinary">Back to the repository</a></p>
+</main>
+<script>
+"use strict";
+const PARAMS = [{"id": "a", "label": "Input a (8 bits)", "min": 0, "max": 255, "step": 1, "value": 11, "unit": "0 to 255"}, {"id": "b", "label": "Input b (8 bits)", "min": 0, "max": 255, "step": 1, "value": 5, "unit": "0 to 255"}, {"id": "cin", "label": "Carry in", "min": 0, "max": 1, "step": 1, "value": 0, "unit": "0 or 1"}, {"id": "k", "label": "Width exponent k for the delay and gate views", "min": 1, "max": 5, "step": 1, "value": 4, "unit": "width = 2^k bits: 2, 4, 8, 16 or 32"}];
+const GRAPHS = [{"id": "carries", "label": "Where carries come from", "diagram": true}, {"id": "delay", "label": "Delay versus width"}, {"id": "gates", "label": "Gates versus width"}];
+const PRESETS = [{"label": "11 + 5 (carry from stage 0)", "values": {"a": 11, "b": 5, "cin": 0}}, {"label": "127 + 1", "values": {"a": 127, "b": 1, "cin": 0}}, {"label": "255 + 1 (longest chain)", "values": {"a": 255, "b": 1, "cin": 0}}, {"label": "85 + 170, carry in 1", "values": {"a": 85, "b": 170, "cin": 1}}];
+const CHALLENGE = "Find the smallest width where a ripple adder needs more than 20 gate delays (10 ns at 0.5 ns per gate) but the prefix adder still stays within 20.";
+const CHALLENGE_SOLUTION = {"a": 11, "b": 5, "cin": 0, "k": 4};
+const TABLE = {"ripple": [{"n": 2, "gates": 10, "depth": 5, "sum": 4}, {"n": 4, "gates": 20, "depth": 9, "sum": 8}, {"n": 8, "gates": 40, "depth": 17, "sum": 16}, {"n": 16, "gates": 80, "depth": 33, "sum": 32}, {"n": 32, "gates": 160, "depth": 65, "sum": 64}], "flat": [{"n": 2, "gates": 13, "depth": 4, "sum": 4}, {"n": 4, "gates": 42, "depth": 6, "sum": 6}, {"n": 8, "gates": 180, "depth": 7, "sum": 8}, {"n": 16, "gates": 1000, "depth": 9, "sum": 10}, {"n": 32, "gates": 6608, "depth": 11, "sum": 12}], "prefix": [{"n": 2, "gates": 11, "depth": 5, "sum": 4}, {"n": 4, "gates": 29, "depth": 7, "sum": 6}, {"n": 8, "gates": 77, "depth": 9, "sum": 8}, {"n": 16, "gates": 197, "depth": 11, "sum": 10}, {"n": 32, "gates": 485, "depth": 13, "sum": 12}]};
+const WIDTHS = [2, 4, 8, 16, 32];
+const trow = (d, n) => TABLE[d].find(r => r.n === n);
+const challengeTest = CHALLENGE ? (p) => {
+  const n = Math.pow(2, Math.round(p.k)), prev = n / 2;
+  return trow("ripple", n).depth > 20 && trow("prefix", n).depth <= 20 && (prev < 2 || trow("ripple", prev).depth <= 20);
+} : null;
+// the 8-bit stages: generate, propagate, carries and where each carry came from (same rules as lesson.py)
+function stageInfo(a, b, cin) {
+  const g = [], pr = [], c = [cin], src = [];
+  for (let i = 0; i < 8; i++) {
+    const x = (a >> i) & 1, y = (b >> i) & 1;
+    g[i] = x & y; pr[i] = x ^ y; c[i + 1] = g[i] | (pr[i] & c[i]);
+  }
+  for (let i = 0; i < 8; i++) {
+    let s = null;
+    if (c[i + 1]) { let j = i; while (j >= 0 && !g[j]) j--; s = j; }   // pr is 1 on every stage passed over, since the carry exists
+    src[i] = s;
+  }
+  let run = 0, best = 0;
+  for (let i = 0; i < 8; i++) { run = c[i + 1] ? run + 1 : 0; best = Math.max(best, run); }
+  const sum = []; for (let i = 0; i < 8; i++) sum[i] = pr[i] ^ c[i];
+  return { g, pr, c, src, sum, run: best };
+}
+const cv = document.getElementById("c"), ctx = cv.getContext("2d");
+const W = cv.width, H = cv.height, p = {};
+let graph = GRAPHS.length ? GRAPHS[0].id : "main";
+const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+const fmt = v => (Math.abs(v) >= 1000 || (Math.abs(v) > 0 && Math.abs(v) < 0.01)) ? v.toExponential(2) : String(+v.toPrecision(4));
+function readout(html) {
+  document.getElementById("readout").innerHTML = html;
+  cv.setAttribute("aria-label", document.title + ". " + html.replace(/<[^>]+>/g, " ").replace(/&nbsp;/g, " "));  // screen readers get the numbers
+}
+let lastOk = null;
+// ---- plotting helpers: every graph gets labelled axes with units ----
+function niceTicks(lo, hi, n) {
+  const raw = (hi - lo) / n, mag = Math.pow(10, Math.floor(Math.log10(raw))), f = raw / mag;
+  const step = (f < 1.5 ? 1 : f < 3 ? 2 : f < 7 ? 5 : 10) * mag, out = [];
+  for (let v = Math.ceil(lo / step - 1e-9) * step; v <= hi + 1e-9; v += step) out.push(+v.toPrecision(12));
+  return out;
+}
+function axes(o, C) {
+  const L = 66, R = 16, T = 34, B = 50, w = W - L - R, h = H - T - B;
+  const X = v => L + (v - o.x[0]) / (o.x[1] - o.x[0]) * w, Y = v => T + h - (v - o.y[0]) / (o.y[1] - o.y[0]) * h;
+  ctx.lineWidth = 1; ctx.font = "12px system-ui";
+  for (const xv of niceTicks(o.x[0], o.x[1], 6)) {
+    ctx.strokeStyle = C.line; ctx.beginPath(); ctx.moveTo(X(xv), T); ctx.lineTo(X(xv), T + h); ctx.stroke();
+    ctx.fillStyle = C.muted; ctx.textAlign = "center"; ctx.fillText(fmt(xv), X(xv), T + h + 16);
+  }
+  for (const yv of niceTicks(o.y[0], o.y[1], 5)) {
+    ctx.strokeStyle = C.line; ctx.beginPath(); ctx.moveTo(L, Y(yv)); ctx.lineTo(L + w, Y(yv)); ctx.stroke();
+    ctx.fillStyle = C.muted; ctx.textAlign = "right"; ctx.fillText((o.yf || fmt)(yv), L - 6, Y(yv) + 4);
+  }
+  ctx.strokeStyle = C.fg; ctx.beginPath(); ctx.moveTo(L, T); ctx.lineTo(L, T + h); ctx.lineTo(L + w, T + h); ctx.stroke();
+  ctx.fillStyle = C.fg; ctx.textAlign = "center"; ctx.font = "13px system-ui";
+  ctx.fillText(o.xl, L + w / 2, H - 8);
+  ctx.save(); ctx.translate(14, T + h / 2); ctx.rotate(-Math.PI / 2); ctx.fillText(o.yl, 0, 0); ctx.restore();
+  ctx.font = "bold 13px system-ui"; ctx.fillText(o.title || "", L + w / 2, 20);
+  return { X, Y, L, T, w, h };
+}
+function curve(f, a, color, x0, x1, n) {
+  n = n || 160; ctx.save(); ctx.beginPath(); ctx.rect(a.L, a.T, a.w, a.h); ctx.clip();   // never draw outside the plot area
+  ctx.strokeStyle = color; ctx.lineWidth = 2.5; ctx.beginPath();
+  for (let i = 0; i <= n; i++) { const x = x0 + (x1 - x0) * i / n, y = f(x); i ? ctx.lineTo(a.X(x), a.Y(y)) : ctx.moveTo(a.X(x), a.Y(y)); }
+  ctx.stroke(); ctx.restore();
+}
+function dot(a, x, y, color, label) {
+  ctx.fillStyle = color; ctx.beginPath(); ctx.arc(a.X(x), a.Y(y), 6, 0, 2 * Math.PI); ctx.fill();
+  if (label) { ctx.textAlign = "left"; ctx.font = "12px system-ui"; ctx.fillText(label, a.X(x) + 9, a.Y(y) - 8); }
+}
+function draw() {
+  ctx.clearRect(0, 0, W, H);
+  const C = { fg: css("--fg"), muted: css("--muted"), accent: css("--accent"), line: css("--line"), good: css("--good"), bad: css("--bad"), bg: css("--bg") };
+  const wd = Math.pow(2, Math.round(p.k)), rr = trow("ripple", wd), ff = trow("flat", wd), qq = trow("prefix", wd);
+  const info = stageInfo(p.a, p.b, p.cin);
+  const sum8 = info.sum.reduce((s, v, i) => s + (v << i), 0), cout = info.c[8];
+  const ns = d => (d * 0.5).toFixed(1);
+  if (graph === "carries") {
+    const colX = i => 120 + (7 - i) * 76;
+    const cell = (x, y, fill, txt, dark) => {
+      ctx.fillStyle = fill; ctx.fillRect(x - 15, y - 15, 30, 30);
+      ctx.strokeStyle = C.fg; ctx.lineWidth = 1; ctx.strokeRect(x - 15, y - 15, 30, 30);
+      ctx.fillStyle = dark ? C.bg : C.fg; ctx.font = "bold 14px system-ui"; ctx.textAlign = "center"; ctx.fillText(txt, x, y + 5);
+    };
+    ctx.font = "bold 13px system-ui"; ctx.fillStyle = C.fg; ctx.textAlign = "center";
+    ctx.fillText("Each stage tells the carry what it will do, using only its own a and b", W / 2, 20);
+    const ys = { a: 78, b: 112, k: 152, c: 198, s: 244 };
+    ctx.font = "12px system-ui"; ctx.fillStyle = C.muted; ctx.textAlign = "left";
+    ctx.fillText("a", 40, ys.a + 4); ctx.fillText("b", 40, ys.b + 4); ctx.fillText("stage does", 8, ys.k + 4);
+    ctx.fillText("carry in", 8, ys.c + 4); ctx.fillText("sum bit", 8, ys.s + 4);
+    for (let i = 0; i < 8; i++) {
+      const x = colX(i), x1 = (p.a >> i) & 1, y1 = (p.b >> i) & 1;
+      ctx.fillStyle = C.muted; ctx.font = "12px system-ui"; ctx.textAlign = "center"; ctx.fillText("stage " + i, x, 52);
+      cell(x, ys.a, x1 ? C.accent : C.line, String(x1), !!x1);
+      cell(x, ys.b, y1 ? C.accent : C.line, String(y1), !!y1);
+      const kind = info.g[i] ? "G" : info.pr[i] ? "P" : "K";
+      cell(x, ys.k, info.g[i] ? C.good : info.pr[i] ? C.accent : C.line, kind, kind !== "K");
+      cell(x, ys.c, info.c[i] ? C.good : C.line, String(info.c[i]), !!info.c[i]);
+      cell(x, ys.s, info.sum[i] ? C.accent : C.line, String(info.sum[i]), !!info.sum[i]);
+    }
+    ctx.font = "12px system-ui"; ctx.fillStyle = C.muted; ctx.textAlign = "left";
+    ctx.fillText("G generates a carry (a = b = 1), P passes one on (a and b differ), K kills one (a = b = 0)", 40, 284);
+    // where the last carry in the sum comes from
+    let top = -1; for (let i = 0; i < 8; i++) if (info.c[i + 1]) top = i;
+    ctx.fillStyle = C.fg; ctx.font = "13px system-ui"; ctx.textAlign = "left";
+    if (top >= 0) {
+      const s = info.src[top], xs = s >= 0 ? colX(s) : colX(0) + 38, xe = colX(top);
+      ctx.strokeStyle = C.good; ctx.lineWidth = 5; ctx.beginPath(); ctx.moveTo(xs, 312); ctx.lineTo(xe, 312); ctx.lineTo(xe, 300); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(xe - 7, 304); ctx.lineTo(xe, 296); ctx.lineTo(xe + 7, 304); ctx.stroke();
+      ctx.fillStyle = C.good; ctx.beginPath(); ctx.arc(xs, 312, 7, 0, 2 * Math.PI); ctx.fill();
+      ctx.fillStyle = C.fg;
+      const out = "The last carry, out of stage " + top + ", comes from ";
+      const passed = s === top ? "" : " and " + (top - s === 1 ? "stage " + top : "stages " + (s + 1) + " to " + top) + " passed it on";
+      ctx.fillText(s === top ? out + "stage " + top + " itself: it generated the carry." : s >= 0 ? out + "stage " + s + ": it generated a carry" + passed + "." : out + "the carry in: stages 0 to " + top + " all passed it on.", 40, 340);
+    } else {
+      ctx.fillText("No stage holds a carry in this sum: no stage generates one.", 40, 340);
+    }
+    ctx.fillStyle = C.muted; ctx.font = "12px system-ui";
+    const r8 = trow("ripple", 8), p8 = trow("prefix", 8);
+    ctx.fillText("At 8 bits a ripple adder needs " + r8.depth + " gate delays for the carry out; lookahead needs " + p8.depth + " (prefix) or " + trow("flat", 8).depth + " (flat).", 40, 372);
+    ctx.fillText("The longest chain of carries in this sum is " + info.run + " stages, but the clock must allow for the worst case, 8.", 40, 396);
+  } else {
+    const gv = graph === "gates";
+    const f = d => gv ? Math.log10(trow(d, wd).gates) : trow(d, wd).depth;
+    const A = axes(gv
+      ? { x: [0, 34], y: [0, 4], xl: "adder width (bits)", yl: "gates (log scale)", title: "Gates used: the price of speed", yf: v => String(Math.round(Math.pow(10, v))) }
+      : { x: [0, 34], y: [0, 70], xl: "adder width (bits)", yl: "carry-out delay (gate delays)", title: "Carry-out delay against width" }, C);
+    const cols = { ripple: C.bad, flat: C.accent, prefix: C.good }, names = { ripple: "ripple", flat: "flat lookahead", prefix: "parallel prefix" };
+    ctx.save(); ctx.beginPath(); ctx.rect(A.L, A.T, A.w, A.h); ctx.clip();
+    Object.keys(cols).forEach((d, di) => {
+      ctx.strokeStyle = cols[d]; ctx.lineWidth = 2.5; ctx.setLineDash(di === 1 ? [8, 5] : di === 2 ? [2, 4] : []); ctx.beginPath();
+      TABLE[d].forEach((r, i) => { const y = gv ? Math.log10(r.gates) : r.depth; i ? ctx.lineTo(A.X(r.n), A.Y(y)) : ctx.moveTo(A.X(r.n), A.Y(y)); });
+      ctx.stroke(); ctx.setLineDash([]);
+      TABLE[d].forEach(r => { const y = gv ? Math.log10(r.gates) : r.depth; ctx.fillStyle = cols[d]; ctx.beginPath(); ctx.arc(A.X(r.n), A.Y(y), 4, 0, 2 * Math.PI); ctx.fill(); });
+    });
+    ctx.restore();
+    ctx.strokeStyle = C.fg; ctx.lineWidth = 1; ctx.setLineDash([4, 4]); ctx.beginPath(); ctx.moveTo(A.X(wd), A.T); ctx.lineTo(A.X(wd), A.T + A.h); ctx.stroke(); ctx.setLineDash([]);
+    ctx.font = "12px system-ui"; ctx.textAlign = "left";
+    Object.keys(cols).forEach((d, i) => { ctx.fillStyle = cols[d]; ctx.fillRect(A.L + 12, A.T + 10 + i * 18, 14, 4); ctx.fillStyle = C.fg; ctx.fillText(names[d], A.L + 32, A.T + 15 + i * 18); });
+    ctx.fillStyle = C.muted; ctx.textAlign = wd > 16 ? "right" : "left"; ctx.fillText("your width: " + wd, A.X(wd) + (wd > 16 ? -6 : 6), A.T + A.h - 8);
+  }
+  readout("a = " + p.a + ", b = " + p.b + ", carry in " + p.cin + " &nbsp; 8-bit sum " + sum8 + ", carry out " + cout + " &nbsp; longest carry chain " + info.run + " of 8 stages &nbsp;|&nbsp; at " + wd + " bits, carry-out delay: ripple " + rr.depth + ", flat " + ff.depth + ", prefix " + qq.depth + " gate delays (prefix " + ns(qq.depth) + " ns, ripple " + ns(rr.depth) + " ns at 0.5 ns per gate) &nbsp; gates: ripple " + rr.gates + ", flat " + ff.gates + ", prefix " + qq.gates);
+  const ch = document.getElementById("challenge");
+  if (challengeTest) { const ok = !!challengeTest(p); ch.hidden = false; ch.dataset.ok = String(ok);
+    ch.innerHTML = "<b>Challenge:</b> " + CHALLENGE + " &nbsp; " + (ok ? "<b>Done!</b>" : "Not yet.");
+    if (ok !== lastOk) { document.getElementById("status").textContent = ok ? "Challenge done." : "Challenge not yet done."; lastOk = ok; } }
+}
+
+const box = document.getElementById("controls");
+const inputs = {};
+for (const q of PARAMS) {
+  p[q.id] = q.value;
+  const row = document.createElement("div"); row.className = "row";
+  row.innerHTML = `<label for="${q.id}">${q.label} (${q.unit || "no unit"})</label>` +
+    `<input id="${q.id}" type="range" min="${q.min}" max="${q.max}" step="${q.step}" value="${q.value}">` +
+    `<output for="${q.id}">${q.value}</output>`;
+  const inp = row.querySelector("input"), out = row.querySelector("output");
+  inputs[q.id] = [inp, out];
+  inp.addEventListener("input", () => { p[q.id] = +inp.value; out.textContent = inp.value; draw(); });
+  box.appendChild(row);
+}
+function setAll(vals) { for (const k in vals) { p[k] = vals[k]; if (inputs[k]) { inputs[k][0].value = vals[k]; inputs[k][1].textContent = vals[k]; } } draw(); }
+const DEFAULTS = Object.assign({}, p);
+document.getElementById("reset").addEventListener("click", () => setAll(DEFAULTS));
+for (const g of GRAPHS) {
+  const b = document.createElement("button"); b.type = "button"; b.textContent = g.label;
+  b.setAttribute("aria-pressed", String(g.id === graph));
+  b.addEventListener("click", () => { graph = g.id; for (const x of document.querySelectorAll("#graphs button")) x.setAttribute("aria-pressed", String(x === b)); draw(); });
+  document.getElementById("graphs").appendChild(b);
+}
+for (const pr of PRESETS) {
+  const b = document.createElement("button"); b.type = "button"; b.textContent = pr.label;
+  b.addEventListener("click", () => setAll(pr.values));
+  document.getElementById("presets").appendChild(b);
+}
+matchMedia("(prefers-color-scheme: dark)").addEventListener("change", draw);
+draw();
+</script>
+</body>
+</html>
