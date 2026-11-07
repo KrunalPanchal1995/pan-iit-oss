@@ -1,0 +1,206 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Session 3: a simulated hydraulic lift</title>
+<style>
+  :root { --bg:#ffffff; --fg:#14181f; --muted:#5b6472; --card:#f3f5f8; --accent:#1f6feb; --good:#1a7f37; --bad:#b42318; --line:#d7dce3; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#0e1116; --fg:#e6e9ee; --muted:#9aa3b2; --card:#171b22; --accent:#58a6ff; --good:#3fb950; --bad:#f97066; --line:#2a313c; } }
+  * { box-sizing: border-box; }
+  body { margin:0; padding:16px; background:var(--bg); color:var(--fg); font:16px/1.5 system-ui, sans-serif; }
+  main { max-width: 780px; margin: 0 auto; }
+  h1 { font-size: 1.3rem; margin: 0 0 4px; }
+  p.sub { margin: 0 0 12px; color: var(--muted); }
+  .scroll { overflow-x:auto; }
+  canvas { width:100%; min-width:560px; height:auto; background:var(--card); border:1px solid var(--line); border-radius:8px; display:block; }
+  .sr { position:absolute; left:-9999px; }
+  .bar { display:flex; flex-wrap:wrap; gap:8px; margin:10px 0; }
+  button { font:inherit; padding:6px 12px; border:1px solid var(--line); background:var(--card); color:var(--fg); border-radius:6px; cursor:pointer; }
+  button[aria-pressed="true"] { border-color:var(--accent); color:var(--accent); font-weight:600; }
+  button:focus-visible, input:focus-visible { outline:3px solid var(--accent); outline-offset:2px; }
+  .row { display:grid; grid-template-columns: 11rem 1fr 6rem; gap:8px; align-items:center; margin:8px 0; }
+  .row output { text-align:right; font-variant-numeric: tabular-nums; }
+  @media (max-width: 560px) { .row { grid-template-columns: 1fr; gap:2px; } .row output { text-align:left; } }
+  input[type=range] { width:100%; accent-color: var(--accent); }
+  #readout, #challenge, .note { margin-top:10px; padding:10px 12px; background:var(--card); border-radius:8px; border:1px solid var(--line); }
+  #challenge[data-ok="true"] { border-color:var(--good); } #challenge[data-ok="true"] b { color:var(--good); }
+  .note { font-size:.85rem; color:var(--muted); }
+  a { color: var(--accent); }
+</style>
+</head>
+<body>
+<main>
+  <h1>Session 3: a simulated hydraulic lift</h1>
+  <p class="sub">Pump, ram, relief valve, leakage and compressible oil: the lift is simulated for 6 s every time you move a slider.</p>
+  <div class="bar" id="graphs" role="group" aria-label="Choose a graph"></div>
+  <div class="scroll"><canvas id="c" width="720" height="420" role="img" aria-label="Session 3: a simulated hydraulic lift: interactive plot"></canvas></div>
+  <div class="bar" id="presets" role="group" aria-label="Presets"></div>
+  <div id="controls"></div>
+  <div class="bar"><button id="reset" type="button">Reset</button></div>
+  <div id="readout"></div>
+  <div id="challenge" hidden></div>
+  <div id="status" class="sr" aria-live="polite"></div>
+  <p class="note">This is a simplified educational model. It is not a validated design tool and must not be used for real structures, electrical installations, vehicles, industrial processes or medical decisions.</p>
+  <p class="sub"><a href="https://github.com/KrunalPanchal1995/pan-iit-oss/tree/main/openhydraulics">Back to the repository</a></p>
+</main>
+<script>
+"use strict";
+const PARAMS = [{"id": "Q", "label": "Pump flow", "min": 2, "max": 12, "step": 1, "value": 6, "unit": "L/min"}, {"id": "mass", "label": "Load", "min": 800, "max": 2000, "step": 100, "value": 1200, "unit": "kg"}, {"id": "relief", "label": "Relief valve setting", "min": 40, "max": 120, "step": 5, "value": 80, "unit": "bar"}, {"id": "T", "label": "Oil temperature", "min": 20, "max": 90, "step": 5, "value": 40, "unit": "C"}, {"id": "wear", "label": "Seal wear (leakage x)", "min": 1, "max": 30, "step": 1, "value": 1, "unit": ""}, {"id": "B", "label": "Oil stiffness B", "min": 0.3, "max": 1.5, "step": 0.1, "value": 1.5, "unit": "GPa"}];
+const GRAPHS = [{"id": "lift", "label": "Lift and gauge", "diagram": true}, {"id": "height", "label": "Lift height versus time"}, {"id": "pressure", "label": "Pressure versus time"}];
+const PRESETS = [{"label": "Normal", "values": {"Q": 6, "mass": 1200, "relief": 80, "T": 40, "wear": 1, "B": 1.5}}, {"label": "Worn and hot", "values": {"Q": 6, "mass": 1200, "relief": 80, "T": 80, "wear": 10, "B": 1.5}}, {"label": "Overload", "values": {"Q": 6, "mass": 1800, "relief": 70, "T": 40, "wear": 1, "B": 1.5}}, {"label": "Air in the oil", "values": {"Q": 6, "mass": 1200, "relief": 80, "T": 40, "wear": 1, "B": 0.3}}];
+const CHALLENGE = "Find a load that the relief valve cannot carry: the pressure it needs (m g / A for a 50 mm ram) is above the relief setting, and the car stays on the floor.";
+const CHALLENGE_SOLUTION = {"Q": 6, "mass": 1800, "relief": 70, "T": 40, "wear": 1, "B": 1.5};
+const challengeTest = CHALLENGE ? (p) => (p.mass * 9.81 / (Math.PI * 0.025 * 0.025) > p.relief * 1e5) : null;
+const cv = document.getElementById("c"), ctx = cv.getContext("2d");
+const W = cv.width, H = cv.height, p = {};
+let graph = GRAPHS.length ? GRAPHS[0].id : "main";
+const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+const fmt = v => (Math.abs(v) >= 1000 || (Math.abs(v) > 0 && Math.abs(v) < 0.01)) ? v.toExponential(2) : String(+v.toPrecision(4));
+function readout(html) {
+  document.getElementById("readout").innerHTML = html;
+  cv.setAttribute("aria-label", document.title + ". " + html.replace(/<[^>]+>/g, " ").replace(/&nbsp;/g, " "));  // screen readers get the numbers
+}
+let lastOk = null;
+// ---- plotting helpers: every graph gets labelled axes with units ----
+function niceTicks(lo, hi, n) {
+  const raw = (hi - lo) / n, mag = Math.pow(10, Math.floor(Math.log10(raw))), f = raw / mag;
+  const step = (f < 1.5 ? 1 : f < 3 ? 2 : f < 7 ? 5 : 10) * mag, out = [];
+  for (let v = Math.ceil(lo / step - 1e-9) * step; v <= hi + 1e-9; v += step) out.push(+v.toPrecision(12));
+  return out;
+}
+function axes(o, C) {
+  const L = 66, R = 16, T = 34, B = 50, w = W - L - R, h = H - T - B;
+  const X = v => L + (v - o.x[0]) / (o.x[1] - o.x[0]) * w, Y = v => T + h - (v - o.y[0]) / (o.y[1] - o.y[0]) * h;
+  ctx.lineWidth = 1; ctx.font = "12px system-ui";
+  for (const xv of niceTicks(o.x[0], o.x[1], 6)) {
+    ctx.strokeStyle = C.line; ctx.beginPath(); ctx.moveTo(X(xv), T); ctx.lineTo(X(xv), T + h); ctx.stroke();
+    ctx.fillStyle = C.muted; ctx.textAlign = "center"; ctx.fillText(fmt(xv), X(xv), T + h + 16);
+  }
+  for (const yv of niceTicks(o.y[0], o.y[1], 5)) {
+    ctx.strokeStyle = C.line; ctx.beginPath(); ctx.moveTo(L, Y(yv)); ctx.lineTo(L + w, Y(yv)); ctx.stroke();
+    ctx.fillStyle = C.muted; ctx.textAlign = "right"; ctx.fillText(fmt(yv), L - 6, Y(yv) + 4);
+  }
+  ctx.strokeStyle = C.fg; ctx.beginPath(); ctx.moveTo(L, T); ctx.lineTo(L, T + h); ctx.lineTo(L + w, T + h); ctx.stroke();
+  ctx.fillStyle = C.fg; ctx.textAlign = "center"; ctx.font = "13px system-ui";
+  ctx.fillText(o.xl, L + w / 2, H - 8);
+  ctx.save(); ctx.translate(14, T + h / 2); ctx.rotate(-Math.PI / 2); ctx.fillText(o.yl, 0, 0); ctx.restore();
+  ctx.font = "bold 13px system-ui"; ctx.fillText(o.title || "", L + w / 2, 20);
+  return { X, Y, L, T, w, h };
+}
+function curve(f, a, color, x0, x1, n) {
+  n = n || 160; ctx.save(); ctx.beginPath(); ctx.rect(a.L, a.T, a.w, a.h); ctx.clip();   // never draw outside the plot area
+  ctx.strokeStyle = color; ctx.lineWidth = 2.5; ctx.beginPath();
+  for (let i = 0; i <= n; i++) { const x = x0 + (x1 - x0) * i / n, y = f(x); i ? ctx.lineTo(a.X(x), a.Y(y)) : ctx.moveTo(a.X(x), a.Y(y)); }
+  ctx.stroke(); ctx.restore();
+}
+function dot(a, x, y, color, label) {
+  ctx.fillStyle = color; ctx.beginPath(); ctx.arc(a.X(x), a.Y(y), 6, 0, 2 * Math.PI); ctx.fill();
+  if (label) { ctx.textAlign = "left"; ctx.font = "12px system-ui"; ctx.fillText(label, a.X(x) + 9, a.Y(y) - 8); }
+}
+function draw() {
+  ctx.clearRect(0, 0, W, H);
+  const C = { fg: css("--fg"), muted: css("--muted"), accent: css("--accent"), line: css("--line"), good: css("--good"), bad: css("--bad") };
+  
+const G0 = 9.81, AR = Math.PI * 0.05 * 0.05 / 4, DT = 2e-4, KEEP = 25, NST = 30000;
+function simulate(P) {
+  const key = [P.Q, P.mass, P.relief, P.T, P.wear, P.B].join("|");
+  const store = (globalThis.__hydCache = globalThis.__hydCache || {});
+  if (store[key]) return store[key];
+  const Q = P.Q / 60000, m = P.mass, pr = P.relief * 1e5, B = P.B * 1e9, V0 = 1.5e-3, cf = 10000;
+  const c = 3e-13 * P.wear * Math.exp(0.0318 * (P.T - 40)), kr = Q / (0.1 * pr);
+  let x = 0, v = 0, pp = 0, opened = false, pk = 0;
+  const xs = [], ps = [];
+  for (let i = 0; i <= NST; i++) {
+    const V = V0 + AR * x, qrel = kr * Math.max(0, pp - pr), qleak = c * pp;
+    if (qrel > 0) opened = true;
+    if (pp > pk) pk = pp;
+    if (i % KEEP === 0) { xs.push(x); ps.push(pp); }
+    const dp = B / V * (Q - AR * v - qleak - qrel) * DT;
+    let acc = (pp * AR - m * G0 - cf * v) / m;
+    if (x <= 0 && v <= 0 && acc < 0) { v = 0; acc = 0; }
+    pp += dp; v += acc * DT; x = Math.max(0, x + v * DT);
+  }
+  const i3 = Math.round(3 / (KEEP * DT)), n = xs.length - 1;
+  const r = { xs: xs, ps: ps, opened: opened, pk: pk, c: c, vmean: (xs[n] - xs[i3]) / 3, xend: xs[n], pend: ps[n] };
+  store[key] = r;
+  return r;
+}
+const S = simulate(p), Qm = p.Q / 60000, vid = Qm / AR, pLoad = p.mass * G0 / AR;
+const stalled = S.xend < 0.001;
+const hx = t => S.xs[Math.min(S.xs.length - 1, Math.round(t / (KEEP * DT)))] * 100;
+const hp = t => S.ps[Math.min(S.ps.length - 1, Math.round(t / (KEEP * DT)))] / 1e5;
+if (graph === "lift") {
+  const ground = 385, barrelTop = 300, ytop = barrelTop - 3.8 * S.xend * 100;
+  ctx.strokeStyle = C.line; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(0, ground); ctx.lineTo(W, ground); ctx.stroke();
+  ctx.fillStyle = C.muted; ctx.globalAlpha = 0.35; ctx.fillRect(330, barrelTop, 60, ground - barrelTop); ctx.globalAlpha = 1;
+  ctx.fillStyle = C.accent; ctx.fillRect(348, ytop, 24, barrelTop - ytop + 20);
+  ctx.fillStyle = C.fg; ctx.fillRect(285, ytop - 10, 150, 10);
+  ctx.fillStyle = stalled ? C.bad : C.good; ctx.globalAlpha = 0.75; ctx.fillRect(295, ytop - 50, 130, 40); ctx.globalAlpha = 1;
+  ctx.fillStyle = C.fg; ctx.font = "12px system-ui"; ctx.textAlign = "center"; ctx.fillText("car " + p.mass.toFixed(0) + " kg", 360, ytop - 25);
+  ctx.fillStyle = C.accent; ctx.globalAlpha = 0.4; ctx.fillRect(40, 330, 100, 55); ctx.globalAlpha = 1;
+  ctx.fillStyle = C.fg; ctx.fillText("pump " + p.Q.toFixed(0) + " L/min", 90, 362);
+  ctx.strokeStyle = C.accent; ctx.lineWidth = 4; ctx.beginPath(); ctx.moveTo(140, 358); ctx.lineTo(330, 358); ctx.stroke();
+  ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(220, 358); ctx.lineTo(220, 318); ctx.stroke();
+  ctx.fillStyle = S.opened ? C.bad : C.good; ctx.fillRect(195, 290, 50, 28);
+  ctx.fillStyle = C.fg; ctx.fillText("relief " + p.relief.toFixed(0) + " bar", 220, 282); ctx.fillText(S.opened ? "OPEN" : "closed", 220, 308);
+  const cx = 590, cy = 150, r = 60, fr = Math.min(1, S.pend / 1e5 / 160), ang = 0.75 * Math.PI + 1.5 * Math.PI * fr;
+  ctx.strokeStyle = C.line; ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(cx, cy, r, 0.75 * Math.PI, 2.25 * Math.PI); ctx.stroke();
+  ctx.strokeStyle = C.fg; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(cx, cy); ctx.lineTo(cx + (r - 8) * Math.cos(ang), cy + (r - 8) * Math.sin(ang)); ctx.stroke();
+  ctx.fillText("pressure gauge, end of run", cx, cy - r - 12); ctx.fillText((S.pend / 1e5).toFixed(0) + " bar (0 to 160)", cx, cy + r + 20);
+  ctx.textAlign = "left"; ctx.fillStyle = C.muted; ctx.fillText("lift after 6 s: " + (S.xend * 100).toFixed(1) + " cm (scale 3.8 px per cm)", 10, 22);
+} else if (graph === "height") {
+  const A = axes({ x: [0, 6], y: [0, 70], xl: "time (s)", yl: "lift height (cm)", title: "Lift height of the car" }, C);
+  curve(t => hx(t), A, C.accent, 0, 6, 300);
+  curve(t => vid * t * 100, A, C.muted, 0, 6, 2);
+  dot(A, 6, hx(6), C.accent, "now");
+  ctx.fillStyle = C.muted; ctx.font = "12px system-ui"; ctx.textAlign = "left"; ctx.fillText("grey: ideal v = Q/A with no leakage", A.L + 8, A.T + 16);
+} else {
+  const A = axes({ x: [0, 6], y: [0, 160], xl: "time (s)", yl: "oil pressure (bar)", title: "Oil pressure in the cylinder" }, C);
+  curve(t => hp(t), A, C.accent, 0, 6, 300);
+  curve(() => p.relief, A, C.bad, 0, 6, 2);
+  curve(() => pLoad / 1e5, A, C.muted, 0, 6, 2);
+  dot(A, 6, hp(6), C.accent, "now");
+  ctx.font = "12px system-ui"; ctx.textAlign = "left"; ctx.fillStyle = C.bad; ctx.fillText("red: relief setting", A.L + 8, A.Y(p.relief) - 6);
+  ctx.fillStyle = C.muted; ctx.fillText("grey: pressure the load needs, m g / A", A.L + 8, A.Y(pLoad / 1e5) + 14);
+}
+const kk = p.B * 1e9 * AR * AR / 1.5e-3;
+readout("load needs " + (pLoad / 1e5).toFixed(1) + " bar &nbsp; peak " + (S.pk / 1e5).toFixed(1) + " bar &nbsp; lift after 6 s " + (S.xend * 100).toFixed(1) + " cm &nbsp; speed " + (S.vmean * 1000).toFixed(1) + " mm/s (ideal Q/A " + (vid * 1000).toFixed(1) + ") &nbsp; leak " + (100 * S.c * pLoad / Qm).toFixed(0) + "% of flow &nbsp; oil spring " + (kk / 1e6).toFixed(1) + " MN/m &nbsp; " + (stalled ? "NO LIFT: relief valve or leakage takes the whole flow" : (S.opened ? "relief valve opened briefly" : "relief valve closed")));
+
+  const ch = document.getElementById("challenge");
+  if (challengeTest) { const ok = !!challengeTest(p); ch.hidden = false; ch.dataset.ok = String(ok);
+    ch.innerHTML = "<b>Challenge:</b> " + CHALLENGE + " &nbsp; " + (ok ? "<b>Done!</b>" : "Not yet.");
+    if (ok !== lastOk) { document.getElementById("status").textContent = ok ? "Challenge done." : "Challenge not yet done."; lastOk = ok; } }
+}
+const box = document.getElementById("controls");
+const inputs = {};
+for (const q of PARAMS) {
+  p[q.id] = q.value;
+  const row = document.createElement("div"); row.className = "row";
+  row.innerHTML = `<label for="${q.id}">${q.label} (${q.unit || "no unit"})</label>` +
+    `<input id="${q.id}" type="range" min="${q.min}" max="${q.max}" step="${q.step}" value="${q.value}">` +
+    `<output for="${q.id}">${q.value}</output>`;
+  const inp = row.querySelector("input"), out = row.querySelector("output");
+  inputs[q.id] = [inp, out];
+  inp.addEventListener("input", () => { p[q.id] = +inp.value; out.textContent = inp.value; draw(); });
+  box.appendChild(row);
+}
+function setAll(vals) { for (const k in vals) { p[k] = vals[k]; if (inputs[k]) { inputs[k][0].value = vals[k]; inputs[k][1].textContent = vals[k]; } } draw(); }
+const DEFAULTS = Object.assign({}, p);
+document.getElementById("reset").addEventListener("click", () => setAll(DEFAULTS));
+for (const g of GRAPHS) {
+  const b = document.createElement("button"); b.type = "button"; b.textContent = g.label;
+  b.setAttribute("aria-pressed", String(g.id === graph));
+  b.addEventListener("click", () => { graph = g.id; for (const x of document.querySelectorAll("#graphs button")) x.setAttribute("aria-pressed", String(x === b)); draw(); });
+  document.getElementById("graphs").appendChild(b);
+}
+for (const pr of PRESETS) {
+  const b = document.createElement("button"); b.type = "button"; b.textContent = pr.label;
+  b.addEventListener("click", () => setAll(pr.values));
+  document.getElementById("presets").appendChild(b);
+}
+matchMedia("(prefers-color-scheme: dark)").addEventListener("change", draw);
+draw();
+</script>
+</body>
+</html>

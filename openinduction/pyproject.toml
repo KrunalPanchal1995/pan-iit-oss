@@ -1,0 +1,11 @@
+[project]
+name = "openinduction"
+version = "0.1.0"
+description = "Learn how generators and transformers work from Faraday's law: flux, EMF, AC, RMS, turns ratio, losses, saturation."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+dependencies = ["numpy", "matplotlib"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

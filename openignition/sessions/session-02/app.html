@@ -1,0 +1,189 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Session 2: the ignition-delay law</title>
+<style>
+  :root { --bg:#ffffff; --fg:#14181f; --muted:#5b6472; --card:#f3f5f8; --accent:#1f6feb; --good:#1a7f37; --bad:#b42318; --line:#d7dce3; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#0e1116; --fg:#e6e9ee; --muted:#9aa3b2; --card:#171b22; --accent:#58a6ff; --good:#3fb950; --bad:#f97066; --line:#2a313c; } }
+  * { box-sizing: border-box; }
+  body { margin:0; padding:16px; background:var(--bg); color:var(--fg); font:16px/1.5 system-ui, sans-serif; }
+  main { max-width: 780px; margin: 0 auto; }
+  h1 { font-size: 1.3rem; margin: 0 0 4px; }
+  p.sub { margin: 0 0 12px; color: var(--muted); }
+  .scroll { overflow-x:auto; }
+  canvas { width:100%; min-width:560px; height:auto; background:var(--card); border:1px solid var(--line); border-radius:8px; display:block; }
+  .sr { position:absolute; left:-9999px; }
+  .bar { display:flex; flex-wrap:wrap; gap:8px; margin:10px 0; }
+  button { font:inherit; padding:6px 12px; border:1px solid var(--line); background:var(--card); color:var(--fg); border-radius:6px; cursor:pointer; }
+  button[aria-pressed="true"] { border-color:var(--accent); color:var(--accent); font-weight:600; }
+  button:focus-visible, input:focus-visible { outline:3px solid var(--accent); outline-offset:2px; }
+  .row { display:grid; grid-template-columns: 11rem 1fr 6rem; gap:8px; align-items:center; margin:8px 0; }
+  .row output { text-align:right; font-variant-numeric: tabular-nums; }
+  @media (max-width: 560px) { .row { grid-template-columns: 1fr; gap:2px; } .row output { text-align:left; } }
+  input[type=range] { width:100%; accent-color: var(--accent); }
+  #readout, #challenge, .note { margin-top:10px; padding:10px 12px; background:var(--card); border-radius:8px; border:1px solid var(--line); }
+  #challenge[data-ok="true"] { border-color:var(--good); } #challenge[data-ok="true"] b { color:var(--good); }
+  .note { font-size:.85rem; color:var(--muted); }
+  a { color: var(--accent); }
+</style>
+</head>
+<body>
+<main>
+  <h1>Session 2: the ignition-delay law</h1>
+  <p class="sub">Change T0, Ea and heat release; see the feedback loop, the curve and the straight-line law.</p>
+  <div class="bar" id="graphs" role="group" aria-label="Choose a graph"></div>
+  <div class="scroll"><canvas id="c" width="720" height="420" role="img" aria-label="Session 2: the ignition-delay law: interactive plot"></canvas></div>
+  <div class="bar" id="presets" role="group" aria-label="Presets"></div>
+  <div id="controls"></div>
+  <div class="bar"><button id="reset" type="button">Reset</button></div>
+  <div id="readout"></div>
+  <div id="challenge" hidden></div>
+  <div id="status" class="sr" aria-live="polite"></div>
+  <p class="note">This is a simplified educational model. It is not a validated design tool and must not be used for real structures, electrical installations, vehicles, industrial processes or medical decisions.</p>
+  <p class="sub"><a href="https://github.com/KrunalPanchal1995/pan-iit-oss/tree/main/openignition">Back to the repository</a></p>
+</main>
+<script>
+"use strict";
+const PARAMS = [{"id": "T0", "label": "Start temperature T0", "min": 800, "max": 1200, "step": 1, "value": 1000, "unit": "K"}, {"id": "Ea", "label": "Activation energy Ea", "min": 120, "max": 180, "step": 5, "value": 150, "unit": "kJ/mol"}, {"id": "dT", "label": "Heat release DT_AD", "min": 800, "max": 2000, "step": 50, "value": 1500, "unit": "K"}];
+const GRAPHS = [{"id": "loop", "label": "Feedback loop", "diagram": true}, {"id": "curve", "label": "Temperature versus time"}, {"id": "law", "label": "ln(delay) versus 1000/T0"}];
+const PRESETS = [{"label": "Worked example", "values": {"T0": 1000, "Ea": 150, "dT": 1500}}, {"label": "Design answer", "values": {"T0": 1011, "Ea": 150, "dT": 1500}}, {"label": "Low Ea", "values": {"T0": 1000, "Ea": 120, "dT": 1500}}, {"label": "Lean mixture", "values": {"T0": 1000, "Ea": 150, "dT": 900}}];
+const CHALLENGE = "Find a start temperature (and, if you like, Ea and heat release other than the defaults) so that the delay is between 0.95 and 1.05 ms.";
+const CHALLENGE_SOLUTION = {"T0": 1011, "Ea": 150, "dT": 1500};
+const challengeTest = CHALLENGE ? (p) => ((() => { const k = T => 2.5e9 * Math.exp(-p.Ea * 1000 / (8.314 * T)); const n = 600, ce = 1 - 400 / p.dT; let t = 0, pr = 1 / k(p.T0); for (let i = 1; i <= n; i++) { const c = 1 - (1 - ce) * i / n, f = 1 / (k(p.T0 + p.dT * (1 - c)) * c); t += 0.5 * (pr + f) * (1 - ce) / n; pr = f; } return t >= 0.95e-3 && t <= 1.05e-3; })()) : null;
+const cv = document.getElementById("c"), ctx = cv.getContext("2d");
+const W = cv.width, H = cv.height, p = {};
+let graph = GRAPHS.length ? GRAPHS[0].id : "main";
+const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+const fmt = v => (Math.abs(v) >= 1000 || (Math.abs(v) > 0 && Math.abs(v) < 0.01)) ? v.toExponential(2) : String(+v.toPrecision(4));
+function readout(html) {
+  document.getElementById("readout").innerHTML = html;
+  cv.setAttribute("aria-label", document.title + ". " + html.replace(/<[^>]+>/g, " ").replace(/&nbsp;/g, " "));  // screen readers get the numbers
+}
+let lastOk = null;
+// ---- plotting helpers: every graph gets labelled axes with units ----
+function niceTicks(lo, hi, n) {
+  const raw = (hi - lo) / n, mag = Math.pow(10, Math.floor(Math.log10(raw))), f = raw / mag;
+  const step = (f < 1.5 ? 1 : f < 3 ? 2 : f < 7 ? 5 : 10) * mag, out = [];
+  for (let v = Math.ceil(lo / step - 1e-9) * step; v <= hi + 1e-9; v += step) out.push(+v.toPrecision(12));
+  return out;
+}
+function axes(o, C) {
+  const L = 66, R = 16, T = 34, B = 50, w = W - L - R, h = H - T - B;
+  const X = v => L + (v - o.x[0]) / (o.x[1] - o.x[0]) * w, Y = v => T + h - (v - o.y[0]) / (o.y[1] - o.y[0]) * h;
+  ctx.lineWidth = 1; ctx.font = "12px system-ui";
+  for (const xv of niceTicks(o.x[0], o.x[1], 6)) {
+    ctx.strokeStyle = C.line; ctx.beginPath(); ctx.moveTo(X(xv), T); ctx.lineTo(X(xv), T + h); ctx.stroke();
+    ctx.fillStyle = C.muted; ctx.textAlign = "center"; ctx.fillText(fmt(xv), X(xv), T + h + 16);
+  }
+  for (const yv of niceTicks(o.y[0], o.y[1], 5)) {
+    ctx.strokeStyle = C.line; ctx.beginPath(); ctx.moveTo(L, Y(yv)); ctx.lineTo(L + w, Y(yv)); ctx.stroke();
+    ctx.fillStyle = C.muted; ctx.textAlign = "right"; ctx.fillText(fmt(yv), L - 6, Y(yv) + 4);
+  }
+  ctx.strokeStyle = C.fg; ctx.beginPath(); ctx.moveTo(L, T); ctx.lineTo(L, T + h); ctx.lineTo(L + w, T + h); ctx.stroke();
+  ctx.fillStyle = C.fg; ctx.textAlign = "center"; ctx.font = "13px system-ui";
+  ctx.fillText(o.xl, L + w / 2, H - 8);
+  ctx.save(); ctx.translate(14, T + h / 2); ctx.rotate(-Math.PI / 2); ctx.fillText(o.yl, 0, 0); ctx.restore();
+  ctx.font = "bold 13px system-ui"; ctx.fillText(o.title || "", L + w / 2, 20);
+  return { X, Y, L, T, w, h };
+}
+function curve(f, a, color, x0, x1, n) {
+  n = n || 160; ctx.save(); ctx.beginPath(); ctx.rect(a.L, a.T, a.w, a.h); ctx.clip();   // never draw outside the plot area
+  ctx.strokeStyle = color; ctx.lineWidth = 2.5; ctx.beginPath();
+  for (let i = 0; i <= n; i++) { const x = x0 + (x1 - x0) * i / n, y = f(x); i ? ctx.lineTo(a.X(x), a.Y(y)) : ctx.moveTo(a.X(x), a.Y(y)); }
+  ctx.stroke(); ctx.restore();
+}
+function dot(a, x, y, color, label) {
+  ctx.fillStyle = color; ctx.beginPath(); ctx.arc(a.X(x), a.Y(y), 6, 0, 2 * Math.PI); ctx.fill();
+  if (label) { ctx.textAlign = "left"; ctx.font = "12px system-ui"; ctx.fillText(label, a.X(x) + 9, a.Y(y) - 8); }
+}
+function draw() {
+  ctx.clearRect(0, 0, W, H);
+  const C = { fg: css("--fg"), muted: css("--muted"), accent: css("--accent"), line: css("--line"), good: css("--good"), bad: css("--bad") };
+  
+const Rg = 8.314, A0 = 2.5e9, NN = 600, cEnd = 0.02;
+const kf = (T, E) => A0 * Math.exp(-E / (Rg * T));
+function hist(T0, E, D) {
+  const ts = [0], Ts = [T0], cs = [1]; let t = 0, prev = 1 / kf(T0, E);
+  for (let i = 1; i <= NN; i++) { const c = 1 - (1 - cEnd) * i / NN, T = T0 + D * (1 - c), f = 1 / (kf(T, E) * c); t += 0.5 * (prev + f) * (1 - cEnd) / NN; prev = f; ts.push(t); Ts.push(T); cs.push(c); }
+  const cStar = 1 - 400 / D; let tau = ts[NN];
+  for (let i = 1; i <= NN; i++) if (cs[i] <= cStar) { const f = (cs[i - 1] - cStar) / (cs[i - 1] - cs[i]); tau = ts[i - 1] + f * (ts[i] - ts[i - 1]); break; }
+  return { ts, Ts, cs, tau };
+}
+function at(h, arr, x) { if (x <= 0) return arr[0]; for (let i = 1; i <= NN; i++) if (h.ts[i] >= x) { const f = (x - h.ts[i - 1]) / (h.ts[i] - h.ts[i - 1]); return arr[i - 1] + f * (arr[i] - arr[i - 1]); } return arr[NN]; }
+const heat = T => { const f = Math.min(1, Math.max(0, (T - 800) / 2700)); return "hsl(" + Math.round(240 - 240 * f) + ",85%," + Math.round(42 + 12 * f) + "%)"; };
+
+const E = p.Ea * 1000, h = hist(p.T0, E, p.dT), tau = h.tau;
+const fk = Rg * p.T0 * p.T0 / (E * p.dT * kf(p.T0, E));
+const lnt = T0 => Math.log(hist(T0, E, p.dT).tau);
+const sl = (lnt(p.T0 - 10) - lnt(p.T0 + 10)) / (1000 / (p.T0 - 10) - 1000 / (p.T0 + 10));
+const k0 = kf(p.T0, E), k1 = kf(p.T0 + 400, E);
+if (graph === "loop") {
+  const box = (x, y, w, hh, a, b) => { ctx.strokeStyle = C.fg; ctx.lineWidth = 2; ctx.strokeRect(x, y, w, hh); ctx.fillStyle = C.fg; ctx.textAlign = "center"; ctx.font = "bold 13px system-ui"; ctx.fillText(a, x + w / 2, y + 28); ctx.font = "12px system-ui"; ctx.fillText(b, x + w / 2, y + 50); };
+  const arrow = (x1, y1, x2, y2) => { ctx.strokeStyle = C.accent; ctx.fillStyle = C.accent; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke(); const a = Math.atan2(y2 - y1, x2 - x1); ctx.beginPath(); ctx.moveTo(x2, y2); ctx.lineTo(x2 - 10 * Math.cos(a - 0.4), y2 - 10 * Math.sin(a - 0.4)); ctx.lineTo(x2 - 10 * Math.cos(a + 0.4), y2 - 10 * Math.sin(a + 0.4)); ctx.closePath(); ctx.fill(); };
+  box(30, 70, 190, 70, "temperature T", "starts at " + p.T0 + " K");
+  box(265, 70, 190, 70, "rate k(T)", fmt(k0) + " per s at the start");
+  box(500, 70, 190, 70, "heat release", "dT/dt = " + p.dT + " K x k x c");
+  arrow(220, 105, 265, 105); arrow(455, 105, 500, 105);
+  ctx.strokeStyle = C.accent; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(595, 140); ctx.lineTo(595, 190); ctx.lineTo(125, 190); ctx.stroke(); arrow(125, 190, 125, 140);
+  ctx.fillStyle = C.fg; ctx.font = "13px system-ui"; ctx.textAlign = "center"; ctx.fillText("positive feedback: more heat, larger k, more heat", 360, 214);
+  ctx.textAlign = "left"; ctx.font = "13px system-ui";
+  ctx.fillText("k at T0 + 400 K is " + fmt(k1) + " per s: " + fmt(k1 / k0) + " times k at the start", 40, 262);
+  ctx.fillText("ignition delay (integral) = " + fmt(tau * 1e3) + " ms", 40, 290);
+  ctx.fillText("Frank-Kamenetskii estimate = " + fmt(fk * 1e3) + " ms (" + fmt(fk / tau) + " of the integral)", 40, 318);
+} else if (graph === "curve") {
+  const win = 1.6 * tau, lo = Math.floor((p.T0 - 60) / 100) * 100, hi = p.T0 + p.dT + 100;
+  const A = axes({ x: [0, win * 1e3], y: [lo, hi], xl: "time (ms)", yl: "temperature (K)", title: "Temperature against time" }, C);
+  curve(x => at(h, h.Ts, x / 1e3), A, C.accent, 0, win * 1e3, 300);
+  curve(() => p.T0 + 400, A, C.bad, 0, win * 1e3, 2);
+  dot(A, tau * 1e3, p.T0 + 400, C.bad, "delay");
+} else {
+  const A = axes({ x: [0.8, 1.25], y: [-14, 4], xl: "1000 / T0 (1/K)", yl: "ln( delay / 1 s )", title: "Ignition-delay law" }, C);
+  curve(x => Math.log(hist(1000 / x, E, p.dT).tau), A, C.accent, 0.8, 1.25, 45);
+  const x0 = 1000 / p.T0, y0 = Math.log(tau), sa = E / (1000 * Rg);
+  curve(x => y0 + sa * (x - x0), A, C.muted, 0.8, 1.25, 2);
+  curve(() => Math.log(1e-3), A, C.bad, 0.8, 1.25, 2);
+  dot(A, x0, y0, C.fg, "now");
+  ctx.fillStyle = C.bad; ctx.font = "12px system-ui"; ctx.textAlign = "left"; ctx.fillText("red: 1 ms", A.L + 8, A.Y(Math.log(1e-3)) - 6);
+  ctx.fillStyle = C.muted; ctx.fillText("grey: slope Ea/(1000 R) = " + sa.toFixed(2), A.L + 8, A.T + 16);
+}
+readout("delay = " + fmt(tau * 1e3) + " ms &nbsp; Frank-Kamenetskii = " + fmt(fk * 1e3) + " ms &nbsp; slope of ln(delay) against 1000/T0 here = " + sl.toFixed(2) + " (Ea/(1000 R) = " + (E / (1000 * Rg)).toFixed(2) + ")");
+
+  const ch = document.getElementById("challenge");
+  if (challengeTest) { const ok = !!challengeTest(p); ch.hidden = false; ch.dataset.ok = String(ok);
+    ch.innerHTML = "<b>Challenge:</b> " + CHALLENGE + " &nbsp; " + (ok ? "<b>Done!</b>" : "Not yet.");
+    if (ok !== lastOk) { document.getElementById("status").textContent = ok ? "Challenge done." : "Challenge not yet done."; lastOk = ok; } }
+}
+const box = document.getElementById("controls");
+const inputs = {};
+for (const q of PARAMS) {
+  p[q.id] = q.value;
+  const row = document.createElement("div"); row.className = "row";
+  row.innerHTML = `<label for="${q.id}">${q.label} (${q.unit || "no unit"})</label>` +
+    `<input id="${q.id}" type="range" min="${q.min}" max="${q.max}" step="${q.step}" value="${q.value}">` +
+    `<output for="${q.id}">${q.value}</output>`;
+  const inp = row.querySelector("input"), out = row.querySelector("output");
+  inputs[q.id] = [inp, out];
+  inp.addEventListener("input", () => { p[q.id] = +inp.value; out.textContent = inp.value; draw(); });
+  box.appendChild(row);
+}
+function setAll(vals) { for (const k in vals) { p[k] = vals[k]; if (inputs[k]) { inputs[k][0].value = vals[k]; inputs[k][1].textContent = vals[k]; } } draw(); }
+const DEFAULTS = Object.assign({}, p);
+document.getElementById("reset").addEventListener("click", () => setAll(DEFAULTS));
+for (const g of GRAPHS) {
+  const b = document.createElement("button"); b.type = "button"; b.textContent = g.label;
+  b.setAttribute("aria-pressed", String(g.id === graph));
+  b.addEventListener("click", () => { graph = g.id; for (const x of document.querySelectorAll("#graphs button")) x.setAttribute("aria-pressed", String(x === b)); draw(); });
+  document.getElementById("graphs").appendChild(b);
+}
+for (const pr of PRESETS) {
+  const b = document.createElement("button"); b.type = "button"; b.textContent = pr.label;
+  b.addEventListener("click", () => setAll(pr.values));
+  document.getElementById("presets").appendChild(b);
+}
+matchMedia("(prefers-color-scheme: dark)").addEventListener("change", draw);
+draw();
+</script>
+</body>
+</html>

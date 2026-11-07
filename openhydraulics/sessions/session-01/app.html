@@ -1,0 +1,178 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Session 1: a small push, a big lift</title>
+<style>
+  :root { --bg:#ffffff; --fg:#14181f; --muted:#5b6472; --card:#f3f5f8; --accent:#1f6feb; --good:#1a7f37; --bad:#b42318; --line:#d7dce3; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#0e1116; --fg:#e6e9ee; --muted:#9aa3b2; --card:#171b22; --accent:#58a6ff; --good:#3fb950; --bad:#f97066; --line:#2a313c; } }
+  * { box-sizing: border-box; }
+  body { margin:0; padding:16px; background:var(--bg); color:var(--fg); font:16px/1.5 system-ui, sans-serif; }
+  main { max-width: 780px; margin: 0 auto; }
+  h1 { font-size: 1.3rem; margin: 0 0 4px; }
+  p.sub { margin: 0 0 12px; color: var(--muted); }
+  .scroll { overflow-x:auto; }
+  canvas { width:100%; min-width:560px; height:auto; background:var(--card); border:1px solid var(--line); border-radius:8px; display:block; }
+  .sr { position:absolute; left:-9999px; }
+  .bar { display:flex; flex-wrap:wrap; gap:8px; margin:10px 0; }
+  button { font:inherit; padding:6px 12px; border:1px solid var(--line); background:var(--card); color:var(--fg); border-radius:6px; cursor:pointer; }
+  button[aria-pressed="true"] { border-color:var(--accent); color:var(--accent); font-weight:600; }
+  button:focus-visible, input:focus-visible { outline:3px solid var(--accent); outline-offset:2px; }
+  .row { display:grid; grid-template-columns: 11rem 1fr 6rem; gap:8px; align-items:center; margin:8px 0; }
+  .row output { text-align:right; font-variant-numeric: tabular-nums; }
+  @media (max-width: 560px) { .row { grid-template-columns: 1fr; gap:2px; } .row output { text-align:left; } }
+  input[type=range] { width:100%; accent-color: var(--accent); }
+  #readout, #challenge, .note { margin-top:10px; padding:10px 12px; background:var(--card); border-radius:8px; border:1px solid var(--line); }
+  #challenge[data-ok="true"] { border-color:var(--good); } #challenge[data-ok="true"] b { color:var(--good); }
+  .note { font-size:.85rem; color:var(--muted); }
+  a { color: var(--accent); }
+</style>
+</head>
+<body>
+<main>
+  <h1>Session 1: a small push, a big lift</h1>
+  <p class="sub">One pressure, two pistons: the big piston gives more force and moves less.</p>
+  <div class="bar" id="graphs" role="group" aria-label="Choose a graph"></div>
+  <div class="scroll"><canvas id="c" width="720" height="420" role="img" aria-label="Session 1: a small push, a big lift: interactive plot"></canvas></div>
+  <div class="bar" id="presets" role="group" aria-label="Presets"></div>
+  <div id="controls"></div>
+  <div class="bar"><button id="reset" type="button">Reset</button></div>
+  <div id="readout"></div>
+  <div id="challenge" hidden></div>
+  <div id="status" class="sr" aria-live="polite"></div>
+  <p class="note">This is a simplified educational model. It is not a validated design tool and must not be used for real structures, electrical installations, vehicles, industrial processes or medical decisions.</p>
+  <p class="sub"><a href="https://github.com/KrunalPanchal1995/pan-iit-oss/tree/main/openhydraulics">Back to the repository</a></p>
+</main>
+<script>
+"use strict";
+const PARAMS = [{"id": "F1", "label": "Push F1", "min": 50, "max": 500, "step": 10, "value": 200, "unit": "N"}, {"id": "d1", "label": "Small piston d1", "min": 1, "max": 4, "step": 0.5, "value": 2, "unit": "cm"}, {"id": "d2", "label": "Big piston d2", "min": 4, "max": 20, "step": 1, "value": 6, "unit": "cm"}, {"id": "s1", "label": "Small piston stroke", "min": 1, "max": 10, "step": 1, "value": 5, "unit": "cm"}];
+const GRAPHS = [{"id": "jack", "label": "Hydraulic jack", "diagram": true}, {"id": "force", "label": "Output force versus big piston diameter"}];
+const PRESETS = [{"label": "Worked example", "values": {"F1": 200, "d1": 2, "d2": 6, "s1": 5}}, {"label": "Equal pistons", "values": {"F1": 200, "d1": 2, "d2": 4, "s1": 5}}, {"label": "Wide ram", "values": {"F1": 300, "d1": 2, "d2": 14, "s1": 5}}];
+const CHALLENGE = "Lift the 1200 kg car (11 772 N): make the output force F2 at least 11 772 N.";
+const CHALLENGE_SOLUTION = {"F1": 400, "d1": 2, "d2": 12, "s1": 5};
+const challengeTest = CHALLENGE ? (p) => (p.F1 * Math.pow(p.d2 / p.d1, 2) >= 11772) : null;
+const cv = document.getElementById("c"), ctx = cv.getContext("2d");
+const W = cv.width, H = cv.height, p = {};
+let graph = GRAPHS.length ? GRAPHS[0].id : "main";
+const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+const fmt = v => (Math.abs(v) >= 1000 || (Math.abs(v) > 0 && Math.abs(v) < 0.01)) ? v.toExponential(2) : String(+v.toPrecision(4));
+function readout(html) {
+  document.getElementById("readout").innerHTML = html;
+  cv.setAttribute("aria-label", document.title + ". " + html.replace(/<[^>]+>/g, " ").replace(/&nbsp;/g, " "));  // screen readers get the numbers
+}
+let lastOk = null;
+// ---- plotting helpers: every graph gets labelled axes with units ----
+function niceTicks(lo, hi, n) {
+  const raw = (hi - lo) / n, mag = Math.pow(10, Math.floor(Math.log10(raw))), f = raw / mag;
+  const step = (f < 1.5 ? 1 : f < 3 ? 2 : f < 7 ? 5 : 10) * mag, out = [];
+  for (let v = Math.ceil(lo / step - 1e-9) * step; v <= hi + 1e-9; v += step) out.push(+v.toPrecision(12));
+  return out;
+}
+function axes(o, C) {
+  const L = 66, R = 16, T = 34, B = 50, w = W - L - R, h = H - T - B;
+  const X = v => L + (v - o.x[0]) / (o.x[1] - o.x[0]) * w, Y = v => T + h - (v - o.y[0]) / (o.y[1] - o.y[0]) * h;
+  ctx.lineWidth = 1; ctx.font = "12px system-ui";
+  for (const xv of niceTicks(o.x[0], o.x[1], 6)) {
+    ctx.strokeStyle = C.line; ctx.beginPath(); ctx.moveTo(X(xv), T); ctx.lineTo(X(xv), T + h); ctx.stroke();
+    ctx.fillStyle = C.muted; ctx.textAlign = "center"; ctx.fillText(fmt(xv), X(xv), T + h + 16);
+  }
+  for (const yv of niceTicks(o.y[0], o.y[1], 5)) {
+    ctx.strokeStyle = C.line; ctx.beginPath(); ctx.moveTo(L, Y(yv)); ctx.lineTo(L + w, Y(yv)); ctx.stroke();
+    ctx.fillStyle = C.muted; ctx.textAlign = "right"; ctx.fillText(fmt(yv), L - 6, Y(yv) + 4);
+  }
+  ctx.strokeStyle = C.fg; ctx.beginPath(); ctx.moveTo(L, T); ctx.lineTo(L, T + h); ctx.lineTo(L + w, T + h); ctx.stroke();
+  ctx.fillStyle = C.fg; ctx.textAlign = "center"; ctx.font = "13px system-ui";
+  ctx.fillText(o.xl, L + w / 2, H - 8);
+  ctx.save(); ctx.translate(14, T + h / 2); ctx.rotate(-Math.PI / 2); ctx.fillText(o.yl, 0, 0); ctx.restore();
+  ctx.font = "bold 13px system-ui"; ctx.fillText(o.title || "", L + w / 2, 20);
+  return { X, Y, L, T, w, h };
+}
+function curve(f, a, color, x0, x1, n) {
+  n = n || 160; ctx.save(); ctx.beginPath(); ctx.rect(a.L, a.T, a.w, a.h); ctx.clip();   // never draw outside the plot area
+  ctx.strokeStyle = color; ctx.lineWidth = 2.5; ctx.beginPath();
+  for (let i = 0; i <= n; i++) { const x = x0 + (x1 - x0) * i / n, y = f(x); i ? ctx.lineTo(a.X(x), a.Y(y)) : ctx.moveTo(a.X(x), a.Y(y)); }
+  ctx.stroke(); ctx.restore();
+}
+function dot(a, x, y, color, label) {
+  ctx.fillStyle = color; ctx.beginPath(); ctx.arc(a.X(x), a.Y(y), 6, 0, 2 * Math.PI); ctx.fill();
+  if (label) { ctx.textAlign = "left"; ctx.font = "12px system-ui"; ctx.fillText(label, a.X(x) + 9, a.Y(y) - 8); }
+}
+function draw() {
+  ctx.clearRect(0, 0, W, H);
+  const C = { fg: css("--fg"), muted: css("--muted"), accent: css("--accent"), line: css("--line"), good: css("--good"), bad: css("--bad") };
+  
+const WT = 1200 * 9.81;
+const A1 = Math.PI * Math.pow(p.d1 / 100, 2) / 4;
+const pr = p.F1 / A1;
+const ma = Math.pow(p.d2 / p.d1, 2);
+const F2 = p.F1 * ma;
+const s2 = p.s1 / ma;
+const lifts = F2 >= WT;
+const f2of = d => p.F1 * Math.pow(d / p.d1, 2) / 1000;
+if (graph === "jack") {
+  const base = 330, top = 100, rest = 170, cx1 = 130, cx2 = 480, w1 = p.d1 * 10, w2 = p.d2 * 14;
+  const y1 = rest + p.s1 * 5, y2 = rest - s2 * 5;
+  ctx.fillStyle = C.accent; ctx.globalAlpha = 0.25;
+  ctx.fillRect(cx1 - w1 / 2, y1, w1, base - y1); ctx.fillRect(cx2 - w2 / 2, y2, w2, base - y2); ctx.fillRect(cx1, base - 40, cx2 - cx1, 40);
+  ctx.globalAlpha = 1; ctx.strokeStyle = C.fg; ctx.lineWidth = 2; ctx.beginPath();
+  ctx.moveTo(cx1 - w1 / 2, top); ctx.lineTo(cx1 - w1 / 2, base); ctx.lineTo(cx2 + w2 / 2, base); ctx.lineTo(cx2 + w2 / 2, top);
+  ctx.moveTo(cx1 + w1 / 2, top); ctx.lineTo(cx1 + w1 / 2, base - 40); ctx.lineTo(cx2 - w2 / 2, base - 40); ctx.lineTo(cx2 - w2 / 2, top); ctx.stroke();
+  ctx.fillStyle = C.fg; ctx.fillRect(cx1 - w1 / 2, y1 - 8, w1, 8); ctx.fillRect(cx2 - w2 / 2, y2 - 8, w2, 8);
+  const len = 20 + p.F1 / 500 * 60, ay = y1 - 8 - len;
+  ctx.strokeStyle = C.bad; ctx.fillStyle = C.bad; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(cx1, ay); ctx.lineTo(cx1, y1 - 14); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(cx1 - 7, y1 - 16); ctx.lineTo(cx1 + 7, y1 - 16); ctx.lineTo(cx1, y1 - 6); ctx.fill();
+  const cw = w2 + 30;
+  ctx.fillStyle = lifts ? C.good : C.bad; ctx.globalAlpha = 0.75; ctx.fillRect(cx2 - cw / 2, y2 - 8 - 34, cw, 34); ctx.globalAlpha = 1;
+  ctx.fillStyle = C.fg; ctx.font = "12px system-ui"; ctx.textAlign = "center";
+  ctx.fillText("push F1 = " + p.F1.toFixed(0) + " N", cx1, ay - 6);
+  ctx.fillText("car 1200 kg (11.8 kN): " + (lifts ? "lifted" : "too heavy"), cx2, y2 - 8 - 34 - 8);
+  ctx.fillText("small piston " + p.d1.toFixed(1) + " cm", cx1, base + 22); ctx.fillText("big piston " + p.d2.toFixed(0) + " cm", cx2, base + 22);
+  ctx.textAlign = "left"; ctx.fillText("same pressure " + (pr / 1000).toFixed(0) + " kPa everywhere", 190, base - 14);
+  ctx.fillStyle = C.muted; ctx.fillText("small piston moves " + p.s1.toFixed(0) + " cm, big piston moves " + (s2 * 10).toFixed(1) + " mm", 10, H - 10);
+} else {
+  const A = axes({ x: [4, 20], y: [0, 210], xl: "big piston diameter d2 (cm)", yl: "output force F2 (kN)", title: "Output force grows with the diameter squared" }, C);
+  curve(f2of, A, C.accent, 4, 20);
+  curve(() => WT / 1000, A, C.bad, 4, 20, 2);
+  dot(A, p.d2, Math.min(F2 / 1000, 205), C.accent, "now");
+  ctx.fillStyle = C.bad; ctx.font = "12px system-ui"; ctx.textAlign = "left"; ctx.fillText("red: weight of the car, 11.8 kN", A.L + 8, A.Y(11.772) - 6);
+}
+readout("pressure p = F1/A1 = " + (pr / 1000).toFixed(0) + " kPa (" + (pr / 1e5).toFixed(1) + " bar) &nbsp; F2 = " + F2.toFixed(0) + " N &nbsp; multiplier = " + ma.toFixed(1) + " &nbsp; big piston moves " + (s2 * 10).toFixed(2) + " mm &nbsp; " + (lifts ? "lifts the car" : "cannot lift the car (11 772 N)"));
+
+  const ch = document.getElementById("challenge");
+  if (challengeTest) { const ok = !!challengeTest(p); ch.hidden = false; ch.dataset.ok = String(ok);
+    ch.innerHTML = "<b>Challenge:</b> " + CHALLENGE + " &nbsp; " + (ok ? "<b>Done!</b>" : "Not yet.");
+    if (ok !== lastOk) { document.getElementById("status").textContent = ok ? "Challenge done." : "Challenge not yet done."; lastOk = ok; } }
+}
+const box = document.getElementById("controls");
+const inputs = {};
+for (const q of PARAMS) {
+  p[q.id] = q.value;
+  const row = document.createElement("div"); row.className = "row";
+  row.innerHTML = `<label for="${q.id}">${q.label} (${q.unit || "no unit"})</label>` +
+    `<input id="${q.id}" type="range" min="${q.min}" max="${q.max}" step="${q.step}" value="${q.value}">` +
+    `<output for="${q.id}">${q.value}</output>`;
+  const inp = row.querySelector("input"), out = row.querySelector("output");
+  inputs[q.id] = [inp, out];
+  inp.addEventListener("input", () => { p[q.id] = +inp.value; out.textContent = inp.value; draw(); });
+  box.appendChild(row);
+}
+function setAll(vals) { for (const k in vals) { p[k] = vals[k]; if (inputs[k]) { inputs[k][0].value = vals[k]; inputs[k][1].textContent = vals[k]; } } draw(); }
+const DEFAULTS = Object.assign({}, p);
+document.getElementById("reset").addEventListener("click", () => setAll(DEFAULTS));
+for (const g of GRAPHS) {
+  const b = document.createElement("button"); b.type = "button"; b.textContent = g.label;
+  b.setAttribute("aria-pressed", String(g.id === graph));
+  b.addEventListener("click", () => { graph = g.id; for (const x of document.querySelectorAll("#graphs button")) x.setAttribute("aria-pressed", String(x === b)); draw(); });
+  document.getElementById("graphs").appendChild(b);
+}
+for (const pr of PRESETS) {
+  const b = document.createElement("button"); b.type = "button"; b.textContent = pr.label;
+  b.addEventListener("click", () => setAll(pr.values));
+  document.getElementById("presets").appendChild(b);
+}
+matchMedia("(prefers-color-scheme: dark)").addEventListener("change", draw);
+draw();
+</script>
+</body>
+</html>

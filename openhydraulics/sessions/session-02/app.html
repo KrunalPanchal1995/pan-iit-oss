@@ -1,0 +1,189 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Session 2: design a hydraulic jack</title>
+<style>
+  :root { --bg:#ffffff; --fg:#14181f; --muted:#5b6472; --card:#f3f5f8; --accent:#1f6feb; --good:#1a7f37; --bad:#b42318; --line:#d7dce3; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#0e1116; --fg:#e6e9ee; --muted:#9aa3b2; --card:#171b22; --accent:#58a6ff; --good:#3fb950; --bad:#f97066; --line:#2a313c; } }
+  * { box-sizing: border-box; }
+  body { margin:0; padding:16px; background:var(--bg); color:var(--fg); font:16px/1.5 system-ui, sans-serif; }
+  main { max-width: 780px; margin: 0 auto; }
+  h1 { font-size: 1.3rem; margin: 0 0 4px; }
+  p.sub { margin: 0 0 12px; color: var(--muted); }
+  .scroll { overflow-x:auto; }
+  canvas { width:100%; min-width:560px; height:auto; background:var(--card); border:1px solid var(--line); border-radius:8px; display:block; }
+  .sr { position:absolute; left:-9999px; }
+  .bar { display:flex; flex-wrap:wrap; gap:8px; margin:10px 0; }
+  button { font:inherit; padding:6px 12px; border:1px solid var(--line); background:var(--card); color:var(--fg); border-radius:6px; cursor:pointer; }
+  button[aria-pressed="true"] { border-color:var(--accent); color:var(--accent); font-weight:600; }
+  button:focus-visible, input:focus-visible { outline:3px solid var(--accent); outline-offset:2px; }
+  .row { display:grid; grid-template-columns: 11rem 1fr 6rem; gap:8px; align-items:center; margin:8px 0; }
+  .row output { text-align:right; font-variant-numeric: tabular-nums; }
+  @media (max-width: 560px) { .row { grid-template-columns: 1fr; gap:2px; } .row output { text-align:left; } }
+  input[type=range] { width:100%; accent-color: var(--accent); }
+  #readout, #challenge, .note { margin-top:10px; padding:10px 12px; background:var(--card); border-radius:8px; border:1px solid var(--line); }
+  #challenge[data-ok="true"] { border-color:var(--good); } #challenge[data-ok="true"] b { color:var(--good); }
+  .note { font-size:.85rem; color:var(--muted); }
+  a { color: var(--accent); }
+</style>
+</head>
+<body>
+<main>
+  <h1>Session 2: design a hydraulic jack</h1>
+  <p class="sub">A lever, a pump piston and a big piston: choose them so the car is lifted with few pumps.</p>
+  <div class="bar" id="graphs" role="group" aria-label="Choose a graph"></div>
+  <div class="scroll"><canvas id="c" width="720" height="420" role="img" aria-label="Session 2: design a hydraulic jack: interactive plot"></canvas></div>
+  <div class="bar" id="presets" role="group" aria-label="Presets"></div>
+  <div id="controls"></div>
+  <div class="bar"><button id="reset" type="button">Reset</button></div>
+  <div id="readout"></div>
+  <div id="challenge" hidden></div>
+  <div id="status" class="sr" aria-live="polite"></div>
+  <p class="note">This is a simplified educational model. It is not a validated design tool and must not be used for real structures, electrical installations, vehicles, industrial processes or medical decisions.</p>
+  <p class="sub"><a href="https://github.com/KrunalPanchal1995/pan-iit-oss/tree/main/openhydraulics">Back to the repository</a></p>
+</main>
+<script>
+"use strict";
+const PARAMS = [{"id": "push", "label": "Hand push", "min": 100, "max": 400, "step": 10, "value": 200, "unit": "N"}, {"id": "lever", "label": "Lever ratio", "min": 2, "max": 15, "step": 1, "value": 5, "unit": ""}, {"id": "d1", "label": "Pump piston d1", "min": 10, "max": 40, "step": 2, "value": 20, "unit": "mm"}, {"id": "d2", "label": "Big piston d2", "min": 30, "max": 100, "step": 2, "value": 40, "unit": "mm"}, {"id": "stroke", "label": "Pump stroke", "min": 10, "max": 60, "step": 5, "value": 40, "unit": "mm"}, {"id": "mass", "label": "Car mass", "min": 600, "max": 2000, "step": 100, "value": 1200, "unit": "kg"}];
+const GRAPHS = [{"id": "jack", "label": "Lever and jack", "diagram": true}, {"id": "force", "label": "Lifting force versus big piston"}, {"id": "pumps", "label": "Pumps per cm versus big piston"}];
+const PRESETS = [{"label": "Too weak", "values": {"push": 200, "lever": 5, "d1": 20, "d2": 40, "stroke": 40, "mass": 1200}}, {"label": "Worked example", "values": {"push": 200, "lever": 10, "d1": 20, "d2": 50, "stroke": 40, "mass": 1200}}, {"label": "Van (question D)", "values": {"push": 150, "lever": 8, "d1": 16, "d2": 60, "stroke": 30, "mass": 1500}}];
+const CHALLENGE = "Lift the 1200 kg car and keep the cost to at most 2 pumps per cm of lift.";
+const CHALLENGE_SOLUTION = {"push": 200, "lever": 10, "d1": 20, "d2": 50, "stroke": 40, "mass": 1200};
+const challengeTest = CHALLENGE ? (p) => (p.push * p.lever * Math.pow(p.d2 / p.d1, 2) >= p.mass * 9.81 && 10 * Math.pow(p.d2 / p.d1, 2) / p.stroke <= 2) : null;
+const cv = document.getElementById("c"), ctx = cv.getContext("2d");
+const W = cv.width, H = cv.height, p = {};
+let graph = GRAPHS.length ? GRAPHS[0].id : "main";
+const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+const fmt = v => (Math.abs(v) >= 1000 || (Math.abs(v) > 0 && Math.abs(v) < 0.01)) ? v.toExponential(2) : String(+v.toPrecision(4));
+function readout(html) {
+  document.getElementById("readout").innerHTML = html;
+  cv.setAttribute("aria-label", document.title + ". " + html.replace(/<[^>]+>/g, " ").replace(/&nbsp;/g, " "));  // screen readers get the numbers
+}
+let lastOk = null;
+// ---- plotting helpers: every graph gets labelled axes with units ----
+function niceTicks(lo, hi, n) {
+  const raw = (hi - lo) / n, mag = Math.pow(10, Math.floor(Math.log10(raw))), f = raw / mag;
+  const step = (f < 1.5 ? 1 : f < 3 ? 2 : f < 7 ? 5 : 10) * mag, out = [];
+  for (let v = Math.ceil(lo / step - 1e-9) * step; v <= hi + 1e-9; v += step) out.push(+v.toPrecision(12));
+  return out;
+}
+function axes(o, C) {
+  const L = 66, R = 16, T = 34, B = 50, w = W - L - R, h = H - T - B;
+  const X = v => L + (v - o.x[0]) / (o.x[1] - o.x[0]) * w, Y = v => T + h - (v - o.y[0]) / (o.y[1] - o.y[0]) * h;
+  ctx.lineWidth = 1; ctx.font = "12px system-ui";
+  for (const xv of niceTicks(o.x[0], o.x[1], 6)) {
+    ctx.strokeStyle = C.line; ctx.beginPath(); ctx.moveTo(X(xv), T); ctx.lineTo(X(xv), T + h); ctx.stroke();
+    ctx.fillStyle = C.muted; ctx.textAlign = "center"; ctx.fillText(fmt(xv), X(xv), T + h + 16);
+  }
+  for (const yv of niceTicks(o.y[0], o.y[1], 5)) {
+    ctx.strokeStyle = C.line; ctx.beginPath(); ctx.moveTo(L, Y(yv)); ctx.lineTo(L + w, Y(yv)); ctx.stroke();
+    ctx.fillStyle = C.muted; ctx.textAlign = "right"; ctx.fillText(fmt(yv), L - 6, Y(yv) + 4);
+  }
+  ctx.strokeStyle = C.fg; ctx.beginPath(); ctx.moveTo(L, T); ctx.lineTo(L, T + h); ctx.lineTo(L + w, T + h); ctx.stroke();
+  ctx.fillStyle = C.fg; ctx.textAlign = "center"; ctx.font = "13px system-ui";
+  ctx.fillText(o.xl, L + w / 2, H - 8);
+  ctx.save(); ctx.translate(14, T + h / 2); ctx.rotate(-Math.PI / 2); ctx.fillText(o.yl, 0, 0); ctx.restore();
+  ctx.font = "bold 13px system-ui"; ctx.fillText(o.title || "", L + w / 2, 20);
+  return { X, Y, L, T, w, h };
+}
+function curve(f, a, color, x0, x1, n) {
+  n = n || 160; ctx.save(); ctx.beginPath(); ctx.rect(a.L, a.T, a.w, a.h); ctx.clip();   // never draw outside the plot area
+  ctx.strokeStyle = color; ctx.lineWidth = 2.5; ctx.beginPath();
+  for (let i = 0; i <= n; i++) { const x = x0 + (x1 - x0) * i / n, y = f(x); i ? ctx.lineTo(a.X(x), a.Y(y)) : ctx.moveTo(a.X(x), a.Y(y)); }
+  ctx.stroke(); ctx.restore();
+}
+function dot(a, x, y, color, label) {
+  ctx.fillStyle = color; ctx.beginPath(); ctx.arc(a.X(x), a.Y(y), 6, 0, 2 * Math.PI); ctx.fill();
+  if (label) { ctx.textAlign = "left"; ctx.font = "12px system-ui"; ctx.fillText(label, a.X(x) + 9, a.Y(y) - 8); }
+}
+function draw() {
+  ctx.clearRect(0, 0, W, H);
+  const C = { fg: css("--fg"), muted: css("--muted"), accent: css("--accent"), line: css("--line"), good: css("--good"), bad: css("--bad") };
+  
+const WT = p.mass * 9.81, F1 = p.push * p.lever;
+const a1 = Math.PI * Math.pow(p.d1 / 1000, 2) / 4, a2 = Math.PI * Math.pow(p.d2 / 1000, 2) / 4;
+const ma = a2 / a1, F2 = F1 * ma, pr = F1 / a1, ls = p.stroke / ma, ppc = 10 / ls;
+const lifts = F2 >= WT;
+const f2of = d => F1 * Math.pow(d / p.d1, 2) / 1000;
+const ppcof = d => 10 * Math.pow(d / p.d1, 2) / p.stroke;
+if (graph === "jack") {
+  const base = 330, top = 130, rest = 190, arm = 12, hx = 20, handle = arm * p.lever, pivx = hx + handle, px = pivx + arm, cx2 = 520;
+  const w1 = p.d1 * 1.5, w2 = p.d2 * 2.2;
+  const y1 = rest + Math.min(p.stroke, 60) * 0.5, y2 = rest - Math.min(30, ls * 3);
+  ctx.fillStyle = C.accent; ctx.globalAlpha = 0.25;
+  ctx.fillRect(px - w1 / 2, y1, w1, base - y1); ctx.fillRect(cx2 - w2 / 2, y2, w2, base - y2); ctx.fillRect(px, base - 30, cx2 - px, 30);
+  ctx.globalAlpha = 1; ctx.strokeStyle = C.fg; ctx.lineWidth = 2; ctx.beginPath();
+  ctx.moveTo(px - w1 / 2, top); ctx.lineTo(px - w1 / 2, base); ctx.lineTo(cx2 + w2 / 2, base); ctx.lineTo(cx2 + w2 / 2, top);
+  ctx.moveTo(px + w1 / 2, top); ctx.lineTo(px + w1 / 2, base - 30); ctx.lineTo(cx2 - w2 / 2, base - 30); ctx.lineTo(cx2 - w2 / 2, top); ctx.stroke();
+  ctx.fillStyle = C.fg; ctx.fillRect(px - w1 / 2, y1 - 8, w1, 8); ctx.fillRect(cx2 - w2 / 2, y2 - 8, w2, 8);
+  ctx.lineWidth = 6; ctx.lineCap = "round"; ctx.strokeStyle = C.muted; ctx.beginPath(); ctx.moveTo(hx, 80); ctx.lineTo(px + 6, 80); ctx.stroke();
+  ctx.lineWidth = 3; ctx.strokeStyle = C.fg; ctx.beginPath(); ctx.moveTo(px, 82); ctx.lineTo(px, y1 - 8); ctx.stroke();
+  ctx.fillStyle = C.fg; ctx.beginPath(); ctx.moveTo(pivx - 10, 112); ctx.lineTo(pivx + 10, 112); ctx.lineTo(pivx, 84); ctx.fill();
+  const al = 10 + p.push / 400 * 40; ctx.strokeStyle = C.bad; ctx.fillStyle = C.bad; ctx.lineWidth = 3;
+  ctx.beginPath(); ctx.moveTo(hx + 4, 76 - al); ctx.lineTo(hx + 4, 72); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(hx - 3, 70); ctx.lineTo(hx + 11, 70); ctx.lineTo(hx + 4, 80); ctx.fill();
+  const cw = w2 + 30;
+  ctx.fillStyle = lifts ? C.good : C.bad; ctx.globalAlpha = 0.75; ctx.fillRect(cx2 - cw / 2, y2 - 8 - 34, cw, 34); ctx.globalAlpha = 1;
+  ctx.fillStyle = C.fg; ctx.font = "12px system-ui"; ctx.textAlign = "left";
+  ctx.fillText("hand " + p.push.toFixed(0) + " N", hx + 12, 76 - al + 6);
+  ctx.fillText("lever " + p.lever.toFixed(0) + " : 1", hx, 102);
+  ctx.fillText("F1 = " + F1.toFixed(0) + " N", px + w1 / 2 + 8, y1 + 20);
+  ctx.textAlign = "center";
+  ctx.fillText("car " + p.mass.toFixed(0) + " kg (" + (WT / 1000).toFixed(1) + " kN): " + (lifts ? "lifted" : "too heavy"), cx2, y2 - 8 - 34 - 8);
+  ctx.fillText("pump piston " + p.d1.toFixed(0) + " mm", px, base + 22); ctx.fillText("big piston " + p.d2.toFixed(0) + " mm", cx2, base + 22);
+  ctx.textAlign = "left"; ctx.fillStyle = C.muted;
+  ctx.fillText("each stroke: handle moves " + (p.lever * p.stroke).toFixed(0) + " mm, car rises " + ls.toFixed(2) + " mm", 10, H - 10);
+} else if (graph === "force") {
+  const A = axes({ x: [30, 100], y: [0, 60], xl: "big piston diameter d2 (mm)", yl: "lifting force F2 (kN)", title: "Big piston must be wide enough to carry the car" }, C);
+  curve(f2of, A, C.accent, 30, 100);
+  curve(() => WT / 1000, A, C.bad, 30, 100, 2);
+  dot(A, p.d2, Math.min(F2 / 1000, 58), C.accent, "now");
+  ctx.fillStyle = C.bad; ctx.font = "12px system-ui"; ctx.textAlign = "left"; ctx.fillText("red: weight of the car", A.L + 8, A.Y(WT / 1000) - 6);
+} else {
+  const A = axes({ x: [30, 100], y: [0, 10], xl: "big piston diameter d2 (mm)", yl: "pumps per cm of lift", title: "The price of a big piston: more pumps" }, C);
+  curve(ppcof, A, C.accent, 30, 100);
+  curve(() => 2, A, C.bad, 30, 100, 2);
+  dot(A, p.d2, Math.min(ppc, 9.8), C.accent, "now");
+  ctx.fillStyle = C.bad; ctx.font = "12px system-ui"; ctx.textAlign = "left"; ctx.fillText("red: limit of 2 pumps per cm", A.L + 8, A.Y(2) - 6);
+}
+readout("F1 = " + F1.toFixed(0) + " N &nbsp; p = " + (pr / 1e5).toFixed(1) + " bar &nbsp; MA = " + ma.toFixed(2) + " &nbsp; F2 = " + F2.toFixed(0) + " N vs weight " + WT.toFixed(0) + " N (" + (lifts ? "lifts" : "too weak") + ") &nbsp; lift per stroke " + ls.toFixed(2) + " mm = " + ppc.toFixed(2) + " pumps per cm");
+
+  const ch = document.getElementById("challenge");
+  if (challengeTest) { const ok = !!challengeTest(p); ch.hidden = false; ch.dataset.ok = String(ok);
+    ch.innerHTML = "<b>Challenge:</b> " + CHALLENGE + " &nbsp; " + (ok ? "<b>Done!</b>" : "Not yet.");
+    if (ok !== lastOk) { document.getElementById("status").textContent = ok ? "Challenge done." : "Challenge not yet done."; lastOk = ok; } }
+}
+const box = document.getElementById("controls");
+const inputs = {};
+for (const q of PARAMS) {
+  p[q.id] = q.value;
+  const row = document.createElement("div"); row.className = "row";
+  row.innerHTML = `<label for="${q.id}">${q.label} (${q.unit || "no unit"})</label>` +
+    `<input id="${q.id}" type="range" min="${q.min}" max="${q.max}" step="${q.step}" value="${q.value}">` +
+    `<output for="${q.id}">${q.value}</output>`;
+  const inp = row.querySelector("input"), out = row.querySelector("output");
+  inputs[q.id] = [inp, out];
+  inp.addEventListener("input", () => { p[q.id] = +inp.value; out.textContent = inp.value; draw(); });
+  box.appendChild(row);
+}
+function setAll(vals) { for (const k in vals) { p[k] = vals[k]; if (inputs[k]) { inputs[k][0].value = vals[k]; inputs[k][1].textContent = vals[k]; } } draw(); }
+const DEFAULTS = Object.assign({}, p);
+document.getElementById("reset").addEventListener("click", () => setAll(DEFAULTS));
+for (const g of GRAPHS) {
+  const b = document.createElement("button"); b.type = "button"; b.textContent = g.label;
+  b.setAttribute("aria-pressed", String(g.id === graph));
+  b.addEventListener("click", () => { graph = g.id; for (const x of document.querySelectorAll("#graphs button")) x.setAttribute("aria-pressed", String(x === b)); draw(); });
+  document.getElementById("graphs").appendChild(b);
+}
+for (const pr of PRESETS) {
+  const b = document.createElement("button"); b.type = "button"; b.textContent = pr.label;
+  b.addEventListener("click", () => setAll(pr.values));
+  document.getElementById("presets").appendChild(b);
+}
+matchMedia("(prefers-color-scheme: dark)").addEventListener("change", draw);
+draw();
+</script>
+</body>
+</html>

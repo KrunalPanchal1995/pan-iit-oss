@@ -1,6 +1,3 @@
-[submodule "openhousehold"]
-	path = openhousehold
-	url = https://github.com/KrunalPanchal1995/openhousehold.git
 [submodule "openpressurecooker"]
 	path = openpressurecooker
 	url = https://github.com/KrunalPanchal1995/openpressurecooker.git
@@ -19,9 +16,6 @@
 [submodule "openvectors"]
 	path = openvectors
 	url = https://github.com/KrunalPanchal1995/openvectors.git
-[submodule "openheights"]
-	path = openheights
-	url = https://github.com/KrunalPanchal1995/openheights.git
 [submodule "openvfx"]
 	path = openvfx
 	url = https://github.com/KrunalPanchal1995/openvfx.git
@@ -34,39 +28,21 @@
 [submodule "openmotion"]
 	path = openmotion
 	url = https://github.com/KrunalPanchal1995/openmotion.git
-[submodule "openincline"]
-	path = openincline
-	url = https://github.com/KrunalPanchal1995/openincline.git
 [submodule "openprojectile"]
 	path = openprojectile
 	url = https://github.com/KrunalPanchal1995/openprojectile.git
 [submodule "openoscillator"]
 	path = openoscillator
 	url = https://github.com/KrunalPanchal1995/openoscillator.git
-[submodule "opengyro"]
-	path = opengyro
-	url = https://github.com/KrunalPanchal1995/opengyro.git
-[submodule "openheatspread"]
-	path = openheatspread
-	url = https://github.com/KrunalPanchal1995/openheatspread.git
-[submodule "openheatpump"]
-	path = openheatpump
-	url = https://github.com/KrunalPanchal1995/openheatpump.git
 [submodule "openpipeflow"]
 	path = openpipeflow
 	url = https://github.com/KrunalPanchal1995/openpipeflow.git
-[submodule "openhydraulics"]
-	path = openhydraulics
-	url = https://github.com/KrunalPanchal1995/openhydraulics.git
 [submodule "openohm"]
 	path = openohm
 	url = https://github.com/KrunalPanchal1995/openohm.git
 [submodule "openrcfilter"]
 	path = openrcfilter
 	url = https://github.com/KrunalPanchal1995/openrcfilter.git
-[submodule "openinduction"]
-	path = openinduction
-	url = https://github.com/KrunalPanchal1995/openinduction.git
 [submodule "openmole"]
 	path = openmole
 	url = https://github.com/KrunalPanchal1995/openmole.git
@@ -76,18 +52,12 @@
 [submodule "openreactionrate"]
 	path = openreactionrate
 	url = https://github.com/KrunalPanchal1995/openreactionrate.git
-[submodule "openignition"]
-	path = openignition
-	url = https://github.com/KrunalPanchal1995/openignition.git
 [submodule "openstressstrain"]
 	path = openstressstrain
 	url = https://github.com/KrunalPanchal1995/openstressstrain.git
 [submodule "openphasediagram"]
 	path = openphasediagram
 	url = https://github.com/KrunalPanchal1995/openphasediagram.git
-[submodule "openheartflow"]
-	path = openheartflow
-	url = https://github.com/KrunalPanchal1995/openheartflow.git
 [submodule "openneuron"]
 	path = openneuron
 	url = https://github.com/KrunalPanchal1995/openneuron.git

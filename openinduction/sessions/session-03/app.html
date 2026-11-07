@@ -1,0 +1,184 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Session 3: loaded generator and transformer</title>
+<style>
+  :root { --bg:#ffffff; --fg:#14181f; --muted:#5b6472; --card:#f3f5f8; --accent:#1f6feb; --good:#1a7f37; --bad:#b42318; --line:#d7dce3; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#0e1116; --fg:#e6e9ee; --muted:#9aa3b2; --card:#171b22; --accent:#58a6ff; --good:#3fb950; --bad:#f97066; --line:#2a313c; } }
+  * { box-sizing: border-box; }
+  body { margin:0; padding:16px; background:var(--bg); color:var(--fg); font:16px/1.5 system-ui, sans-serif; }
+  main { max-width: 780px; margin: 0 auto; }
+  h1 { font-size: 1.3rem; margin: 0 0 4px; }
+  p.sub { margin: 0 0 12px; color: var(--muted); }
+  .scroll { overflow-x:auto; }
+  canvas { width:100%; min-width:560px; height:auto; background:var(--card); border:1px solid var(--line); border-radius:8px; display:block; }
+  .sr { position:absolute; left:-9999px; }
+  .bar { display:flex; flex-wrap:wrap; gap:8px; margin:10px 0; }
+  button { font:inherit; padding:6px 12px; border:1px solid var(--line); background:var(--card); color:var(--fg); border-radius:6px; cursor:pointer; }
+  button[aria-pressed="true"] { border-color:var(--accent); color:var(--accent); font-weight:600; }
+  button:focus-visible, input:focus-visible { outline:3px solid var(--accent); outline-offset:2px; }
+  .row { display:grid; grid-template-columns: 11rem 1fr 6rem; gap:8px; align-items:center; margin:8px 0; }
+  .row output { text-align:right; font-variant-numeric: tabular-nums; }
+  @media (max-width: 560px) { .row { grid-template-columns: 1fr; gap:2px; } .row output { text-align:left; } }
+  input[type=range] { width:100%; accent-color: var(--accent); }
+  #readout, #challenge, .note { margin-top:10px; padding:10px 12px; background:var(--card); border-radius:8px; border:1px solid var(--line); }
+  #challenge[data-ok="true"] { border-color:var(--good); } #challenge[data-ok="true"] b { color:var(--good); }
+  .note { font-size:.85rem; color:var(--muted); }
+  a { color: var(--accent); }
+</style>
+</head>
+<body>
+<main>
+  <h1>Session 3: loaded generator and transformer</h1>
+  <p class="sub">A generator with armature resistance and inductance, solved with RK4 in your browser, and a transformer with illustrative losses.</p>
+  <div class="bar" id="graphs" role="group" aria-label="Choose a graph"></div>
+  <div class="scroll"><canvas id="c" width="720" height="420" role="img" aria-label="Session 3: loaded generator and transformer: interactive plot"></canvas></div>
+  <div class="bar" id="presets" role="group" aria-label="Presets"></div>
+  <div id="controls"></div>
+  <div class="bar"><button id="reset" type="button">Reset</button></div>
+  <div id="readout"></div>
+  <div id="challenge" hidden></div>
+  <div id="status" class="sr" aria-live="polite"></div>
+  <p class="note">This is a simplified educational model. It is not a validated design tool and must not be used for real structures, electrical installations, vehicles, industrial processes or medical decisions.</p>
+  <p class="sub"><a href="https://github.com/KrunalPanchal1995/pan-iit-oss/tree/main/openinduction">Back to the repository</a></p>
+</main>
+<script>
+"use strict";
+const PARAMS = [{"id": "Ra", "label": "Armature resistance Ra", "min": 0.5, "max": 10, "step": 0.5, "value": 2, "unit": "ohm"}, {"id": "RL", "label": "Generator load RL", "min": 2, "max": 30, "step": 1, "value": 10, "unit": "ohm"}, {"id": "L", "label": "Armature inductance L", "min": 1, "max": 100, "step": 1, "value": 30, "unit": "mH"}, {"id": "f", "label": "Frequency f", "min": 20, "max": 100, "step": 5, "value": 50, "unit": "Hz"}, {"id": "tload", "label": "Transformer load", "min": 1, "max": 100, "step": 1, "value": 6, "unit": "ohm"}];
+const GRAPHS = [{"id": "circuit", "label": "Circuit", "diagram": true}, {"id": "current", "label": "RK4 current"}, {"id": "power", "label": "Power against load"}, {"id": "xfmr", "label": "Transformer efficiency"}];
+const PRESETS = [{"label": "Worked example", "values": {"Ra": 2, "RL": 10, "L": 30, "f": 50, "tload": 6}}, {"label": "Almost no inductance", "values": {"Ra": 2, "RL": 10, "L": 1, "f": 50, "tload": 6}}, {"label": "Heavy inductance", "values": {"Ra": 2, "RL": 10, "L": 100, "f": 100, "tload": 6}}, {"label": "Heavy transformer load", "values": {"Ra": 2, "RL": 10, "L": 30, "f": 50, "tload": 1}}];
+const CHALLENGE = "Get at least 20 W into the load while the armature wastes at most 15 percent of the mechanical power.";
+const CHALLENGE_SOLUTION = {"Ra": 1, "RL": 12, "L": 10, "f": 60, "tload": 6};
+const challengeTest = CHALLENGE ? (p) => ((() => { const w = 2 * Math.PI * p.f, em = 0.08 * w, R = p.Ra + p.RL, Z2 = R * R + (w * p.L / 1000) * (w * p.L / 1000); return em * em / 2 * p.RL / Z2 >= 20 && p.Ra / R <= 0.15; })()) : null;
+const cv = document.getElementById("c"), ctx = cv.getContext("2d");
+const W = cv.width, H = cv.height, p = {};
+let graph = GRAPHS.length ? GRAPHS[0].id : "main";
+const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+const fmt = v => (Math.abs(v) >= 1000 || (Math.abs(v) > 0 && Math.abs(v) < 0.01)) ? v.toExponential(2) : String(+v.toPrecision(4));
+function readout(html) {
+  document.getElementById("readout").innerHTML = html;
+  cv.setAttribute("aria-label", document.title + ". " + html.replace(/<[^>]+>/g, " ").replace(/&nbsp;/g, " "));  // screen readers get the numbers
+}
+let lastOk = null;
+// ---- plotting helpers: every graph gets labelled axes with units ----
+function niceTicks(lo, hi, n) {
+  const raw = (hi - lo) / n, mag = Math.pow(10, Math.floor(Math.log10(raw))), f = raw / mag;
+  const step = (f < 1.5 ? 1 : f < 3 ? 2 : f < 7 ? 5 : 10) * mag, out = [];
+  for (let v = Math.ceil(lo / step - 1e-9) * step; v <= hi + 1e-9; v += step) out.push(+v.toPrecision(12));
+  return out;
+}
+function axes(o, C) {
+  const L = 66, R = 16, T = 34, B = 50, w = W - L - R, h = H - T - B;
+  const X = v => L + (v - o.x[0]) / (o.x[1] - o.x[0]) * w, Y = v => T + h - (v - o.y[0]) / (o.y[1] - o.y[0]) * h;
+  ctx.lineWidth = 1; ctx.font = "12px system-ui";
+  for (const xv of niceTicks(o.x[0], o.x[1], 6)) {
+    ctx.strokeStyle = C.line; ctx.beginPath(); ctx.moveTo(X(xv), T); ctx.lineTo(X(xv), T + h); ctx.stroke();
+    ctx.fillStyle = C.muted; ctx.textAlign = "center"; ctx.fillText(fmt(xv), X(xv), T + h + 16);
+  }
+  for (const yv of niceTicks(o.y[0], o.y[1], 5)) {
+    ctx.strokeStyle = C.line; ctx.beginPath(); ctx.moveTo(L, Y(yv)); ctx.lineTo(L + w, Y(yv)); ctx.stroke();
+    ctx.fillStyle = C.muted; ctx.textAlign = "right"; ctx.fillText(fmt(yv), L - 6, Y(yv) + 4);
+  }
+  ctx.strokeStyle = C.fg; ctx.beginPath(); ctx.moveTo(L, T); ctx.lineTo(L, T + h); ctx.lineTo(L + w, T + h); ctx.stroke();
+  ctx.fillStyle = C.fg; ctx.textAlign = "center"; ctx.font = "13px system-ui";
+  ctx.fillText(o.xl, L + w / 2, H - 8);
+  ctx.save(); ctx.translate(14, T + h / 2); ctx.rotate(-Math.PI / 2); ctx.fillText(o.yl, 0, 0); ctx.restore();
+  ctx.font = "bold 13px system-ui"; ctx.fillText(o.title || "", L + w / 2, 20);
+  return { X, Y, L, T, w, h };
+}
+function curve(f, a, color, x0, x1, n) {
+  n = n || 160; ctx.save(); ctx.beginPath(); ctx.rect(a.L, a.T, a.w, a.h); ctx.clip();   // never draw outside the plot area
+  ctx.strokeStyle = color; ctx.lineWidth = 2.5; ctx.beginPath();
+  for (let i = 0; i <= n; i++) { const x = x0 + (x1 - x0) * i / n, y = f(x); i ? ctx.lineTo(a.X(x), a.Y(y)) : ctx.moveTo(a.X(x), a.Y(y)); }
+  ctx.stroke(); ctx.restore();
+}
+function dot(a, x, y, color, label) {
+  ctx.fillStyle = color; ctx.beginPath(); ctx.arc(a.X(x), a.Y(y), 6, 0, 2 * Math.PI); ctx.fill();
+  if (label) { ctx.textAlign = "left"; ctx.font = "12px system-ui"; ctx.fillText(label, a.X(x) + 9, a.Y(y) - 8); }
+}
+function draw() {
+  ctx.clearRect(0, 0, W, H);
+  const C = { fg: css("--fg"), muted: css("--muted"), accent: css("--accent"), line: css("--line"), good: css("--good"), bad: css("--bad") };
+  
+const K = 0.08, w = 2 * Math.PI * p.f, Em = K * w, Lh = p.L / 1000, R = p.Ra + p.RL;
+const Z = Math.hypot(R, w * Lh), Irms = Em / Z / Math.SQRT2, Pl = Irms * Irms * p.RL, Pa = Irms * Irms * p.Ra, Pm = Pl + Pa;
+const phase = Math.atan2(w * Lh, R);
+const pLoadAt = rl => { const z = Math.hypot(p.Ra + rl, w * Lh), ir = Em / z / Math.SQRT2; return ir * ir * rl; };
+// transformer (illustrative values, same as the lesson): N1 = 460, N2 = 24, R1 = 30, R2 = 0.08, Xeq = 40, Rc = 35000
+const a = 460 / 24, req = 30 + a * a * 0.08, xeq = 40, rc = 35000;
+const xf = rl => { const rr = a * a * rl, zt2 = (req + rr) * (req + rr) + xeq * xeq, i2 = 230 * 230 / zt2, po = i2 * rr, pc = i2 * req, pk = 230 * 230 / rc;
+  return { po: po, eff: po / (po + pc + pk), pc: pc, pk: pk }; };
+const xr = xf(p.tload);
+if (graph === "circuit") {
+  const seg = (x0, y0, x1, y1) => { ctx.beginPath(); ctx.moveTo(x0, y0); ctx.lineTo(x1, y1); ctx.stroke(); };
+  const box = (x, y, wd, ht, label, sub) => { ctx.strokeStyle = C.fg; ctx.lineWidth = 2; ctx.strokeRect(x, y, wd, ht); ctx.fillStyle = C.fg; ctx.font = "13px system-ui"; ctx.textAlign = "center"; ctx.fillText(label, x + wd / 2, y + ht / 2 - 2); ctx.fillStyle = C.muted; ctx.font = "12px system-ui"; ctx.fillText(sub, x + wd / 2, y + ht / 2 + 14); };
+  ctx.strokeStyle = C.fg; ctx.lineWidth = 2;
+  seg(110, 120, 210, 120); seg(320, 120, 380, 120); seg(490, 120, 610, 120); seg(610, 120, 610, 190); seg(610, 250, 610, 320); seg(610, 320, 110, 320); seg(110, 320, 110, 250); seg(110, 190, 110, 120);
+  box(80, 190, 60, 60, "EMF", "e(t)"); box(210, 95, 110, 50, "Ra", p.Ra.toFixed(1) + " ohm"); box(380, 95, 110, 50, "L", p.L.toFixed(0) + " mH"); box(540, 190, 140, 60, "load RL", p.RL.toFixed(0) + " ohm");
+  ctx.fillStyle = C.fg; ctx.font = "13px system-ui"; ctx.textAlign = "center"; ctx.fillText("e = N B A w sin(w t): peak " + Em.toFixed(1) + " V at " + p.f.toFixed(0) + " Hz", 360, 215);
+  ctx.fillText("current lags the EMF by " + (phase * 180 / Math.PI).toFixed(1) + " degrees", 360, 240);
+  ctx.fillStyle = C.muted; ctx.font = "12px system-ui"; ctx.fillText("L di/dt = e - (Ra + RL) i, solved with RK4", 360, 280);
+  ctx.fillText("Z = sqrt((Ra + RL)^2 + (w L)^2) = " + Z.toFixed(2) + " ohm", 360, 360);
+} else if (graph === "current") {
+  const T = 1 / p.f, spp = Math.max(200, Math.ceil(T * R / Lh / 1.5)), n = 6 * spp, h = T / spp, ts = [], is = []; let i = 0, mx = 0;
+  const fn = (t, y) => (Em * Math.sin(w * t) - R * y) / Lh;
+  for (let j = 0; j <= n; j++) { const t = j * h; ts.push(t * 1000); is.push(i); mx = Math.max(mx, Math.abs(i));
+    const k1 = fn(t, i), k2 = fn(t + h / 2, i + h / 2 * k1), k3 = fn(t + h / 2, i + h / 2 * k2), k4 = fn(t + h, i + h * k3); i += h / 6 * (k1 + 2 * k2 + 2 * k3 + k4); }
+  const ym = 1.2 * Math.max(mx, Em / Z), A = axes({ x: [0, 6000 * T], y: [-ym, ym], xl: "time (ms)", yl: "current (A)", title: "RK4 current: start-up, then the steady state" }, C);
+  curve(x => Em / Z * Math.sin(w * x / 1000 - phase), A, C.muted, 0, 6000 * T, 360);
+  ctx.strokeStyle = C.accent; ctx.lineWidth = 2.5; ctx.beginPath(); ts.forEach((tv, j) => { j ? ctx.lineTo(A.X(tv), A.Y(is[j])) : ctx.moveTo(A.X(tv), A.Y(is[j])); }); ctx.stroke();
+  ctx.font = "12px system-ui"; ctx.textAlign = "left"; ctx.fillStyle = C.accent; ctx.fillText("blue: RK4 simulation", A.L + 10, A.T + 16); ctx.fillStyle = C.muted; ctx.fillText("grey: exact steady state, peak Em / Z", A.L + 10, A.T + 32);
+} else if (graph === "power") {
+  let pm = 0; for (let r = 0.5; r <= 40; r += 0.5) pm = Math.max(pm, pLoadAt(r) * (p.Ra + r) / r);
+  const A = axes({ x: [0, 40], y: [0, 1.15 * pm], xl: "load resistance RL (ohm)", yl: "power (W)", title: "Load power against load resistance" }, C);
+  curve(pLoadAt, A, C.accent, 0.5, 40, 200);
+  curve(r => pLoadAt(r) * (p.Ra + r) / r, A, C.bad, 0.5, 40, 200);
+  dot(A, p.RL, Pl, C.accent, ""); dot(A, p.RL, Pm, C.bad, "");
+  ctx.font = "12px system-ui"; ctx.textAlign = "left"; ctx.fillStyle = C.accent; ctx.fillText("blue: power in the load", A.L + 10, A.T + 16); ctx.fillStyle = C.bad; ctx.fillText("red: mechanical power we must supply", A.L + 10, A.T + 32);
+} else {
+  const A = axes({ x: [0, 110], y: [0, 100], xl: "transformer output power (W)", yl: "efficiency (%)", title: "Transformer efficiency against load (illustrative)" }, C);
+  ctx.strokeStyle = C.accent; ctx.lineWidth = 2.5; ctx.beginPath(); let first = true;
+  for (let q = 0; q <= 120; q++) { const rl = 500 * Math.pow(1 / 500, q / 120), v = xf(rl); if (v.po > 110) continue; first ? ctx.moveTo(A.X(v.po), A.Y(v.eff * 100)) : ctx.lineTo(A.X(v.po), A.Y(v.eff * 100)); first = false; }
+  ctx.stroke(); dot(A, xr.po, xr.eff * 100, C.bad, "");
+}
+readout("generator: Z = " + Z.toFixed(2) + " ohm, I(RMS) = " + Irms.toFixed(3) + " A, load power = " + Pl.toFixed(2) + " W, coil heat = " + Pa.toFixed(2) + " W, mechanical input = " + Pm.toFixed(2) + " W &nbsp;|&nbsp; transformer (230 V : 12 V) on " + p.tload.toFixed(0) + " ohm: output " + xr.po.toFixed(1) + " W, efficiency " + (xr.eff * 100).toFixed(1) + " %, copper loss " + xr.pc.toFixed(2) + " W, core loss " + xr.pk.toFixed(2) + " W");
+
+  const ch = document.getElementById("challenge");
+  if (challengeTest) { const ok = !!challengeTest(p); ch.hidden = false; ch.dataset.ok = String(ok);
+    ch.innerHTML = "<b>Challenge:</b> " + CHALLENGE + " &nbsp; " + (ok ? "<b>Done!</b>" : "Not yet.");
+    if (ok !== lastOk) { document.getElementById("status").textContent = ok ? "Challenge done." : "Challenge not yet done."; lastOk = ok; } }
+}
+const box = document.getElementById("controls");
+const inputs = {};
+for (const q of PARAMS) {
+  p[q.id] = q.value;
+  const row = document.createElement("div"); row.className = "row";
+  row.innerHTML = `<label for="${q.id}">${q.label} (${q.unit || "no unit"})</label>` +
+    `<input id="${q.id}" type="range" min="${q.min}" max="${q.max}" step="${q.step}" value="${q.value}">` +
+    `<output for="${q.id}">${q.value}</output>`;
+  const inp = row.querySelector("input"), out = row.querySelector("output");
+  inputs[q.id] = [inp, out];
+  inp.addEventListener("input", () => { p[q.id] = +inp.value; out.textContent = inp.value; draw(); });
+  box.appendChild(row);
+}
+function setAll(vals) { for (const k in vals) { p[k] = vals[k]; if (inputs[k]) { inputs[k][0].value = vals[k]; inputs[k][1].textContent = vals[k]; } } draw(); }
+const DEFAULTS = Object.assign({}, p);
+document.getElementById("reset").addEventListener("click", () => setAll(DEFAULTS));
+for (const g of GRAPHS) {
+  const b = document.createElement("button"); b.type = "button"; b.textContent = g.label;
+  b.setAttribute("aria-pressed", String(g.id === graph));
+  b.addEventListener("click", () => { graph = g.id; for (const x of document.querySelectorAll("#graphs button")) x.setAttribute("aria-pressed", String(x === b)); draw(); });
+  document.getElementById("graphs").appendChild(b);
+}
+for (const pr of PRESETS) {
+  const b = document.createElement("button"); b.type = "button"; b.textContent = pr.label;
+  b.addEventListener("click", () => setAll(pr.values));
+  document.getElementById("presets").appendChild(b);
+}
+matchMedia("(prefers-color-scheme: dark)").addEventListener("change", draw);
+draw();
+</script>
+</body>
+</html>

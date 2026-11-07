@@ -1,0 +1,11 @@
+[project]
+name = "openheatpump"
+version = "0.1.0"
+description = "Learn why a heat pump beats an electric heater: COP, Carnot limit, heat loss, sizing and an hourly winter simulation."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+dependencies = ["numpy", "matplotlib"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
