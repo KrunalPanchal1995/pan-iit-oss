@@ -1,18 +1,12 @@
 [submodule "openhousehold"]
 	path = openhousehold
 	url = https://github.com/KrunalPanchal1995/openhousehold.git
-[submodule "openfridge"]
-	path = openfridge
-	url = https://github.com/KrunalPanchal1995/openfridge.git
 [submodule "openpressurecooker"]
 	path = openpressurecooker
 	url = https://github.com/KrunalPanchal1995/openpressurecooker.git
 [submodule "opentrafficsignal"]
 	path = opentrafficsignal
 	url = https://github.com/KrunalPanchal1995/opentrafficsignal.git
-[submodule "opengps"]
-	path = opengps
-	url = https://github.com/KrunalPanchal1995/opengps.git
 [submodule "openqrcode"]
 	path = openqrcode
 	url = https://github.com/KrunalPanchal1995/openqrcode.git
@@ -28,9 +22,6 @@
 [submodule "openheights"]
 	path = openheights
 	url = https://github.com/KrunalPanchal1995/openheights.git
-[submodule "openfractal"]
-	path = openfractal
-	url = https://github.com/KrunalPanchal1995/openfractal.git
 [submodule "openvfx"]
 	path = openvfx
 	url = https://github.com/KrunalPanchal1995/openvfx.git
@@ -40,9 +31,6 @@
 [submodule "openodds"]
 	path = openodds
 	url = https://github.com/KrunalPanchal1995/openodds.git
-[submodule "openfloat"]
-	path = openfloat
-	url = https://github.com/KrunalPanchal1995/openfloat.git
 [submodule "openmotion"]
 	path = openmotion
 	url = https://github.com/KrunalPanchal1995/openmotion.git
@@ -103,9 +91,6 @@
 [submodule "openneuron"]
 	path = openneuron
 	url = https://github.com/KrunalPanchal1995/openneuron.git
-[submodule "opengenetics"]
-	path = opengenetics
-	url = https://github.com/KrunalPanchal1995/opengenetics.git
 [submodule "opentruss"]
 	path = opentruss
 	url = https://github.com/KrunalPanchal1995/opentruss.git
@@ -115,9 +100,6 @@
 [submodule "opensurvey"]
 	path = opensurvey
 	url = https://github.com/KrunalPanchal1995/opensurvey.git
-[submodule "opengears"]
-	path = opengears
-	url = https://github.com/KrunalPanchal1995/opengears.git
 [submodule "openlinkage"]
 	path = openlinkage
 	url = https://github.com/KrunalPanchal1995/openlinkage.git
@@ -187,12 +169,6 @@
 [submodule "openprocesssim"]
 	path = openprocesssim
 	url = https://github.com/KrunalPanchal1995/openprocesssim.git
-[submodule "openfoundation"]
-	path = openfoundation
-	url = https://github.com/KrunalPanchal1995/openfoundation.git
-[submodule "opengrid"]
-	path = opengrid
-	url = https://github.com/KrunalPanchal1995/opengrid.git
 [submodule "openledcontrol"]
 	path = openledcontrol
 	url = https://github.com/KrunalPanchal1995/openledcontrol.git
@@ -223,6 +199,3 @@
 [submodule "opensymbolic"]
 	path = opensymbolic
 	url = https://github.com/KrunalPanchal1995/opensymbolic.git
-[submodule "openflamevolume"]
-	path = openflamevolume
-	url = https://github.com/KrunalPanchal1995/openflamevolume.git

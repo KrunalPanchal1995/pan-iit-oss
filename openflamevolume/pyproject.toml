@@ -1,0 +1,11 @@
+[project]
+name = "openflamevolume"
+version = "0.1.0"
+description = "Rebuild a 3D flame from many 2D photos using stereo image correlation, in three sessions."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+dependencies = ["numpy", "matplotlib"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

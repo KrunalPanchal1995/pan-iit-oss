@@ -1,0 +1,188 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Session 3: from many photos to one 3D flame</title>
+<style>
+  :root { --bg:#ffffff; --fg:#14181f; --muted:#5b6472; --card:#f3f5f8; --accent:#1f6feb; --good:#1a7f37; --bad:#b42318; --line:#d7dce3; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#0e1116; --fg:#e6e9ee; --muted:#9aa3b2; --card:#171b22; --accent:#58a6ff; --good:#3fb950; --bad:#f97066; --line:#2a313c; } }
+  * { box-sizing: border-box; }
+  body { margin:0; padding:16px; background:var(--bg); color:var(--fg); font:16px/1.5 system-ui, sans-serif; }
+  main { max-width: 780px; margin: 0 auto; }
+  h1 { font-size: 1.3rem; margin: 0 0 4px; }
+  p.sub { margin: 0 0 12px; color: var(--muted); }
+  .scroll { overflow-x:auto; }
+  canvas { width:100%; min-width:560px; height:auto; background:var(--card); border:1px solid var(--line); border-radius:8px; display:block; }
+  .sr { position:absolute; left:-9999px; }
+  .bar { display:flex; flex-wrap:wrap; gap:8px; margin:10px 0; }
+  button { font:inherit; padding:6px 12px; border:1px solid var(--line); background:var(--card); color:var(--fg); border-radius:6px; cursor:pointer; }
+  button[aria-pressed="true"] { border-color:var(--accent); color:var(--accent); font-weight:600; }
+  button:focus-visible, input:focus-visible { outline:3px solid var(--accent); outline-offset:2px; }
+  .row { display:grid; grid-template-columns: 11rem 1fr 6rem; gap:8px; align-items:center; margin:8px 0; }
+  .row output { text-align:right; font-variant-numeric: tabular-nums; }
+  @media (max-width: 560px) { .row { grid-template-columns: 1fr; gap:2px; } .row output { text-align:left; } }
+  input[type=range] { width:100%; accent-color: var(--accent); }
+  #readout, #challenge, .note { margin-top:10px; padding:10px 12px; background:var(--card); border-radius:8px; border:1px solid var(--line); }
+  #challenge[data-ok="true"] { border-color:var(--good); } #challenge[data-ok="true"] b { color:var(--good); }
+  .note { font-size:.85rem; color:var(--muted); }
+  a { color: var(--accent); }
+</style>
+</head>
+<body>
+<main>
+  <h1>Session 3: from many photos to one 3D flame</h1>
+  <p class="sub">A top view of one flame slice: more stereo pairs see more of its surface, and the area (and so the volume) comes out right.</p>
+  <div class="bar" id="graphs" role="group" aria-label="Choose a graph"></div>
+  <div class="scroll"><canvas id="c" width="720" height="420" role="img" aria-label="Session 3: from many photos to one 3D flame: interactive plot"></canvas></div>
+  <div class="bar" id="presets" role="group" aria-label="Presets"></div>
+  <div id="controls"></div>
+  <div class="bar"><button id="reset" type="button">Reset</button></div>
+  <div id="readout"></div>
+  <div id="challenge" hidden></div>
+  <div id="status" class="sr" aria-live="polite"></div>
+  <p class="note">This is a simplified educational model. It is not a validated design tool and must not be used for real structures, electrical installations, vehicles, industrial processes or medical decisions.</p>
+  <p class="sub"><a href="https://github.com/KrunalPanchal1995/pan-iit-oss/tree/main/openflamevolume">Back to the repository</a></p>
+</main>
+<script>
+"use strict";
+const PARAMS = [{"id": "n", "label": "Stereo pairs around the flame", "min": 1, "max": 8, "step": 1, "value": 4, "unit": "pairs"}, {"id": "D", "label": "Camera distance D", "min": 20, "max": 60, "step": 5, "value": 30, "unit": "cm"}, {"id": "B", "label": "Baseline B", "min": 1, "max": 6, "step": 0.5, "value": 3, "unit": "cm"}, {"id": "sd", "label": "Match error sigma_d", "min": 0.1, "max": 1, "step": 0.1, "value": 0.5, "unit": "px"}, {"id": "th", "label": "Largest viewing angle", "min": 30, "max": 80, "step": 5, "value": 60, "unit": "degrees"}];
+const GRAPHS = [{"id": "top", "label": "Slice top view", "diagram": true}, {"id": "vol", "label": "Error versus pairs"}];
+const PRESETS = [{"label": "One pair", "values": {"n": 1, "D": 30, "B": 3, "sd": 0.5, "th": 60}}, {"label": "Four pairs", "values": {"n": 4, "D": 30, "B": 3, "sd": 0.5, "th": 60}}, {"label": "Far and noisy", "values": {"n": 4, "D": 60, "B": 1, "sd": 1, "th": 60}}];
+const CHALLENGE = "Rebuild the slice area to within 5 percent using at most 3 stereo pairs with the cameras at least 40 cm away.";
+const CHALLENGE_SOLUTION = {"n": 3, "D": 40, "B": 6, "sd": 0.5, "th": 60};
+const challengeTest = CHALLENGE ? (p) => (p.n <= 3 && p.D >= 40 && Math.abs(study(p, p.n).err) <= 0.05) : null;
+function rng(seed) { let s = seed >>> 0; return () => (s = (Math.imul(s, 1664525) + 1013904223) >>> 0) / 4294967296; }
+const AA = 0.015, BB = 0.010, FPX = 1000, NS = 240, NSEC = 24;
+const NZ = (() => { const r = rng(5), a = []; for (let k = 0; k < 8; k++) { const row = []; for (let i = 0; i < NS; i++) { const u = Math.max(r(), 1e-9), v = r(); row.push(Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v)); } a.push(row); } return a; })();
+function shoelace(x, y) { let s = 0; for (let i = 0; i < x.length; i++) { const j = (i + 1) % x.length; s += x[i] * y[j] - x[j] * y[i]; } return Math.abs(s) / 2; }
+function study(q, n) {
+  const D = q.D / 100, Bm = q.B / 100, sg = D * D * q.sd / (FPX * Bm), cth = Math.cos(q.th * Math.PI / 180), pts = [];
+  for (let k = 0; k < n; k++) {
+    const phi = 2 * Math.PI * k / n, cx = D * Math.cos(phi), cy = D * Math.sin(phi);
+    for (let i = 0; i < NS; i++) {
+      const t = 2 * Math.PI * i / NS, px = AA * Math.cos(t), py = BB * Math.sin(t);
+      let nx = Math.cos(t) / AA, ny = Math.sin(t) / BB; const nn = Math.hypot(nx, ny); nx /= nn; ny /= nn;
+      const vx = cx - px, vy = cy - py, vn = Math.hypot(vx, vy);
+      if ((nx * vx + ny * vy) / vn < cth) continue;                  // surface turned away from this camera
+      pts.push([px - NZ[k][i] * sg * vx / vn, py - NZ[k][i] * sg * vy / vn]);   // error along the line of sight
+    }
+  }
+  let area = 0;
+  if (pts.length >= 3) {
+    let mx = 0, my = 0; for (const a of pts) { mx += a[0]; my += a[1]; } mx /= pts.length; my /= pts.length;
+    const bins = []; for (let s = 0; s < NSEC; s++) bins.push([]);
+    for (const a of pts) { const ang = Math.atan2(a[1] - my, a[0] - mx), s = Math.floor((ang + Math.PI) / (2 * Math.PI) * NSEC) % NSEC; bins[s].push(Math.hypot(a[0] - mx, a[1] - my)); }
+    const xs = [], ys = [];
+    bins.forEach((b, s) => { if (b.length) { b.sort((u, v) => u - v); const r = b[Math.floor(b.length / 2)], am = -Math.PI + (s + 0.5) * 2 * Math.PI / NSEC; xs.push(mx + r * Math.cos(am)); ys.push(my + r * Math.sin(am)); } });
+    if (xs.length >= 3) area = shoelace(xs, ys);
+    return { pts: pts, xs: xs, ys: ys, area: area, err: area / (Math.PI * AA * BB) - 1, sg: sg };
+  }
+  return { pts: pts, xs: [], ys: [], area: 0, err: -1, sg: sg };
+}
+const cv = document.getElementById("c"), ctx = cv.getContext("2d");
+const W = cv.width, H = cv.height, p = {};
+let graph = GRAPHS.length ? GRAPHS[0].id : "main";
+const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+const fmt = v => (Math.abs(v) >= 1000 || (Math.abs(v) > 0 && Math.abs(v) < 0.01)) ? v.toExponential(2) : String(+v.toPrecision(4));
+function readout(html) {
+  document.getElementById("readout").innerHTML = html;
+  cv.setAttribute("aria-label", document.title + ". " + html.replace(/<[^>]+>/g, " ").replace(/&nbsp;/g, " "));  // screen readers get the numbers
+}
+let lastOk = null;
+// ---- plotting helpers: every graph gets labelled axes with units ----
+function niceTicks(lo, hi, n) {
+  const raw = (hi - lo) / n, mag = Math.pow(10, Math.floor(Math.log10(raw))), f = raw / mag;
+  const step = (f < 1.5 ? 1 : f < 3 ? 2 : f < 7 ? 5 : 10) * mag, out = [];
+  for (let v = Math.ceil(lo / step - 1e-9) * step; v <= hi + 1e-9; v += step) out.push(+v.toPrecision(12));
+  return out;
+}
+function axes(o, C) {
+  const L = 66, R = 16, T = 34, B = 50, w = W - L - R, h = H - T - B;
+  const X = v => L + (v - o.x[0]) / (o.x[1] - o.x[0]) * w, Y = v => T + h - (v - o.y[0]) / (o.y[1] - o.y[0]) * h;
+  ctx.lineWidth = 1; ctx.font = "12px system-ui";
+  for (const xv of niceTicks(o.x[0], o.x[1], 6)) {
+    ctx.strokeStyle = C.line; ctx.beginPath(); ctx.moveTo(X(xv), T); ctx.lineTo(X(xv), T + h); ctx.stroke();
+    ctx.fillStyle = C.muted; ctx.textAlign = "center"; ctx.fillText(fmt(xv), X(xv), T + h + 16);
+  }
+  for (const yv of niceTicks(o.y[0], o.y[1], 5)) {
+    ctx.strokeStyle = C.line; ctx.beginPath(); ctx.moveTo(L, Y(yv)); ctx.lineTo(L + w, Y(yv)); ctx.stroke();
+    ctx.fillStyle = C.muted; ctx.textAlign = "right"; ctx.fillText(fmt(yv), L - 6, Y(yv) + 4);
+  }
+  ctx.strokeStyle = C.fg; ctx.beginPath(); ctx.moveTo(L, T); ctx.lineTo(L, T + h); ctx.lineTo(L + w, T + h); ctx.stroke();
+  ctx.fillStyle = C.fg; ctx.textAlign = "center"; ctx.font = "13px system-ui";
+  ctx.fillText(o.xl, L + w / 2, H - 8);
+  ctx.save(); ctx.translate(14, T + h / 2); ctx.rotate(-Math.PI / 2); ctx.fillText(o.yl, 0, 0); ctx.restore();
+  ctx.font = "bold 13px system-ui"; ctx.fillText(o.title || "", L + w / 2, 20);
+  return { X, Y, L, T, w, h };
+}
+function curve(f, a, color, x0, x1, n) {
+  n = n || 160; ctx.save(); ctx.beginPath(); ctx.rect(a.L, a.T, a.w, a.h); ctx.clip();   // never draw outside the plot area
+  ctx.strokeStyle = color; ctx.lineWidth = 2.5; ctx.beginPath();
+  for (let i = 0; i <= n; i++) { const x = x0 + (x1 - x0) * i / n, y = f(x); i ? ctx.lineTo(a.X(x), a.Y(y)) : ctx.moveTo(a.X(x), a.Y(y)); }
+  ctx.stroke(); ctx.restore();
+}
+function dot(a, x, y, color, label) {
+  ctx.fillStyle = color; ctx.beginPath(); ctx.arc(a.X(x), a.Y(y), 6, 0, 2 * Math.PI); ctx.fill();
+  if (label) { ctx.textAlign = "left"; ctx.font = "12px system-ui"; ctx.fillText(label, a.X(x) + 9, a.Y(y) - 8); }
+}
+function draw() {
+  ctx.clearRect(0, 0, W, H);
+  const C = { fg: css("--fg"), muted: css("--muted"), accent: css("--accent"), line: css("--line"), good: css("--good"), bad: css("--bad") };
+const S = study(p, p.n);
+if (graph === "top") {
+  const A = axes({ x: [-40, 40], y: [-23, 23], xl: "x (mm)", yl: "y (mm)", title: "One slice of the flame: points seen by " + p.n + " stereo pair(s)" }, C);
+  ctx.strokeStyle = C.muted; ctx.lineWidth = 1.5; ctx.beginPath();
+  for (let i = 0; i <= 100; i++) { const t = 2 * Math.PI * i / 100, x = 1000 * AA * Math.cos(t), y = 1000 * BB * Math.sin(t); i ? ctx.lineTo(A.X(x), A.Y(y)) : ctx.moveTo(A.X(x), A.Y(y)); }
+  ctx.stroke();
+  ctx.fillStyle = C.accent; for (const a of S.pts) { ctx.beginPath(); ctx.arc(A.X(a[0] * 1000), A.Y(a[1] * 1000), 2.5, 0, 2 * Math.PI); ctx.fill(); }
+  ctx.strokeStyle = C.bad; ctx.lineWidth = 2; ctx.beginPath();
+  S.xs.forEach((x, i) => { i ? ctx.lineTo(A.X(x * 1000), A.Y(S.ys[i] * 1000)) : ctx.moveTo(A.X(x * 1000), A.Y(S.ys[i] * 1000)); });
+  if (S.xs.length) ctx.closePath(); ctx.stroke();
+  for (let k = 0; k < p.n; k++) { const phi = 2 * Math.PI * k / p.n; dot(A, 34 * Math.cos(phi), 17 * Math.sin(phi), C.good, "pair " + (k + 1)); }
+} else {
+  const A = axes({ x: [1, 8], y: [-100, 10], xl: "number of stereo pairs", yl: "slice area error (percent)", title: "Error against number of pairs (current settings)" }, C);
+  ctx.globalAlpha = 0.18; ctx.fillStyle = C.good; ctx.fillRect(A.L, A.Y(5), A.w, A.Y(-5) - A.Y(5)); ctx.globalAlpha = 1;
+  const es = []; for (let n = 1; n <= 8; n++) es.push(100 * study(p, n).err);
+  curve(x => es[Math.round(x) - 1], A, C.accent, 1, 8, 7);
+  es.forEach((e, i) => dot(A, i + 1, e, i + 1 === p.n ? C.bad : C.accent, i + 1 === p.n ? e.toFixed(1) + " %" : ""));
+}
+readout(p.n + " pair(s), " + S.pts.length + " points &nbsp; sigma_Z = " + (1000 * S.sg).toFixed(2) + " mm &nbsp; slice area " + (S.area * 1e6).toFixed(0) + " mm2 (true " + (Math.PI * AA * BB * 1e6).toFixed(0) + ") &nbsp; volume error " + (100 * S.err >= 0 ? "+" : "") + (100 * S.err).toFixed(1) + " %");
+
+  const ch = document.getElementById("challenge");
+  if (challengeTest) { const ok = !!challengeTest(p); ch.hidden = false; ch.dataset.ok = String(ok);
+    ch.innerHTML = "<b>Challenge:</b> " + CHALLENGE + " &nbsp; " + (ok ? "<b>Done!</b>" : "Not yet.");
+    if (ok !== lastOk) { document.getElementById("status").textContent = ok ? "Challenge done." : "Challenge not yet done."; lastOk = ok; } }
+}
+const box = document.getElementById("controls");
+const inputs = {};
+for (const q of PARAMS) {
+  p[q.id] = q.value;
+  const row = document.createElement("div"); row.className = "row";
+  row.innerHTML = `<label for="${q.id}">${q.label} (${q.unit || "no unit"})</label>` +
+    `<input id="${q.id}" type="range" min="${q.min}" max="${q.max}" step="${q.step}" value="${q.value}">` +
+    `<output for="${q.id}">${q.value}</output>`;
+  const inp = row.querySelector("input"), out = row.querySelector("output");
+  inputs[q.id] = [inp, out];
+  inp.addEventListener("input", () => { p[q.id] = +inp.value; out.textContent = inp.value; draw(); });
+  box.appendChild(row);
+}
+function setAll(vals) { for (const k in vals) { p[k] = vals[k]; if (inputs[k]) { inputs[k][0].value = vals[k]; inputs[k][1].textContent = vals[k]; } } draw(); }
+const DEFAULTS = Object.assign({}, p);
+document.getElementById("reset").addEventListener("click", () => setAll(DEFAULTS));
+for (const g of GRAPHS) {
+  const b = document.createElement("button"); b.type = "button"; b.textContent = g.label;
+  b.setAttribute("aria-pressed", String(g.id === graph));
+  b.addEventListener("click", () => { graph = g.id; for (const x of document.querySelectorAll("#graphs button")) x.setAttribute("aria-pressed", String(x === b)); draw(); });
+  document.getElementById("graphs").appendChild(b);
+}
+for (const pr of PRESETS) {
+  const b = document.createElement("button"); b.type = "button"; b.textContent = pr.label;
+  b.addEventListener("click", () => setAll(pr.values));
+  document.getElementById("presets").appendChild(b);
+}
+matchMedia("(prefers-color-scheme: dark)").addEventListener("change", draw);
+draw();
+</script>
+</body>
+</html>

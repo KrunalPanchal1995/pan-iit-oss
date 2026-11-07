@@ -1,0 +1,182 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Session 1: gears in a row</title>
+<style>
+  :root { --bg:#ffffff; --fg:#14181f; --muted:#5b6472; --card:#f3f5f8; --accent:#1f6feb; --good:#1a7f37; --bad:#b42318; --line:#d7dce3; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#0e1116; --fg:#e6e9ee; --muted:#9aa3b2; --card:#171b22; --accent:#58a6ff; --good:#3fb950; --bad:#f97066; --line:#2a313c; } }
+  * { box-sizing: border-box; }
+  body { margin:0; padding:16px; background:var(--bg); color:var(--fg); font:16px/1.5 system-ui, sans-serif; }
+  main { max-width: 780px; margin: 0 auto; }
+  h1 { font-size: 1.3rem; margin: 0 0 4px; }
+  p.sub { margin: 0 0 12px; color: var(--muted); }
+  .scroll { overflow-x:auto; }
+  canvas { width:100%; min-width:560px; height:auto; background:var(--card); border:1px solid var(--line); border-radius:8px; display:block; }
+  .sr { position:absolute; left:-9999px; }
+  .bar { display:flex; flex-wrap:wrap; gap:8px; margin:10px 0; }
+  button { font:inherit; padding:6px 12px; border:1px solid var(--line); background:var(--card); color:var(--fg); border-radius:6px; cursor:pointer; }
+  button[aria-pressed="true"] { border-color:var(--accent); color:var(--accent); font-weight:600; }
+  button:focus-visible, input:focus-visible { outline:3px solid var(--accent); outline-offset:2px; }
+  .row { display:grid; grid-template-columns: 11rem 1fr 6rem; gap:8px; align-items:center; margin:8px 0; }
+  .row output { text-align:right; font-variant-numeric: tabular-nums; }
+  @media (max-width: 560px) { .row { grid-template-columns: 1fr; gap:2px; } .row output { text-align:left; } }
+  input[type=range] { width:100%; accent-color: var(--accent); }
+  #readout, #challenge, .note { margin-top:10px; padding:10px 12px; background:var(--card); border-radius:8px; border:1px solid var(--line); }
+  #challenge[data-ok="true"] { border-color:var(--good); } #challenge[data-ok="true"] b { color:var(--good); }
+  .note { font-size:.85rem; color:var(--muted); }
+  a { color: var(--accent); }
+</style>
+</head>
+<body>
+<main>
+  <h1>Session 1: gears in a row</h1>
+  <p class="sub">A driver, up to two idlers and a driven gear; the graphs show output speed and torque against the driven gear's teeth.</p>
+  <div class="bar" id="graphs" role="group" aria-label="Choose a graph"></div>
+  <div class="scroll"><canvas id="c" width="720" height="420" role="img" aria-label="Session 1: gears in a row: interactive plot"></canvas></div>
+  <div class="bar" id="presets" role="group" aria-label="Presets"></div>
+  <div id="controls"></div>
+  <div class="bar"><button id="reset" type="button">Reset</button></div>
+  <div id="readout"></div>
+  <div id="challenge" hidden></div>
+  <div id="status" class="sr" aria-live="polite"></div>
+  <p class="note">This is a simplified educational model. It is not a validated design tool and must not be used for real structures, electrical installations, vehicles, industrial processes or medical decisions.</p>
+  <p class="sub"><a href="https://github.com/KrunalPanchal1995/pan-iit-oss/tree/main/opengears">Back to the repository</a></p>
+</main>
+<script>
+"use strict";
+const PARAMS = [{"id": "n1", "label": "Driver teeth", "min": 10, "max": 40, "step": 1, "value": 20, "unit": "teeth"}, {"id": "n2", "label": "Driven teeth", "min": 10, "max": 60, "step": 1, "value": 40, "unit": "teeth"}, {"id": "idlers", "label": "Idlers (20 teeth each)", "min": 0, "max": 2, "step": 1, "value": 0, "unit": ""}, {"id": "win", "label": "Input speed", "min": 10, "max": 120, "step": 5, "value": 120, "unit": "rpm"}, {"id": "tin", "label": "Input torque", "min": 1, "max": 20, "step": 1, "value": 5, "unit": "N m"}, {"id": "turn", "label": "Turn the input", "min": 0, "max": 360, "step": 5, "value": 20, "unit": "degrees"}];
+const GRAPHS = [{"id": "gears", "label": "Gear train", "diagram": true}, {"id": "speed", "label": "Output speed"}, {"id": "torque", "label": "Output torque"}];
+const PRESETS = [{"label": "20 to 60", "values": {"n1": 20, "n2": 60, "idlers": 0, "win": 120, "tin": 5, "turn": 20}}, {"label": "With an idler", "values": {"n1": 20, "n2": 60, "idlers": 1, "win": 120, "tin": 5, "turn": 20}}, {"label": "Speed-up 40 to 20", "values": {"n1": 40, "n2": 20, "idlers": 0, "win": 100, "tin": 4, "turn": 20}}];
+const CHALLENGE = "From 120 rpm, get 40 rpm out in the same direction as the input (within 0.5 rpm).";
+const CHALLENGE_SOLUTION = {"n1": 20, "n2": 60, "idlers": 1, "win": 120, "tin": 5, "turn": 20};
+const challengeTest = CHALLENGE ? (p) => (p.idlers % 2 === 1 && Math.abs(p.win * p.n1 / p.n2 - 40) < 0.5) : null;
+const cv = document.getElementById("c"), ctx = cv.getContext("2d");
+const W = cv.width, H = cv.height, p = {};
+let graph = GRAPHS.length ? GRAPHS[0].id : "main";
+const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+const fmt = v => (Math.abs(v) >= 1000 || (Math.abs(v) > 0 && Math.abs(v) < 0.01)) ? v.toExponential(2) : String(+v.toPrecision(4));
+function readout(html) {
+  document.getElementById("readout").innerHTML = html;
+  cv.setAttribute("aria-label", document.title + ". " + html.replace(/<[^>]+>/g, " ").replace(/&nbsp;/g, " "));  // screen readers get the numbers
+}
+let lastOk = null;
+// ---- plotting helpers: every graph gets labelled axes with units ----
+function niceTicks(lo, hi, n) {
+  const raw = (hi - lo) / n, mag = Math.pow(10, Math.floor(Math.log10(raw))), f = raw / mag;
+  const step = (f < 1.5 ? 1 : f < 3 ? 2 : f < 7 ? 5 : 10) * mag, out = [];
+  for (let v = Math.ceil(lo / step - 1e-9) * step; v <= hi + 1e-9; v += step) out.push(+v.toPrecision(12));
+  return out;
+}
+function axes(o, C) {
+  const L = 66, R = 16, T = 34, B = 50, w = W - L - R, h = H - T - B;
+  const X = v => L + (v - o.x[0]) / (o.x[1] - o.x[0]) * w, Y = v => T + h - (v - o.y[0]) / (o.y[1] - o.y[0]) * h;
+  ctx.lineWidth = 1; ctx.font = "12px system-ui";
+  for (const xv of niceTicks(o.x[0], o.x[1], 6)) {
+    ctx.strokeStyle = C.line; ctx.beginPath(); ctx.moveTo(X(xv), T); ctx.lineTo(X(xv), T + h); ctx.stroke();
+    ctx.fillStyle = C.muted; ctx.textAlign = "center"; ctx.fillText(fmt(xv), X(xv), T + h + 16);
+  }
+  for (const yv of niceTicks(o.y[0], o.y[1], 5)) {
+    ctx.strokeStyle = C.line; ctx.beginPath(); ctx.moveTo(L, Y(yv)); ctx.lineTo(L + w, Y(yv)); ctx.stroke();
+    ctx.fillStyle = C.muted; ctx.textAlign = "right"; ctx.fillText(fmt(yv), L - 6, Y(yv) + 4);
+  }
+  ctx.strokeStyle = C.fg; ctx.beginPath(); ctx.moveTo(L, T); ctx.lineTo(L, T + h); ctx.lineTo(L + w, T + h); ctx.stroke();
+  ctx.fillStyle = C.fg; ctx.textAlign = "center"; ctx.font = "13px system-ui";
+  ctx.fillText(o.xl, L + w / 2, H - 8);
+  ctx.save(); ctx.translate(14, T + h / 2); ctx.rotate(-Math.PI / 2); ctx.fillText(o.yl, 0, 0); ctx.restore();
+  ctx.font = "bold 13px system-ui"; ctx.fillText(o.title || "", L + w / 2, 20);
+  return { X, Y, L, T, w, h };
+}
+function curve(f, a, color, x0, x1, n) {
+  n = n || 160; ctx.save(); ctx.beginPath(); ctx.rect(a.L, a.T, a.w, a.h); ctx.clip();   // never draw outside the plot area
+  ctx.strokeStyle = color; ctx.lineWidth = 2.5; ctx.beginPath();
+  for (let i = 0; i <= n; i++) { const x = x0 + (x1 - x0) * i / n, y = f(x); i ? ctx.lineTo(a.X(x), a.Y(y)) : ctx.moveTo(a.X(x), a.Y(y)); }
+  ctx.stroke(); ctx.restore();
+}
+function dot(a, x, y, color, label) {
+  ctx.fillStyle = color; ctx.beginPath(); ctx.arc(a.X(x), a.Y(y), 6, 0, 2 * Math.PI); ctx.fill();
+  if (label) { ctx.textAlign = "left"; ctx.font = "12px system-ui"; ctx.fillText(label, a.X(x) + 9, a.Y(y) - 8); }
+}
+function draw() {
+  ctx.clearRect(0, 0, W, H);
+  const C = { fg: css("--fg"), muted: css("--muted"), accent: css("--accent"), line: css("--line"), good: css("--good"), bad: css("--bad") };
+  
+const M = 3.4, IDL = 20;
+const teeth = [p.n1].concat(Array(p.idlers).fill(IDL), [p.n2]);
+const ratio = p.n2 / p.n1, wout = p.win / ratio, tout = p.tin * ratio, same = p.idlers % 2 === 1;
+const pin = p.tin * p.win * 2 * Math.PI / 60;
+if (graph === "gears") {
+  let total = 0; teeth.forEach(n => { total += M * n; });
+  const cy = H / 2 - 20;
+  let x = (W - total) / 2 + M * teeth[0] / 2, ang = p.turn * Math.PI / 180;
+  const gear = (cx, n, r, a, col) => {
+    const pt = 2 * Math.PI / n; ctx.beginPath();
+    for (let j = 0; j < n; j++) {
+      [[-0.40, -1.25], [-0.18, 1], [0.18, 1], [0.40, -1.25]].forEach((q, u) => {
+        const rr = r + q[1] * M, t = a + j * pt + q[0] * pt, X = cx + rr * Math.cos(t), Y = cy + rr * Math.sin(t);
+        (j === 0 && u === 0) ? ctx.moveTo(X, Y) : ctx.lineTo(X, Y);
+      });
+    }
+    ctx.closePath(); ctx.fillStyle = col; ctx.globalAlpha = 0.55; ctx.fill(); ctx.globalAlpha = 1;
+    ctx.strokeStyle = C.fg; ctx.lineWidth = 1; ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(cx, cy); ctx.lineTo(cx + 0.7 * r * Math.cos(a), cy + 0.7 * r * Math.sin(a)); ctx.stroke();
+  };
+  teeth.forEach((n, i) => {
+    const r = M * n / 2;
+    if (i > 0) { x += M * teeth[i - 1] / 2 + r; ang = Math.PI - (Math.PI + teeth[i - 1] * ang) / n; }
+    gear(x, n, r, ang, i === 0 ? C.accent : (i === teeth.length - 1 ? C.good : C.muted));
+    ctx.fillStyle = C.fg; ctx.font = "12px system-ui"; ctx.textAlign = "center";
+    ctx.fillText((i === 0 ? "driver " : (i === teeth.length - 1 ? "driven " : "idler ")) + n + " teeth", x, cy + r + M + 18);
+    ctx.fillText(i % 2 === 0 ? "turns clockwise" : "turns anticlockwise", x, cy + r + M + 34);
+  });
+  ctx.fillStyle = C.muted; ctx.textAlign = "left";
+  ctx.fillText("simplified educational model: ideal gears, no friction, no backlash", 10, H - 10);
+} else if (graph === "speed") {
+  const A = axes({ x: [10, 60], y: [0, 500], xl: "teeth on the driven gear", yl: "output speed (rpm)", title: "Output speed falls as the driven gear grows" }, C);
+  curve(n => p.win * p.n1 / n, A, C.accent, 10, 60);
+  dot(A, p.n2, wout, C.bad, "now");
+} else {
+  const A = axes({ x: [10, 60], y: [0, 130], xl: "teeth on the driven gear", yl: "ideal output torque (N m)", title: "Output torque grows as the driven gear grows" }, C);
+  curve(n => p.tin * n / p.n1, A, C.good, 10, 60);
+  dot(A, p.n2, tout, C.bad, "now");
+}
+readout("ratio " + ratio.toFixed(2) + " &nbsp; output " + wout.toFixed(1) + " rpm, " + (same ? "same direction" : "opposite direction") + " &nbsp; ideal torque " + tout.toFixed(1) + " N m &nbsp; power in " + pin.toFixed(1) + " W = power out " + pin.toFixed(1) + " W (ideal)");
+
+  const ch = document.getElementById("challenge");
+  if (challengeTest) { const ok = !!challengeTest(p); ch.hidden = false; ch.dataset.ok = String(ok);
+    ch.innerHTML = "<b>Challenge:</b> " + CHALLENGE + " &nbsp; " + (ok ? "<b>Done!</b>" : "Not yet.");
+    if (ok !== lastOk) { document.getElementById("status").textContent = ok ? "Challenge done." : "Challenge not yet done."; lastOk = ok; } }
+}
+const box = document.getElementById("controls");
+const inputs = {};
+for (const q of PARAMS) {
+  p[q.id] = q.value;
+  const row = document.createElement("div"); row.className = "row";
+  row.innerHTML = `<label for="${q.id}">${q.label} (${q.unit || "no unit"})</label>` +
+    `<input id="${q.id}" type="range" min="${q.min}" max="${q.max}" step="${q.step}" value="${q.value}">` +
+    `<output for="${q.id}">${q.value}</output>`;
+  const inp = row.querySelector("input"), out = row.querySelector("output");
+  inputs[q.id] = [inp, out];
+  inp.addEventListener("input", () => { p[q.id] = +inp.value; out.textContent = inp.value; draw(); });
+  box.appendChild(row);
+}
+function setAll(vals) { for (const k in vals) { p[k] = vals[k]; if (inputs[k]) { inputs[k][0].value = vals[k]; inputs[k][1].textContent = vals[k]; } } draw(); }
+const DEFAULTS = Object.assign({}, p);
+document.getElementById("reset").addEventListener("click", () => setAll(DEFAULTS));
+for (const g of GRAPHS) {
+  const b = document.createElement("button"); b.type = "button"; b.textContent = g.label;
+  b.setAttribute("aria-pressed", String(g.id === graph));
+  b.addEventListener("click", () => { graph = g.id; for (const x of document.querySelectorAll("#graphs button")) x.setAttribute("aria-pressed", String(x === b)); draw(); });
+  document.getElementById("graphs").appendChild(b);
+}
+for (const pr of PRESETS) {
+  const b = document.createElement("button"); b.type = "button"; b.textContent = pr.label;
+  b.addEventListener("click", () => setAll(pr.values));
+  document.getElementById("presets").appendChild(b);
+}
+matchMedia("(prefers-color-scheme: dark)").addEventListener("change", draw);
+draw();
+</script>
+</body>
+</html>
