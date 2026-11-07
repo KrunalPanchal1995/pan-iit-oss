@@ -1,0 +1,11 @@
+[project]
+name = "openrobotarm"
+version = "0.1.0"
+description = "Learn forward and inverse kinematics for a pick-and-place robot arm: workspace, joint limits, Jacobians and singularities, in 3 sessions."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+dependencies = ["numpy", "matplotlib"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

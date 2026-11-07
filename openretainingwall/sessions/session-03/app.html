@@ -1,0 +1,181 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Session 3: will the wall pass? (4 m wall)</title>
+<style>
+  :root { --bg:#ffffff; --fg:#14181f; --muted:#5b6472; --card:#f3f5f8; --accent:#1f6feb; --good:#1a7f37; --bad:#b42318; --line:#d7dce3; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#0e1116; --fg:#e6e9ee; --muted:#9aa3b2; --card:#171b22; --accent:#58a6ff; --good:#3fb950; --bad:#f97066; --line:#2a313c; } }
+  * { box-sizing: border-box; }
+  body { margin:0; padding:16px; background:var(--bg); color:var(--fg); font:16px/1.5 system-ui, sans-serif; }
+  main { max-width: 780px; margin: 0 auto; }
+  h1 { font-size: 1.3rem; margin: 0 0 4px; }
+  p.sub { margin: 0 0 12px; color: var(--muted); }
+  .scroll { overflow-x:auto; }
+  canvas { width:100%; min-width:560px; height:auto; background:var(--card); border:1px solid var(--line); border-radius:8px; display:block; }
+  .sr { position:absolute; left:-9999px; }
+  .bar { display:flex; flex-wrap:wrap; gap:8px; margin:10px 0; }
+  button { font:inherit; padding:6px 12px; border:1px solid var(--line); background:var(--card); color:var(--fg); border-radius:6px; cursor:pointer; }
+  button[aria-pressed="true"] { border-color:var(--accent); color:var(--accent); font-weight:600; }
+  button:focus-visible, input:focus-visible { outline:3px solid var(--accent); outline-offset:2px; }
+  .row { display:grid; grid-template-columns: 11rem 1fr 6rem; gap:8px; align-items:center; margin:8px 0; }
+  .row output { text-align:right; font-variant-numeric: tabular-nums; }
+  @media (max-width: 560px) { .row { grid-template-columns: 1fr; gap:2px; } .row output { text-align:left; } }
+  input[type=range] { width:100%; accent-color: var(--accent); }
+  #readout, #challenge, .note { margin-top:10px; padding:10px 12px; background:var(--card); border-radius:8px; border:1px solid var(--line); }
+  #challenge[data-ok="true"] { border-color:var(--good); } #challenge[data-ok="true"] b { color:var(--good); }
+  .note { font-size:.85rem; color:var(--muted); }
+  a { color: var(--accent); }
+</style>
+</head>
+<body>
+<main>
+  <h1>Session 3: will the wall pass? (4 m wall)</h1>
+  <p class="sub">Change the width, friction, soil and water level; the wall turns green when all three checks pass.</p>
+  <div class="bar" id="graphs" role="group" aria-label="Choose a graph"></div>
+  <div class="scroll"><canvas id="c" width="720" height="420" role="img" aria-label="Session 3: will the wall pass? (4 m wall): interactive plot"></canvas></div>
+  <div class="bar" id="presets" role="group" aria-label="Presets"></div>
+  <div id="controls"></div>
+  <div class="bar"><button id="reset" type="button">Reset</button></div>
+  <div id="readout"></div>
+  <div id="challenge" hidden></div>
+  <div id="status" class="sr" aria-live="polite"></div>
+  <p class="note">This is a simplified educational model. It is not a validated design tool and must not be used for real structures, electrical installations, vehicles, industrial processes or medical decisions.</p>
+  <p class="sub"><a href="https://github.com/KrunalPanchal1995/pan-iit-oss/tree/main/openretainingwall">Back to the repository</a></p>
+</main>
+<script>
+"use strict";
+const PARAMS = [{"id": "B", "label": "Wall width B", "min": 0.5, "max": 4, "step": 0.1, "value": 2, "unit": "m"}, {"id": "mu", "label": "Base friction coefficient", "min": 0.2, "max": 0.7, "step": 0.05, "value": 0.5, "unit": ""}, {"id": "phi", "label": "Friction angle phi", "min": 20, "max": 40, "step": 1, "value": 30, "unit": "degrees"}, {"id": "hw", "label": "Water level in backfill", "min": 0, "max": 4, "step": 0.5, "value": 0, "unit": "m"}];
+const GRAPHS = [{"id": "wall", "label": "Wall, forces and base pressure", "diagram": true}, {"id": "water", "label": "Safety versus water level"}];
+const PRESETS = [{"label": "Dry worked example", "values": {"B": 2, "mu": 0.5, "phi": 30, "hw": 0}}, {"label": "Water 2 m", "values": {"B": 2, "mu": 0.5, "phi": 30, "hw": 2}}, {"label": "Saturated", "values": {"B": 2, "mu": 0.5, "phi": 30, "hw": 4}}, {"label": "Wider wall, water 2 m", "values": {"B": 2.5, "mu": 0.5, "phi": 30, "hw": 2}}];
+const CHALLENGE = "With the water level at 2 m, friction at least 0.5 and phi at least 30 degrees, choose the width so that the wall passes all three checks (green).";
+const CHALLENGE_SOLUTION = {"B": 2.5, "mu": 0.5, "phi": 30, "hw": 2};
+const challengeTest = CHALLENGE ? (p) => (Math.abs(p.hw - 2) < 0.01 && p.B >= 2.5 && p.mu >= 0.5 && p.phi >= 30) : null;
+const cv = document.getElementById("c"), ctx = cv.getContext("2d");
+const W = cv.width, H = cv.height, p = {};
+let graph = GRAPHS.length ? GRAPHS[0].id : "main";
+const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+const fmt = v => (Math.abs(v) >= 1000 || (Math.abs(v) > 0 && Math.abs(v) < 0.01)) ? v.toExponential(2) : String(+v.toPrecision(4));
+function readout(html) {
+  document.getElementById("readout").innerHTML = html;
+  cv.setAttribute("aria-label", document.title + ". " + html.replace(/<[^>]+>/g, " ").replace(/&nbsp;/g, " "));  // screen readers get the numbers
+}
+let lastOk = null;
+// ---- plotting helpers: every graph gets labelled axes with units ----
+function niceTicks(lo, hi, n) {
+  const raw = (hi - lo) / n, mag = Math.pow(10, Math.floor(Math.log10(raw))), f = raw / mag;
+  const step = (f < 1.5 ? 1 : f < 3 ? 2 : f < 7 ? 5 : 10) * mag, out = [];
+  for (let v = Math.ceil(lo / step - 1e-9) * step; v <= hi + 1e-9; v += step) out.push(+v.toPrecision(12));
+  return out;
+}
+function axes(o, C) {
+  const L = 66, R = 16, T = 34, B = 50, w = W - L - R, h = H - T - B;
+  const X = v => L + (v - o.x[0]) / (o.x[1] - o.x[0]) * w, Y = v => T + h - (v - o.y[0]) / (o.y[1] - o.y[0]) * h;
+  ctx.lineWidth = 1; ctx.font = "12px system-ui";
+  for (const xv of niceTicks(o.x[0], o.x[1], 6)) {
+    ctx.strokeStyle = C.line; ctx.beginPath(); ctx.moveTo(X(xv), T); ctx.lineTo(X(xv), T + h); ctx.stroke();
+    ctx.fillStyle = C.muted; ctx.textAlign = "center"; ctx.fillText(fmt(xv), X(xv), T + h + 16);
+  }
+  for (const yv of niceTicks(o.y[0], o.y[1], 5)) {
+    ctx.strokeStyle = C.line; ctx.beginPath(); ctx.moveTo(L, Y(yv)); ctx.lineTo(L + w, Y(yv)); ctx.stroke();
+    ctx.fillStyle = C.muted; ctx.textAlign = "right"; ctx.fillText(fmt(yv), L - 6, Y(yv) + 4);
+  }
+  ctx.strokeStyle = C.fg; ctx.beginPath(); ctx.moveTo(L, T); ctx.lineTo(L, T + h); ctx.lineTo(L + w, T + h); ctx.stroke();
+  ctx.fillStyle = C.fg; ctx.textAlign = "center"; ctx.font = "13px system-ui";
+  ctx.fillText(o.xl, L + w / 2, H - 8);
+  ctx.save(); ctx.translate(14, T + h / 2); ctx.rotate(-Math.PI / 2); ctx.fillText(o.yl, 0, 0); ctx.restore();
+  ctx.font = "bold 13px system-ui"; ctx.fillText(o.title || "", L + w / 2, 20);
+  return { X, Y, L, T, w, h };
+}
+function curve(f, a, color, x0, x1, n) {
+  n = n || 160; ctx.save(); ctx.beginPath(); ctx.rect(a.L, a.T, a.w, a.h); ctx.clip();   // never draw outside the plot area
+  ctx.strokeStyle = color; ctx.lineWidth = 2.5; ctx.beginPath();
+  for (let i = 0; i <= n; i++) { const x = x0 + (x1 - x0) * i / n, y = f(x); i ? ctx.lineTo(a.X(x), a.Y(y)) : ctx.moveTo(a.X(x), a.Y(y)); }
+  ctx.stroke(); ctx.restore();
+}
+function dot(a, x, y, color, label) {
+  ctx.fillStyle = color; ctx.beginPath(); ctx.arc(a.X(x), a.Y(y), 6, 0, 2 * Math.PI); ctx.fill();
+  if (label) { ctx.textAlign = "left"; ctx.font = "12px system-ui"; ctx.fillText(label, a.X(x) + 9, a.Y(y) - 8); }
+}
+function draw() {
+  ctx.clearRect(0, 0, W, H);
+  const C = { fg: css("--fg"), muted: css("--muted"), accent: css("--accent"), line: css("--line"), good: css("--good"), bad: css("--bad") };
+  
+const arrow = (x1, y1, x2, y2, col, lw) => {
+  ctx.strokeStyle = col; ctx.fillStyle = col; ctx.lineWidth = lw; ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
+  const a = Math.atan2(y2 - y1, x2 - x1);
+  ctx.beginPath(); ctx.moveTo(x2, y2); ctx.lineTo(x2 - 9 * Math.cos(a - 0.4), y2 - 9 * Math.sin(a - 0.4)); ctx.lineTo(x2 - 9 * Math.cos(a + 0.4), y2 - 9 * Math.sin(a + 0.4)); ctx.closePath(); ctx.fill();
+};
+
+const WH = 4, GAM = 18, GC = 24, GSAT = 20, GW = 9.81;
+const kaf = f => (1 - Math.sin(f * Math.PI / 180)) / (1 + Math.sin(f * Math.PI / 180));
+const st = (b, mu, f, hw) => { const k = kaf(f), d = WH - hw, gs = GSAT - GW;
+  const f1 = 0.5 * k * GAM * d * d, z1 = hw + d / 3, f2 = k * GAM * d * hw, z2 = hw / 2, f3 = 0.5 * k * gs * hw * hw, z3 = hw / 3, f4 = 0.5 * GW * hw * hw, z4 = hw / 3;
+  const ph = f1 + f2 + f3 + f4, mo = f1 * z1 + f2 * z2 + f3 * z3 + f4 * z4, Wt = GC * b * WH, U = 0.5 * GW * hw * b;
+  const mres = Wt * b / 2, mot = mo + U * 2 * b / 3, N = Wt - U, xb = (mres - mot) / N, e = b / 2 - xb;
+  return { ph, mo, Wt, U, N, fsS: mu * N / ph, fsO: mres / mot, xb, e, qt: N / b * (1 + 6 * e / b), qh: N / b * (1 - 6 * e / b), mid: Math.abs(e) <= b / 6 + 1e-9, arm: mo / ph, water: f4 + f3 }; };
+const R = st(p.B, p.mu, p.phi, p.hw);
+const ok = R.fsS >= 1.5 && R.fsO >= 2 && R.mid;
+if (graph === "wall") {
+  const S = 60, ox = 110, gy = 330, wb = p.B * S, xb = ox + wb, top = gy - WH * S;
+  ctx.fillStyle = C.muted; ctx.globalAlpha = 0.18; ctx.fillRect(xb, top, 330, WH * S); ctx.globalAlpha = 1;
+  if (p.hw > 0) { ctx.fillStyle = C.accent; ctx.globalAlpha = 0.3; ctx.fillRect(xb, gy - p.hw * S, 330, p.hw * S); ctx.globalAlpha = 1;
+    ctx.strokeStyle = C.accent; ctx.lineWidth = 1; ctx.setLineDash([5, 4]); ctx.beginPath(); ctx.moveTo(xb, gy - p.hw * S); ctx.lineTo(xb + 330, gy - p.hw * S); ctx.stroke(); ctx.setLineDash([]); }
+  ctx.fillStyle = ok ? C.good : C.bad; ctx.globalAlpha = 0.5; ctx.fillRect(ox, top, wb, WH * S); ctx.globalAlpha = 1;
+  ctx.strokeStyle = C.line; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(0, gy); ctx.lineTo(W, gy); ctx.stroke();
+  const hp = gy - R.arm * S; arrow(xb + 1.0 * R.ph + 30, hp, xb + 3, hp, C.bad, 4);
+  arrow(ox + wb / 2, gy - WH * S / 2, ox + wb / 2, gy - 8, C.good, 4);
+  const qs = 0.12, cl = v => Math.max(-400, Math.min(400, v));
+  ctx.fillStyle = R.qh < 0 ? C.bad : C.muted; ctx.globalAlpha = 0.6; ctx.beginPath(); ctx.moveTo(ox, gy + 4); ctx.lineTo(xb, gy + 4); ctx.lineTo(xb, gy + 4 + Math.abs(cl(R.qh)) * qs); ctx.lineTo(ox, gy + 4 + Math.abs(cl(R.qt)) * qs); ctx.closePath(); ctx.fill(); ctx.globalAlpha = 1;
+  ctx.font = "13px system-ui"; ctx.textAlign = "left"; ctx.fillStyle = C.bad; ctx.fillText("push " + R.ph.toFixed(1) + " kN/m (water part " + R.water.toFixed(1) + ")", xb + R.ph + 36, hp + 4);
+  ctx.fillStyle = C.fg; ctx.fillText("W = " + R.Wt.toFixed(0) + "  uplift U = " + R.U.toFixed(1) + " kN/m", ox, top - 10);
+  ctx.fillStyle = C.fg; ctx.fillText("toe " + R.qt.toFixed(0) + " kPa", ox, gy + 78); ctx.textAlign = "right"; ctx.fillText("heel " + R.qh.toFixed(0) + " kPa", xb, gy + 78);
+  ctx.textAlign = "left"; ctx.fillStyle = C.muted; ctx.fillText("pressure under the base (below) - heel negative means tension", 10, 20);
+} else {
+  const A = axes({ x: [0, 4], y: [0, 6], xl: "water level in the backfill (m above base)", yl: "factor of safety (no unit)", title: "Safety factors as the water rises (current wall)" }, C);
+  curve(h => st(p.B, p.mu, p.phi, h).fsS, A, C.accent, 0, 4, 80); curve(h => st(p.B, p.mu, p.phi, h).fsO, A, C.good, 0, 4, 80);
+  curve(() => 1.5, A, C.accent, 0, 4, 2); curve(() => 2, A, C.good, 0, 4, 2); curve(() => 1, A, C.bad, 0, 4, 2);
+  dot(A, p.hw, Math.min(6, R.fsS), C.accent, "sliding"); dot(A, p.hw, Math.min(6, R.fsO), C.good, "overturning");
+  ctx.font = "12px system-ui"; ctx.textAlign = "left"; ctx.fillStyle = C.accent; ctx.fillText("blue: sliding (limit 1.5)", A.L + 10, A.T + 16);
+  ctx.fillStyle = C.good; ctx.fillText("green: overturning (limit 2)", A.L + 10, A.T + 32); ctx.fillStyle = C.bad; ctx.fillText("red: FS = 1", A.L + 10, A.T + 48);
+}
+readout("FS_slide " + R.fsS.toFixed(2) + " &nbsp; FS_ot " + R.fsO.toFixed(2) + " &nbsp; e = " + R.e.toFixed(3) + " m (B/6 = " + (p.B / 6).toFixed(3) + " m) &nbsp; Ph = " + R.ph.toFixed(1) + " kN/m &nbsp; " + (ok ? "PASSES all three checks" : "FAILS at least one check"));
+
+  const ch = document.getElementById("challenge");
+  if (challengeTest) { const ok = !!challengeTest(p); ch.hidden = false; ch.dataset.ok = String(ok);
+    ch.innerHTML = "<b>Challenge:</b> " + CHALLENGE + " &nbsp; " + (ok ? "<b>Done!</b>" : "Not yet.");
+    if (ok !== lastOk) { document.getElementById("status").textContent = ok ? "Challenge done." : "Challenge not yet done."; lastOk = ok; } }
+}
+const box = document.getElementById("controls");
+const inputs = {};
+for (const q of PARAMS) {
+  p[q.id] = q.value;
+  const row = document.createElement("div"); row.className = "row";
+  row.innerHTML = `<label for="${q.id}">${q.label} (${q.unit || "no unit"})</label>` +
+    `<input id="${q.id}" type="range" min="${q.min}" max="${q.max}" step="${q.step}" value="${q.value}">` +
+    `<output for="${q.id}">${q.value}</output>`;
+  const inp = row.querySelector("input"), out = row.querySelector("output");
+  inputs[q.id] = [inp, out];
+  inp.addEventListener("input", () => { p[q.id] = +inp.value; out.textContent = inp.value; draw(); });
+  box.appendChild(row);
+}
+function setAll(vals) { for (const k in vals) { p[k] = vals[k]; if (inputs[k]) { inputs[k][0].value = vals[k]; inputs[k][1].textContent = vals[k]; } } draw(); }
+const DEFAULTS = Object.assign({}, p);
+document.getElementById("reset").addEventListener("click", () => setAll(DEFAULTS));
+for (const g of GRAPHS) {
+  const b = document.createElement("button"); b.type = "button"; b.textContent = g.label;
+  b.setAttribute("aria-pressed", String(g.id === graph));
+  b.addEventListener("click", () => { graph = g.id; for (const x of document.querySelectorAll("#graphs button")) x.setAttribute("aria-pressed", String(x === b)); draw(); });
+  document.getElementById("graphs").appendChild(b);
+}
+for (const pr of PRESETS) {
+  const b = document.createElement("button"); b.type = "button"; b.textContent = pr.label;
+  b.addEventListener("click", () => setAll(pr.values));
+  document.getElementById("presets").appendChild(b);
+}
+matchMedia("(prefers-color-scheme: dark)").addEventListener("change", draw);
+draw();
+</script>
+</body>
+</html>

@@ -1,0 +1,11 @@
+[project]
+name = "opensculpt"
+version = "0.1.0"
+description = "Learn how CAD parts are built from signed distance functions: union, subtraction, blends, volumes and a parametric mug."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+dependencies = ["numpy", "matplotlib"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

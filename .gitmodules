@@ -1,9 +1,6 @@
 [submodule "opentrafficsignal"]
 	path = opentrafficsignal
 	url = https://github.com/KrunalPanchal1995/opentrafficsignal.git
-[submodule "openqrcode"]
-	path = openqrcode
-	url = https://github.com/KrunalPanchal1995/openqrcode.git
 [submodule "openupi"]
 	path = openupi
 	url = https://github.com/KrunalPanchal1995/openupi.git
@@ -16,36 +13,21 @@
 [submodule "openvfx"]
 	path = openvfx
 	url = https://github.com/KrunalPanchal1995/openvfx.git
-[submodule "openrcfilter"]
-	path = openrcfilter
-	url = https://github.com/KrunalPanchal1995/openrcfilter.git
-[submodule "openreactionrate"]
-	path = openreactionrate
-	url = https://github.com/KrunalPanchal1995/openreactionrate.git
 [submodule "openstressstrain"]
 	path = openstressstrain
 	url = https://github.com/KrunalPanchal1995/openstressstrain.git
 [submodule "opentruss"]
 	path = opentruss
 	url = https://github.com/KrunalPanchal1995/opentruss.git
-[submodule "openretainingwall"]
-	path = openretainingwall
-	url = https://github.com/KrunalPanchal1995/openretainingwall.git
 [submodule "opensurvey"]
 	path = opensurvey
 	url = https://github.com/KrunalPanchal1995/opensurvey.git
 [submodule "opentolerance"]
 	path = opentolerance
 	url = https://github.com/KrunalPanchal1995/opentolerance.git
-[submodule "opensculpt"]
-	path = opensculpt
-	url = https://github.com/KrunalPanchal1995/opensculpt.git
 [submodule "opensql"]
 	path = opensql
 	url = https://github.com/KrunalPanchal1995/opensql.git
-[submodule "openregression"]
-	path = openregression
-	url = https://github.com/KrunalPanchal1995/openregression.git
 [submodule "opensolarbattery"]
 	path = opensolarbattery
 	url = https://github.com/KrunalPanchal1995/opensolarbattery.git
@@ -55,27 +37,15 @@
 [submodule "openwatershed"]
 	path = openwatershed
 	url = https://github.com/KrunalPanchal1995/openwatershed.git
-[submodule "openseasons"]
-	path = openseasons
-	url = https://github.com/KrunalPanchal1995/openseasons.git
 [submodule "openuncertainty"]
 	path = openuncertainty
 	url = https://github.com/KrunalPanchal1995/openuncertainty.git
 [submodule "openstereodic"]
 	path = openstereodic
 	url = https://github.com/KrunalPanchal1995/openstereodic.git
-[submodule "openregularity"]
-	path = openregularity
-	url = https://github.com/KrunalPanchal1995/openregularity.git
 [submodule "openstitchdic"]
 	path = openstitchdic
 	url = https://github.com/KrunalPanchal1995/openstitchdic.git
-[submodule "openrecommend"]
-	path = openrecommend
-	url = https://github.com/KrunalPanchal1995/openrecommend.git
-[submodule "openrobotarm"]
-	path = openrobotarm
-	url = https://github.com/KrunalPanchal1995/openrobotarm.git
 [submodule "opensorting"]
 	path = opensorting
 	url = https://github.com/KrunalPanchal1995/opensorting.git

@@ -1,0 +1,11 @@
+[project]
+name = "openseasons"
+version = "0.1.0"
+description = "Day, night, seasons and Moon phases explained with geometry, simulated in 3 short sessions."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+dependencies = ["numpy", "matplotlib"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
