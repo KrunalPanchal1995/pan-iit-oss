@@ -19,21 +19,12 @@
 [submodule "openvfx"]
 	path = openvfx
 	url = https://github.com/KrunalPanchal1995/openvfx.git
-[submodule "openodds"]
-	path = openodds
-	url = https://github.com/KrunalPanchal1995/openodds.git
 [submodule "openprojectile"]
 	path = openprojectile
 	url = https://github.com/KrunalPanchal1995/openprojectile.git
-[submodule "openoscillator"]
-	path = openoscillator
-	url = https://github.com/KrunalPanchal1995/openoscillator.git
 [submodule "openpipeflow"]
 	path = openpipeflow
 	url = https://github.com/KrunalPanchal1995/openpipeflow.git
-[submodule "openohm"]
-	path = openohm
-	url = https://github.com/KrunalPanchal1995/openohm.git
 [submodule "openrcfilter"]
 	path = openrcfilter
 	url = https://github.com/KrunalPanchal1995/openrcfilter.git
@@ -49,9 +40,6 @@
 [submodule "openphasediagram"]
 	path = openphasediagram
 	url = https://github.com/KrunalPanchal1995/openphasediagram.git
-[submodule "openneuron"]
-	path = openneuron
-	url = https://github.com/KrunalPanchal1995/openneuron.git
 [submodule "opentruss"]
 	path = opentruss
 	url = https://github.com/KrunalPanchal1995/opentruss.git
@@ -67,9 +55,6 @@
 [submodule "opensculpt"]
 	path = opensculpt
 	url = https://github.com/KrunalPanchal1995/opensculpt.git
-[submodule "openpacket"]
-	path = openpacket
-	url = https://github.com/KrunalPanchal1995/openpacket.git
 [submodule "opensql"]
 	path = opensql
 	url = https://github.com/KrunalPanchal1995/opensql.git
@@ -85,15 +70,9 @@
 [submodule "openseismo"]
 	path = openseismo
 	url = https://github.com/KrunalPanchal1995/openseismo.git
-[submodule "opennowcast"]
-	path = opennowcast
-	url = https://github.com/KrunalPanchal1995/opennowcast.git
 [submodule "openwatershed"]
 	path = openwatershed
 	url = https://github.com/KrunalPanchal1995/openwatershed.git
-[submodule "openorbit"]
-	path = openorbit
-	url = https://github.com/KrunalPanchal1995/openorbit.git
 [submodule "openseasons"]
 	path = openseasons
 	url = https://github.com/KrunalPanchal1995/openseasons.git
@@ -115,12 +94,6 @@
 [submodule "openprocesssim"]
 	path = openprocesssim
 	url = https://github.com/KrunalPanchal1995/openprocesssim.git
-[submodule "opennutrition"]
-	path = opennutrition
-	url = https://github.com/KrunalPanchal1995/opennutrition.git
-[submodule "openpathplanner"]
-	path = openpathplanner
-	url = https://github.com/KrunalPanchal1995/openpathplanner.git
 [submodule "openpinn"]
 	path = openpinn
 	url = https://github.com/KrunalPanchal1995/openpinn.git

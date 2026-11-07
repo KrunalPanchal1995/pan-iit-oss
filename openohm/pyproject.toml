@@ -1,0 +1,11 @@
+[project]
+name = "openohm"
+version = "0.1.0"
+description = "Learn V = I R and P = V I, design resistor circuits to a current and power limit, and solve an LED circuit numerically."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+dependencies = ["numpy", "matplotlib"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

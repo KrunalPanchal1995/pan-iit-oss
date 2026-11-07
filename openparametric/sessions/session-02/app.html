@@ -1,0 +1,209 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Session 2: strength against stiffness</title>
+<style>
+  :root { --bg:#ffffff; --fg:#14181f; --muted:#5b6472; --card:#f3f5f8; --accent:#1f6feb; --good:#1a7f37; --bad:#b42318; --line:#d7dce3; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#0e1116; --fg:#e6e9ee; --muted:#9aa3b2; --card:#171b22; --accent:#58a6ff; --good:#3fb950; --bad:#f97066; --line:#2a313c; } }
+  * { box-sizing: border-box; }
+  body { margin:0; padding:16px; background:var(--bg); color:var(--fg); font:16px/1.5 system-ui, sans-serif; }
+  main { max-width: 780px; margin: 0 auto; }
+  h1 { font-size: 1.3rem; margin: 0 0 4px; }
+  p.sub { margin: 0 0 12px; color: var(--muted); }
+  .scroll { overflow-x:auto; }
+  canvas { width:100%; min-width:560px; height:auto; background:var(--card); border:1px solid var(--line); border-radius:8px; display:block; }
+  .sr { position:absolute; left:-9999px; }
+  .bar { display:flex; flex-wrap:wrap; gap:8px; margin:10px 0; }
+  button { font:inherit; padding:6px 12px; border:1px solid var(--line); background:var(--card); color:var(--fg); border-radius:6px; cursor:pointer; }
+  button[aria-pressed="true"] { border-color:var(--accent); color:var(--accent); font-weight:600; }
+  button:focus-visible, input:focus-visible { outline:3px solid var(--accent); outline-offset:2px; }
+  .row { display:grid; grid-template-columns: 11rem 1fr 6rem; gap:8px; align-items:center; margin:8px 0; }
+  .row output { text-align:right; font-variant-numeric: tabular-nums; }
+  @media (max-width: 560px) { .row { grid-template-columns: 1fr; gap:2px; } .row output { text-align:left; } }
+  input[type=range] { width:100%; accent-color: var(--accent); }
+  #readout, #challenge, .note { margin-top:10px; padding:10px 12px; background:var(--card); border-radius:8px; border:1px solid var(--line); }
+  #challenge[data-ok="true"] { border-color:var(--good); } #challenge[data-ok="true"] b { color:var(--good); }
+  .note { font-size:.85rem; color:var(--muted); }
+  a { color: var(--accent); }
+</style>
+</head>
+<body>
+<main>
+  <h1>Session 2: strength against stiffness</h1>
+  <p class="sub">A load on a cantilever plate gives a thickness from each rule; the larger one governs, and the plate that is sold is checked.</p>
+  <div class="bar" id="graphs" role="group" aria-label="Choose a graph"></div>
+  <div class="scroll"><canvas id="c" width="720" height="420" role="img" aria-label="Session 2: strength against stiffness: interactive plot"></canvas></div>
+  <div class="bar" id="presets" role="group" aria-label="Presets"></div>
+  <div id="controls"></div>
+  <div class="bar"><button id="reset" type="button">Reset</button></div>
+  <div id="readout"></div>
+  <div id="challenge" hidden></div>
+  <div id="status" class="sr" aria-live="polite"></div>
+  <p class="note">This is a simplified educational model. It is not a validated design tool and must not be used for real structures, electrical installations, vehicles, industrial processes or medical decisions.</p>
+  <p class="sub"><a href="https://github.com/KrunalPanchal1995/pan-iit-oss/tree/main/openparametric">Back to the repository</a></p>
+</main>
+<script>
+"use strict";
+
+const PARAMS = [{"id": "F", "label": "Load F", "min": 100, "max": 2000, "step": 100, "value": 500, "unit": "N"}, {"id": "L", "label": "Length L", "min": 50, "max": 400, "step": 50, "value": 200, "unit": "mm"}, {"id": "b", "label": "Width b", "min": 20, "max": 80, "step": 10, "value": 40, "unit": "mm"}, {"id": "dmax", "label": "Largest sag allowed", "min": 0.5, "max": 3, "step": 0.5, "value": 1, "unit": "mm"}, {"id": "mat", "label": "Material (0 = steel, 1 = aluminium)", "min": 0, "max": 1, "step": 1, "value": 0, "unit": "index"}];
+
+const MAT = [{ name: "steel", E: 210000, sy: 235, rho: 7850 }, { name: "aluminium", E: 69000, sy: 240, rho: 2700 }];
+const PLATES = [2, 3, 4, 5, 6, 8, 10, 12, 15, 20, 25, 30], SFAC = 1.5;
+function bracket(F, L, b, dmax, mi) {
+  const m = MAT[mi], allow = m.sy / SFAC, ts = Math.sqrt(6 * F * L / (b * allow)), tf = Math.cbrt(4 * F * L * L * L / (m.E * b * dmax)), tr = Math.max(ts, tf);
+  const found = PLATES.find(x => x >= tr * (1 - 1e-12)), ok = found !== undefined, t = ok ? found : 30;
+  return { ts, tf, tr, t, ok, gov: ts >= tf ? "strength" : "stiffness", stress: 6 * F * L / (b * t * t), delta: 4 * F * L * L * L / (m.E * b * t * t * t),
+           mass: ok ? b * t * L * m.rho * 1e-9 : 0, allow };
+}
+const crit = (F, b, mi, dmax) => Math.pow(Math.pow(6 * F / (b * MAT[mi].sy / SFAC), 1.5) * MAT[mi].E * b * dmax / (4 * F), 2 / 3);
+const GRAPHS = [{id:"side",label:"The bracket",draw:(ctx, p, C, W, H) => {
+  const r = bracket(p.F, p.L, p.b, p.dmax, p.mat), sc = (W - 200) / 400, x0 = 110, y0 = 190, th = Math.max(r.t * sc * 1.4, 3), k = Math.min(60 / Math.max(r.delta * sc, 1e-6), 200);
+  ctx.font = "bold 13px system-ui"; ctx.fillStyle = C.fg; ctx.textAlign = "center"; ctx.fillText("Side view of the bracket (sag drawn x" + k.toFixed(0) + ", thickness x1.4)", W / 2, 24);
+  ctx.fillStyle = C.muted; ctx.fillRect(x0 - 24, y0 - 90, 24, 200);
+  const pts = []; for (let i = 0; i <= 40; i++) { const u = i / 40; pts.push([x0 + u * p.L * sc, y0 + k * r.delta * sc * (3 * u * u - u * u * u) / 2]); }
+  ctx.beginPath(); pts.forEach((q, i) => i ? ctx.lineTo(q[0], q[1] - th / 2) : ctx.moveTo(q[0], q[1] - th / 2)); for (let i = pts.length - 1; i >= 0; i--) ctx.lineTo(pts[i][0], pts[i][1] + th / 2); ctx.closePath();
+  ctx.globalAlpha = 0.35; ctx.fillStyle = C.accent; ctx.fill(); ctx.globalAlpha = 1; ctx.strokeStyle = C.accent; ctx.lineWidth = 2; ctx.stroke();
+  const tip = pts[pts.length - 1]; ctx.strokeStyle = C.bad; ctx.fillStyle = C.bad; ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.moveTo(tip[0], tip[1] - 60); ctx.lineTo(tip[0], tip[1] - th / 2 - 4); ctx.stroke(); ctx.beginPath(); ctx.moveTo(tip[0] - 5, tip[1] - th / 2 - 12); ctx.lineTo(tip[0], tip[1] - th / 2 - 3); ctx.lineTo(tip[0] + 5, tip[1] - th / 2 - 12); ctx.stroke();
+  ctx.textAlign = "center"; ctx.font = "12px system-ui"; ctx.fillText("F = " + p.F + " N", tip[0], tip[1] - 66);
+  ctx.fillStyle = C.fg; ctx.fillText("L = " + p.L + " mm", x0 + p.L * sc / 2, y0 + 80); ctx.textAlign = "left"; ctx.fillText("plate " + r.t + " mm x " + p.b + " mm, " + MAT[p.mat].name, x0, y0 + 110);
+  ctx.fillStyle = C.muted; ctx.fillText("t from strength: " + r.ts.toFixed(2) + " mm", x0, y0 + 140); ctx.fillText("t from stiffness: " + r.tf.toFixed(2) + " mm  ->  " + r.gov + " governs", x0, y0 + 158);
+  if (!r.ok) { ctx.fillStyle = C.bad; ctx.fillText("no plate that is sold is thick enough (30 mm drawn)", x0, y0 + 180); }
+}},
+  {id:"rules",label:"Thickness versus length",draw:(ctx, p, C, W, H) => {
+  let top = 0; for (let l = 50; l <= 400; l += 10) { const r = bracket(p.F, l, p.b, p.dmax, p.mat); top = Math.max(top, r.ts, r.tf); }
+  const ymax = Math.min(top * 1.1, 80);
+  const A = axes({ x: [50, 400], y: [0, ymax], xl: "bracket length L (mm)", yl: "thickness (mm)", title: "Thickness from each rule against the length" }, C);
+  curve(x => bracket(p.F, x, p.b, p.dmax, p.mat).ts, A, C.accent, 50, 400);
+  curve(x => bracket(p.F, x, p.b, p.dmax, p.mat).tf, A, C.bad, 50, 400);
+  ctx.font = "12px system-ui"; ctx.textAlign = "left"; ctx.fillStyle = C.accent; ctx.fillText("strength rule", A.L + 10, A.T + 16); ctx.fillStyle = C.bad; ctx.fillText("stiffness rule", A.L + 10, A.T + 32);
+  const lc = crit(p.F, p.b, p.mat, p.dmax);
+  if (lc >= 50 && lc <= 400) { ctx.strokeStyle = C.muted; ctx.setLineDash([4, 4]); ctx.beginPath(); ctx.moveTo(A.X(lc), A.T); ctx.lineTo(A.X(lc), A.T + A.h); ctx.stroke(); ctx.setLineDash([]); ctx.fillStyle = C.muted; ctx.fillText("critical length " + lc.toFixed(0) + " mm", A.X(lc) + 6, A.T + 50); }
+  const r = bracket(p.F, p.L, p.b, p.dmax, p.mat); dot(A, p.L, r.tr, C.good, "now");
+}},
+  {id:"mass",label:"Mass",title:"Mass of the standard plate for each material (0 means no plate is thick enough)",items:[{label:"steel",unit:"kg",color:"accent",f:p => bracket(p.F, p.L, p.b, p.dmax, 0).mass},{label:"aluminium",unit:"kg",color:"good",f:p => bracket(p.F, p.L, p.b, p.dmax, 1).mass}]}];
+const PRESETS = [{"label": "Worked example", "values": {"F": 500, "L": 200, "b": 40, "dmax": 1, "mat": 0}}, {"label": "Short and strong", "values": {"F": 1000, "L": 100, "b": 40, "dmax": 3, "mat": 0}}, {"label": "Long and stiff", "values": {"F": 500, "L": 350, "b": 40, "dmax": 1, "mat": 0}}, {"label": "Aluminium", "values": {"F": 500, "L": 200, "b": 40, "dmax": 1, "mat": 1}}];
+const CHALLENGE = "Carry at least 1000 N at a length of at least 150 mm with a bracket that weighs at most 0.4 kg, using a plate that is sold.";
+const CHALLENGE_SOLUTION = {"F": 1000, "L": 150, "b": 40, "dmax": 3, "mat": 1};
+const challengeTest = CHALLENGE ? (p => { const r = bracket(p.F, p.L, p.b, p.dmax, p.mat); return p.F >= 1000 && p.L >= 150 && r.ok && r.mass <= 0.4; }) : null;
+const READOUT = p => { const r = bracket(p.F, p.L, p.b, p.dmax, p.mat); return "t from strength " + r.ts.toFixed(2) + " mm &nbsp; t from stiffness " + r.tf.toFixed(2) + " mm &nbsp; " + r.gov + " governs &nbsp; " + (r.ok ? "plate " + r.t + " mm, mass " + r.mass.toFixed(3) + " kg, stress " + r.stress.toFixed(0) + " MPa, sag " + r.delta.toFixed(2) + " mm" : "no plate that is sold is thick enough"); };
+
+const cv = document.getElementById("c"), ctx = cv.getContext("2d");
+const W = cv.width, H = cv.height, p = {};
+let graph = GRAPHS.length ? GRAPHS[0].id : "main";
+const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+const fmt = v => (Math.abs(v) >= 1000 || (Math.abs(v) > 0 && Math.abs(v) < 0.01)) ? v.toExponential(2) : String(+v.toPrecision(4));
+function readout(html) {
+  document.getElementById("readout").innerHTML = html;
+  cv.setAttribute("aria-label", document.title + ". " + html.replace(/<[^>]+>/g, " ").replace(/&nbsp;/g, " "));  // screen readers get the numbers
+}
+let lastOk = null;
+// ---- plotting helpers: every graph gets labelled axes with units ----
+function niceTicks(lo, hi, n) {
+  const raw = (hi - lo) / n, mag = Math.pow(10, Math.floor(Math.log10(raw))), f = raw / mag;
+  const step = (f < 1.5 ? 1 : f < 3 ? 2 : f < 7 ? 5 : 10) * mag, out = [];
+  for (let v = Math.ceil(lo / step - 1e-9) * step; v <= hi + 1e-9; v += step) out.push(+v.toPrecision(12));
+  return out;
+}
+function axes(o, C) {
+  const L = 66, R = 16, T = 34, B = 50, w = W - L - R, h = H - T - B;
+  const X = v => L + (v - o.x[0]) / (o.x[1] - o.x[0]) * w, Y = v => T + h - (v - o.y[0]) / (o.y[1] - o.y[0]) * h;
+  ctx.lineWidth = 1; ctx.font = "12px system-ui";
+  for (const xv of niceTicks(o.x[0], o.x[1], 6)) {
+    ctx.strokeStyle = C.line; ctx.beginPath(); ctx.moveTo(X(xv), T); ctx.lineTo(X(xv), T + h); ctx.stroke();
+    ctx.fillStyle = C.muted; ctx.textAlign = "center"; ctx.fillText(fmt(xv), X(xv), T + h + 16);
+  }
+  for (const yv of niceTicks(o.y[0], o.y[1], 5)) {
+    ctx.strokeStyle = C.line; ctx.beginPath(); ctx.moveTo(L, Y(yv)); ctx.lineTo(L + w, Y(yv)); ctx.stroke();
+    ctx.fillStyle = C.muted; ctx.textAlign = "right"; ctx.fillText(fmt(yv), L - 6, Y(yv) + 4);
+  }
+  ctx.strokeStyle = C.fg; ctx.beginPath(); ctx.moveTo(L, T); ctx.lineTo(L, T + h); ctx.lineTo(L + w, T + h); ctx.stroke();
+  ctx.fillStyle = C.fg; ctx.textAlign = "center"; ctx.font = "13px system-ui";
+  ctx.fillText(o.xl, L + w / 2, H - 8);
+  ctx.save(); ctx.translate(14, T + h / 2); ctx.rotate(-Math.PI / 2); ctx.fillText(o.yl, 0, 0); ctx.restore();
+  ctx.font = "bold 13px system-ui"; ctx.fillText(o.title || "", L + w / 2, 20);
+  return { X, Y, L, T, w, h, o };
+}
+function curve(f, a, color, x0, x1, n) {
+  n = n || 160; ctx.save(); ctx.beginPath(); ctx.rect(a.L, a.T, a.w, a.h); ctx.clip();   // never draw outside the plot area
+  ctx.strokeStyle = color; ctx.lineWidth = 2.5; ctx.beginPath();
+  let pen = false;
+  for (let i = 0; i <= n; i++) {
+    const x = x0 + (x1 - x0) * i / n, y = f(x);
+    if (!isFinite(y)) { pen = false; continue; }
+    pen ? ctx.lineTo(a.X(x), a.Y(y)) : ctx.moveTo(a.X(x), a.Y(y)); pen = true;
+  }
+  ctx.stroke(); ctx.restore();
+}
+function dot(a, x, y, color, label) {
+  if (!isFinite(x) || !isFinite(y) || x < a.o.x[0] || x > a.o.x[1] || y < a.o.y[0] || y > a.o.y[1]) return;   // off the plot: do not draw
+  ctx.fillStyle = color; ctx.beginPath(); ctx.arc(a.X(x), a.Y(y), 6, 0, 2 * Math.PI); ctx.fill();
+  if (label) { ctx.textAlign = "left"; ctx.font = "12px system-ui"; ctx.fillText(label, a.X(x) + 9, a.Y(y) - 8); }
+}
+function bars(g, C) {
+  const items = g.items.map(it => ({ label: it.label, unit: it.unit, color: C[it.color] || C.accent, v: it.f(p) }));
+  const mx = Math.max(1e-9, ...items.map(it => Math.abs(it.v))) * 1.15, L = 190, T = 50, rowH = 52, bw = W - L - 120;
+  ctx.font = "bold 13px system-ui"; ctx.fillStyle = C.fg; ctx.textAlign = "center"; ctx.fillText(g.title || "", W / 2, 24);
+  items.forEach((it, i) => {
+    const y = T + i * rowH, len = Math.abs(it.v) / mx * bw;
+    ctx.font = "13px system-ui"; ctx.fillStyle = C.fg; ctx.textAlign = "right"; ctx.fillText(it.label, L - 10, y + 22);
+    ctx.fillStyle = it.color; ctx.fillRect(L, y + 4, Math.max(len, 1), 28);
+    ctx.fillStyle = C.fg; ctx.textAlign = "left"; ctx.fillText(fmt(it.v) + " " + it.unit, L + len + 8, y + 23);
+  });
+  ctx.fillStyle = C.muted; ctx.font = "12px system-ui"; ctx.textAlign = "left";
+  ctx.fillText("bar length is proportional to the value", 10, H - 8);
+}
+function draw() {
+  ctx.clearRect(0, 0, W, H);
+  const C = { fg: css("--fg"), muted: css("--muted"), accent: css("--accent"), line: css("--line"), good: css("--good"), bad: css("--bad") };
+  const g = GRAPHS.find(x => x.id === graph) || GRAPHS[0];
+  if (g.draw) { g.draw(ctx, p, C, W, H); }
+  else if (g.items) { bars(g, C); }
+  else {
+    const A = axes(g, C);
+    g.curves.forEach((c, i) => {
+      curve(x => c.f(x, p), A, C[c.color] || C.accent, g.x[0], g.x[1]);
+      ctx.font = "12px system-ui"; ctx.textAlign = "left"; ctx.fillStyle = C[c.color] || C.accent; ctx.fillText(c.label, A.L + 10, A.T + 16 + 16 * i);
+    });
+    (g.dots || []).forEach(d => dot(A, d.x(p), d.y(p), C[d.color] || C.accent, d.label));
+  }
+  readout(READOUT(p));
+  const ch = document.getElementById("challenge");
+  if (challengeTest) { const ok = !!challengeTest(p); ch.hidden = false; ch.dataset.ok = String(ok);
+    ch.innerHTML = "<b>Challenge:</b> " + CHALLENGE + " &nbsp; " + (ok ? "<b>Done!</b>" : "Not yet.");
+    if (ok !== lastOk) { document.getElementById("status").textContent = ok ? "Challenge done." : "Challenge not yet done."; lastOk = ok; } }
+}
+const box = document.getElementById("controls");
+const inputs = {};
+for (const q of PARAMS) {
+  p[q.id] = q.value;
+  const row = document.createElement("div"); row.className = "row";
+  row.innerHTML = `<label for="${q.id}">${q.label} (${q.unit || "no unit"})</label>` +
+    `<input id="${q.id}" type="range" min="${q.min}" max="${q.max}" step="${q.step}" value="${q.value}">` +
+    `<output for="${q.id}">${q.value}</output>`;
+  const inp = row.querySelector("input"), out = row.querySelector("output");
+  inputs[q.id] = [inp, out];
+  inp.addEventListener("input", () => { p[q.id] = +inp.value; out.textContent = inp.value; draw(); });
+  box.appendChild(row);
+}
+function setAll(vals) { for (const k in vals) { p[k] = vals[k]; if (inputs[k]) { inputs[k][0].value = vals[k]; inputs[k][1].textContent = vals[k]; } } draw(); }
+const DEFAULTS = Object.assign({}, p);
+document.getElementById("reset").addEventListener("click", () => setAll(DEFAULTS));
+for (const g of GRAPHS) {
+  const b = document.createElement("button"); b.type = "button"; b.textContent = g.label;
+  b.setAttribute("aria-pressed", String(g.id === graph));
+  b.addEventListener("click", () => { graph = g.id; for (const x of document.querySelectorAll("#graphs button")) x.setAttribute("aria-pressed", String(x === b)); draw(); });
+  document.getElementById("graphs").appendChild(b);
+}
+for (const pr of PRESETS) {
+  const b = document.createElement("button"); b.type = "button"; b.textContent = pr.label;
+  b.addEventListener("click", () => setAll(pr.values));
+  document.getElementById("presets").appendChild(b);
+}
+matchMedia("(prefers-color-scheme: dark)").addEventListener("change", draw);
+draw();
+</script>
+</body>
+</html>

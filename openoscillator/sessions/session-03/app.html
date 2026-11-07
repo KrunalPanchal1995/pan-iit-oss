@@ -1,0 +1,210 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Session 3: the nonlinear pendulum</title>
+<style>
+  :root { --bg:#ffffff; --fg:#14181f; --muted:#5b6472; --card:#f3f5f8; --accent:#1f6feb; --good:#1a7f37; --bad:#b42318; --line:#d7dce3; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#0e1116; --fg:#e6e9ee; --muted:#9aa3b2; --card:#171b22; --accent:#58a6ff; --good:#3fb950; --bad:#f97066; --line:#2a313c; } }
+  * { box-sizing: border-box; }
+  body { margin:0; padding:16px; background:var(--bg); color:var(--fg); font:16px/1.5 system-ui, sans-serif; }
+  main { max-width: 780px; margin: 0 auto; }
+  h1 { font-size: 1.3rem; margin: 0 0 4px; }
+  p.sub { margin: 0 0 12px; color: var(--muted); }
+  .scroll { overflow-x:auto; }
+  canvas { width:100%; min-width:560px; height:auto; background:var(--card); border:1px solid var(--line); border-radius:8px; display:block; }
+  .sr { position:absolute; left:-9999px; }
+  .bar { display:flex; flex-wrap:wrap; gap:8px; margin:10px 0; }
+  button { font:inherit; padding:6px 12px; border:1px solid var(--line); background:var(--card); color:var(--fg); border-radius:6px; cursor:pointer; }
+  button[aria-pressed="true"] { border-color:var(--accent); color:var(--accent); font-weight:600; }
+  button:focus-visible, input:focus-visible { outline:3px solid var(--accent); outline-offset:2px; }
+  .row { display:grid; grid-template-columns: 11rem 1fr 6rem; gap:8px; align-items:center; margin:8px 0; }
+  .row output { text-align:right; font-variant-numeric: tabular-nums; }
+  @media (max-width: 560px) { .row { grid-template-columns: 1fr; gap:2px; } .row output { text-align:left; } }
+  input[type=range] { width:100%; accent-color: var(--accent); }
+  #readout, #challenge, .note { margin-top:10px; padding:10px 12px; background:var(--card); border-radius:8px; border:1px solid var(--line); }
+  #challenge[data-ok="true"] { border-color:var(--good); } #challenge[data-ok="true"] b { color:var(--good); }
+  .note { font-size:.85rem; color:var(--muted); }
+  a { color: var(--accent); }
+</style>
+</head>
+<body>
+<main>
+  <h1>Session 3: the nonlinear pendulum</h1>
+  <p class="sub">RK4 simulation in your browser: swing and energy bars, angle graph, period against amplitude, phase portrait and resonance curve.</p>
+  <div class="bar" id="graphs" role="group" aria-label="Choose a graph"></div>
+  <div class="scroll"><canvas id="c" width="720" height="420" role="img" aria-label="Session 3: the nonlinear pendulum: interactive plot"></canvas></div>
+  <div class="bar" id="presets" role="group" aria-label="Presets"></div>
+  <div id="controls"></div>
+  <div class="bar"><button id="reset" type="button">Reset</button></div>
+  <div id="readout"></div>
+  <div id="challenge" hidden></div>
+  <div id="status" class="sr" aria-live="polite"></div>
+  <p class="note">This is a simplified educational model. It is not a validated design tool and must not be used for real structures, electrical installations, vehicles, industrial processes or medical decisions.</p>
+  <p class="sub"><a href="https://github.com/KrunalPanchal1995/pan-iit-oss/tree/main/openoscillator">Back to the repository</a></p>
+</main>
+<script>
+"use strict";
+const PARAMS = [{"id": "theta0", "label": "Start angle", "min": 5, "max": 170, "step": 5, "value": 30, "unit": "degrees"}, {"id": "c", "label": "Damping rate c", "min": 0, "max": 1, "step": 0.05, "value": 0.2, "unit": "1/s"}, {"id": "L", "label": "Length", "min": 0.2, "max": 3, "step": 0.1, "value": 1.0, "unit": "m"}, {"id": "t", "label": "Time", "min": 0, "max": 10, "step": 0.05, "value": 1.0, "unit": "s"}];
+const GRAPHS = [{"id": "swing", "label": "Pendulum and energy", "diagram": true}, {"id": "theta", "label": "Angle versus time"}, {"id": "period", "label": "Period versus amplitude"}, {"id": "phase", "label": "Phase portrait"}, {"id": "resonance", "label": "Resonance curve"}];
+const PRESETS = [{"label": "Small swing", "values": {"theta0": 5, "c": 0, "L": 1.0, "t": 1.0}}, {"label": "Clock swing 30 deg", "values": {"theta0": 30, "c": 0.2, "L": 1.0, "t": 1.0}}, {"label": "Wide swing 120 deg", "values": {"theta0": 120, "c": 0.1, "L": 1.0, "t": 1.0}}];
+const CHALLENGE = "Make the small-angle period formula wrong by more than 5 percent while keeping the damping at 0.1 per second or less.";
+const CHALLENGE_SOLUTION = {"theta0": 90, "c": 0.05, "L": 1.0, "t": 1.0};
+const challengeTest = CHALLENGE ? (p) => (p.theta0 > 51.4 && p.c <= 0.1) : null;
+const cv = document.getElementById("c"), ctx = cv.getContext("2d");
+const W = cv.width, H = cv.height, p = {};
+let graph = GRAPHS.length ? GRAPHS[0].id : "main";
+const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+const fmt = v => (Math.abs(v) >= 1000 || (Math.abs(v) > 0 && Math.abs(v) < 0.01)) ? v.toExponential(2) : String(+v.toPrecision(4));
+function readout(html) {
+  document.getElementById("readout").innerHTML = html;
+  cv.setAttribute("aria-label", document.title + ". " + html.replace(/<[^>]+>/g, " ").replace(/&nbsp;/g, " "));  // screen readers get the numbers
+}
+let lastOk = null;
+// ---- plotting helpers: every graph gets labelled axes with units ----
+function niceTicks(lo, hi, n) {
+  const raw = (hi - lo) / n, mag = Math.pow(10, Math.floor(Math.log10(raw))), f = raw / mag;
+  const step = (f < 1.5 ? 1 : f < 3 ? 2 : f < 7 ? 5 : 10) * mag, out = [];
+  for (let v = Math.ceil(lo / step - 1e-9) * step; v <= hi + 1e-9; v += step) out.push(+v.toPrecision(12));
+  return out;
+}
+function axes(o, C) {
+  const L = 66, R = 16, T = 34, B = 50, w = W - L - R, h = H - T - B;
+  const X = v => L + (v - o.x[0]) / (o.x[1] - o.x[0]) * w, Y = v => T + h - (v - o.y[0]) / (o.y[1] - o.y[0]) * h;
+  ctx.lineWidth = 1; ctx.font = "12px system-ui";
+  for (const xv of niceTicks(o.x[0], o.x[1], 6)) {
+    ctx.strokeStyle = C.line; ctx.beginPath(); ctx.moveTo(X(xv), T); ctx.lineTo(X(xv), T + h); ctx.stroke();
+    ctx.fillStyle = C.muted; ctx.textAlign = "center"; ctx.fillText(fmt(xv), X(xv), T + h + 16);
+  }
+  for (const yv of niceTicks(o.y[0], o.y[1], 5)) {
+    ctx.strokeStyle = C.line; ctx.beginPath(); ctx.moveTo(L, Y(yv)); ctx.lineTo(L + w, Y(yv)); ctx.stroke();
+    ctx.fillStyle = C.muted; ctx.textAlign = "right"; ctx.fillText(fmt(yv), L - 6, Y(yv) + 4);
+  }
+  ctx.strokeStyle = C.fg; ctx.beginPath(); ctx.moveTo(L, T); ctx.lineTo(L, T + h); ctx.lineTo(L + w, T + h); ctx.stroke();
+  ctx.fillStyle = C.fg; ctx.textAlign = "center"; ctx.font = "13px system-ui";
+  ctx.fillText(o.xl, L + w / 2, H - 8);
+  ctx.save(); ctx.translate(14, T + h / 2); ctx.rotate(-Math.PI / 2); ctx.fillText(o.yl, 0, 0); ctx.restore();
+  ctx.font = "bold 13px system-ui"; ctx.fillText(o.title || "", L + w / 2, 20);
+  return { X, Y, L, T, w, h };
+}
+function curve(f, a, color, x0, x1, n) {
+  n = n || 160; ctx.save(); ctx.beginPath(); ctx.rect(a.L, a.T, a.w, a.h); ctx.clip();   // never draw outside the plot area
+  ctx.strokeStyle = color; ctx.lineWidth = 2.5; ctx.beginPath();
+  for (let i = 0; i <= n; i++) { const x = x0 + (x1 - x0) * i / n, y = f(x); i ? ctx.lineTo(a.X(x), a.Y(y)) : ctx.moveTo(a.X(x), a.Y(y)); }
+  ctx.stroke(); ctx.restore();
+}
+function dot(a, x, y, color, label) {
+  ctx.fillStyle = color; ctx.beginPath(); ctx.arc(a.X(x), a.Y(y), 6, 0, 2 * Math.PI); ctx.fill();
+  if (label) { ctx.textAlign = "left"; ctx.font = "12px system-ui"; ctx.fillText(label, a.X(x) + 9, a.Y(y) - 8); }
+}
+function draw() {
+  ctx.clearRect(0, 0, W, H);
+  const C = { fg: css("--fg"), muted: css("--muted"), accent: css("--accent"), line: css("--line"), good: css("--good"), bad: css("--bad") };
+  
+const g = 9.81, d2r = Math.PI / 180, th0 = p.theta0 * d2r;
+const w0 = Math.sqrt(g / p.L), T0 = 2 * Math.PI / w0, gm = p.c / 2, zeta = p.c / (2 * w0);
+const agm = (a, b) => { for (let i = 0; i < 40; i++) { const m = 0.5 * (a + b); b = Math.sqrt(a * b); a = m; } return a; };
+const tEx = th => T0 / agm(1, Math.cos(th / 2)), tSer = th => T0 * (1 + th * th / 16 + 11 * Math.pow(th, 4) / 3072);
+const Tex = tEx(th0), err = (Tex - T0) / Tex;
+const dt = 0.01, N = 1000, TH = new Array(N + 1), OM = new Array(N + 1);
+const f = (a, w) => [w, -(g / p.L) * Math.sin(a) - p.c * w];
+let y0 = th0, y1 = 0; TH[0] = y0; OM[0] = y1;
+for (let i = 0; i < N; i++) {
+  const k1 = f(y0, y1), k2 = f(y0 + 0.5 * dt * k1[0], y1 + 0.5 * dt * k1[1]), k3 = f(y0 + 0.5 * dt * k2[0], y1 + 0.5 * dt * k2[1]), k4 = f(y0 + dt * k3[0], y1 + dt * k3[1]);
+  y0 += dt / 6 * (k1[0] + 2 * k2[0] + 2 * k3[0] + k4[0]); y1 += dt / 6 * (k1[1] + 2 * k2[1] + 2 * k3[1] + k4[1]); TH[i + 1] = y0; OM[i + 1] = y1;
+}
+const idx = Math.min(N, Math.round(p.t / dt)), thNow = TH[idx], omNow = OM[idx];
+const wd = Math.sqrt(Math.max(w0 * w0 - gm * gm, 1e-6));
+const thLin = u => th0 * Math.exp(-gm * u) * (Math.cos(wd * u) + gm / wd * Math.sin(wd * u));
+const E0 = g * p.L * (1 - Math.cos(th0));
+const peNow = g * p.L * (1 - Math.cos(thNow)), keNow = 0.5 * p.L * p.L * omNow * omNow, lost = Math.max(0, E0 - peNow - keNow);
+if (graph === "swing") {
+  const R = 165, px = 330, py = 205;
+  ctx.strokeStyle = C.fg; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(px - 60, py); ctx.lineTo(px + 60, py); ctx.stroke();
+  ctx.strokeStyle = C.line; ctx.lineWidth = 1; ctx.setLineDash([4, 4]); ctx.beginPath(); ctx.moveTo(px, py); ctx.lineTo(px, py + R + 14); ctx.stroke(); ctx.setLineDash([]);
+  const gx = px + R * Math.sin(thLin(p.t)), gy = py + R * Math.cos(thLin(p.t));
+  ctx.strokeStyle = C.muted; ctx.beginPath(); ctx.moveTo(px, py); ctx.lineTo(gx, gy); ctx.stroke();
+  ctx.fillStyle = C.muted; ctx.globalAlpha = 0.5; ctx.beginPath(); ctx.arc(gx, gy, 12, 0, 2 * Math.PI); ctx.fill(); ctx.globalAlpha = 1;
+  const bx = px + R * Math.sin(thNow), by = py + R * Math.cos(thNow);
+  ctx.strokeStyle = C.fg; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(px, py); ctx.lineTo(bx, by); ctx.stroke();
+  ctx.fillStyle = C.accent; ctx.beginPath(); ctx.arc(bx, by, 14, 0, 2 * Math.PI); ctx.fill();
+  const base = 360, hh = 170, bars = [[540, peNow, C.good, "PE"], [600, keNow, C.accent, "KE"], [660, lost, C.bad, "lost"]];
+  ctx.strokeStyle = C.fg; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(530, base); ctx.lineTo(710, base); ctx.stroke();
+  ctx.font = "12px system-ui"; ctx.textAlign = "center";
+  bars.forEach(b => { const h = hh * Math.min(1, b[1] / E0); ctx.fillStyle = b[2]; ctx.fillRect(b[0], base - h, 40, h); ctx.fillStyle = C.fg; ctx.fillText(b[3], b[0] + 20, base + 16); });
+  ctx.fillStyle = C.fg; ctx.fillText("energy / starting energy", 620, 170);
+  ctx.textAlign = "left"; ctx.fillText("blue bob: RK4 pendulum (full sin theta)", 10, 392); ctx.fillStyle = C.muted; ctx.fillText("grey bob: small-angle formula;  t = " + p.t.toFixed(2) + " s;  pendulum drawn at a fixed size", 10, 410);
+} else if (graph === "theta") {
+  const a = axes({ x: [0, 10], y: [-1.1 * p.theta0, 1.1 * p.theta0], xl: "time (s)", yl: "angle theta (degrees)", title: "RK4 pendulum against the small-angle formula" }, C);
+  curve(u => 180 / Math.PI * thLin(u), a, C.muted, 0, 10, 900);
+  ctx.save(); ctx.beginPath(); ctx.rect(a.L, a.T, a.w, a.h); ctx.clip(); ctx.strokeStyle = C.accent; ctx.lineWidth = 2.5; ctx.beginPath();
+  for (let i = 0; i <= N; i++) { const X = a.X(i * dt), Y = a.Y(TH[i] * 180 / Math.PI); i ? ctx.lineTo(X, Y) : ctx.moveTo(X, Y); }
+  ctx.stroke(); ctx.restore();
+  dot(a, idx * dt, thNow * 180 / Math.PI, C.bad, "");
+  ctx.font = "12px system-ui"; ctx.textAlign = "left"; ctx.fillStyle = C.accent; ctx.fillText("blue: RK4 simulation", a.L + 10, a.T + 16); ctx.fillStyle = C.muted; ctx.fillText("grey: small-angle formula", a.L + 10, a.T + 32);
+} else if (graph === "period") {
+  const a = axes({ x: [0, 170], y: [0.9, 2.6], xl: "amplitude theta0 (degrees)", yl: "period / small-angle period T0", title: "Period grows with amplitude" }, C);
+  curve(d => 1, a, C.muted, 0, 170, 2);
+  curve(d => tSer(d * d2r) / T0, a, C.good, 0, 170, 120);
+  curve(d => tEx(d * d2r) / T0, a, C.accent, 0, 169.9, 170);
+  dot(a, p.theta0, Tex / T0, C.bad, "");
+  ctx.font = "12px system-ui"; ctx.textAlign = "left"; ctx.fillStyle = C.accent; ctx.fillText("blue: exact (elliptic integral / AGM)", a.L + 10, a.T + 16);
+  ctx.fillStyle = C.good; ctx.fillText("green: series 1 + th^2/16 + 11 th^4/3072", a.L + 10, a.T + 32); ctx.fillStyle = C.muted; ctx.fillText("grey: small-angle formula (always 1)", a.L + 10, a.T + 48);
+} else if (graph === "phase") {
+  const wmax = Math.sqrt(2 * g / p.L * (1 - Math.cos(th0)));
+  const a = axes({ x: [-1.15 * p.theta0, 1.15 * p.theta0], y: [-1.15 * wmax, 1.15 * wmax], xl: "angle theta (degrees)", yl: "angular velocity (rad/s)", title: "Phase portrait: omega against theta" }, C);
+  ctx.save(); ctx.beginPath(); ctx.rect(a.L, a.T, a.w, a.h); ctx.clip(); ctx.lineWidth = 2; ctx.strokeStyle = C.muted; ctx.beginPath();
+  for (let i = 0; i <= N; i++) { const X = a.X(TH[i] * 180 / Math.PI), Y = a.Y(OM[i]); i ? ctx.lineTo(X, Y) : ctx.moveTo(X, Y); }
+  ctx.stroke(); ctx.strokeStyle = C.accent; ctx.lineWidth = 3; ctx.beginPath();
+  for (let i = 0; i <= idx; i++) { const X = a.X(TH[i] * 180 / Math.PI), Y = a.Y(OM[i]); i ? ctx.lineTo(X, Y) : ctx.moveTo(X, Y); }
+  ctx.stroke(); ctx.restore();
+  dot(a, thNow * 180 / Math.PI, omNow, C.bad, "");
+  ctx.font = "12px system-ui"; ctx.textAlign = "left"; ctx.fillStyle = C.muted; ctx.fillText(p.c > 0 ? "a spiral inwards: damping removes energy" : "a closed loop: energy is conserved", a.L + 10, a.T + 16);
+} else {
+  const zr = Math.max(zeta, 0.02), Q = 1 / (2 * zr), amp = r => 1 / Math.sqrt((1 - r * r) * (1 - r * r) + 4 * zr * zr * r * r);
+  const a = axes({ x: [0.5, 1.5], y: [0, 1.1 * Q], xl: "driving frequency / natural frequency", yl: "amplitude / static displacement", title: "Resonance curve of the same oscillator" }, C);
+  curve(amp, a, C.accent, 0.5, 1.5, 400);
+  const rp = Math.sqrt(1 - 2 * zr * zr); dot(a, rp, amp(rp), C.bad, "");
+  ctx.font = "12px system-ui"; ctx.textAlign = "left"; ctx.fillStyle = C.muted; ctx.fillText("peak near 1.0; height is the quality factor Q = 1 / (2 zeta)", a.L + 10, a.T + 16);
+  if (zeta < 0.02) ctx.fillText("zeta below 0.02: curve drawn for zeta = 0.02", a.L + 10, a.T + 32);
+}
+readout("small-angle T0 = " + T0.toFixed(3) + " s, exact T = " + Tex.toFixed(3) + " s, formula error " + (100 * err).toFixed(2) + "% &nbsp; w0 = " + w0.toFixed(3) + " rad/s, zeta = " + zeta.toFixed(3) + ", Q = " + (zeta > 0 ? (1 / (2 * zeta)).toFixed(1) : "no limit (c = 0)") + " &nbsp; at t: theta = " + (thNow * 180 / Math.PI).toFixed(1) + " deg, omega = " + omNow.toFixed(2) + " rad/s, energy lost " + (100 * lost / E0).toFixed(1) + "%");
+
+  const ch = document.getElementById("challenge");
+  if (challengeTest) { const ok = !!challengeTest(p); ch.hidden = false; ch.dataset.ok = String(ok);
+    ch.innerHTML = "<b>Challenge:</b> " + CHALLENGE + " &nbsp; " + (ok ? "<b>Done!</b>" : "Not yet.");
+    if (ok !== lastOk) { document.getElementById("status").textContent = ok ? "Challenge done." : "Challenge not yet done."; lastOk = ok; } }
+}
+const box = document.getElementById("controls");
+const inputs = {};
+for (const q of PARAMS) {
+  p[q.id] = q.value;
+  const row = document.createElement("div"); row.className = "row";
+  row.innerHTML = `<label for="${q.id}">${q.label} (${q.unit || "no unit"})</label>` +
+    `<input id="${q.id}" type="range" min="${q.min}" max="${q.max}" step="${q.step}" value="${q.value}">` +
+    `<output for="${q.id}">${q.value}</output>`;
+  const inp = row.querySelector("input"), out = row.querySelector("output");
+  inputs[q.id] = [inp, out];
+  inp.addEventListener("input", () => { p[q.id] = +inp.value; out.textContent = inp.value; draw(); });
+  box.appendChild(row);
+}
+function setAll(vals) { for (const k in vals) { p[k] = vals[k]; if (inputs[k]) { inputs[k][0].value = vals[k]; inputs[k][1].textContent = vals[k]; } } draw(); }
+const DEFAULTS = Object.assign({}, p);
+document.getElementById("reset").addEventListener("click", () => setAll(DEFAULTS));
+for (const g of GRAPHS) {
+  const b = document.createElement("button"); b.type = "button"; b.textContent = g.label;
+  b.setAttribute("aria-pressed", String(g.id === graph));
+  b.addEventListener("click", () => { graph = g.id; for (const x of document.querySelectorAll("#graphs button")) x.setAttribute("aria-pressed", String(x === b)); draw(); });
+  document.getElementById("graphs").appendChild(b);
+}
+for (const pr of PRESETS) {
+  const b = document.createElement("button"); b.type = "button"; b.textContent = pr.label;
+  b.addEventListener("click", () => setAll(pr.values));
+  document.getElementById("presets").appendChild(b);
+}
+matchMedia("(prefers-color-scheme: dark)").addEventListener("change", draw);
+draw();
+</script>
+</body>
+</html>
