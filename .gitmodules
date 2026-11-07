@@ -1,6 +1,3 @@
-[submodule "openpressurecooker"]
-	path = openpressurecooker
-	url = https://github.com/KrunalPanchal1995/openpressurecooker.git
 [submodule "opentrafficsignal"]
 	path = opentrafficsignal
 	url = https://github.com/KrunalPanchal1995/opentrafficsignal.git
@@ -19,27 +16,15 @@
 [submodule "openvfx"]
 	path = openvfx
 	url = https://github.com/KrunalPanchal1995/openvfx.git
-[submodule "openprojectile"]
-	path = openprojectile
-	url = https://github.com/KrunalPanchal1995/openprojectile.git
-[submodule "openpipeflow"]
-	path = openpipeflow
-	url = https://github.com/KrunalPanchal1995/openpipeflow.git
 [submodule "openrcfilter"]
 	path = openrcfilter
 	url = https://github.com/KrunalPanchal1995/openrcfilter.git
-[submodule "openphtitration"]
-	path = openphtitration
-	url = https://github.com/KrunalPanchal1995/openphtitration.git
 [submodule "openreactionrate"]
 	path = openreactionrate
 	url = https://github.com/KrunalPanchal1995/openreactionrate.git
 [submodule "openstressstrain"]
 	path = openstressstrain
 	url = https://github.com/KrunalPanchal1995/openstressstrain.git
-[submodule "openphasediagram"]
-	path = openphasediagram
-	url = https://github.com/KrunalPanchal1995/openphasediagram.git
 [submodule "opentruss"]
 	path = opentruss
 	url = https://github.com/KrunalPanchal1995/opentruss.git
@@ -64,9 +49,6 @@
 [submodule "opensolarbattery"]
 	path = opensolarbattery
 	url = https://github.com/KrunalPanchal1995/opensolarbattery.git
-[submodule "openportfolio"]
-	path = openportfolio
-	url = https://github.com/KrunalPanchal1995/openportfolio.git
 [submodule "openseismo"]
 	path = openseismo
 	url = https://github.com/KrunalPanchal1995/openseismo.git
@@ -82,21 +64,12 @@
 [submodule "openstereodic"]
 	path = openstereodic
 	url = https://github.com/KrunalPanchal1995/openstereodic.git
-[submodule "openproteinmd"]
-	path = openproteinmd
-	url = https://github.com/KrunalPanchal1995/openproteinmd.git
 [submodule "openregularity"]
 	path = openregularity
 	url = https://github.com/KrunalPanchal1995/openregularity.git
 [submodule "openstitchdic"]
 	path = openstitchdic
 	url = https://github.com/KrunalPanchal1995/openstitchdic.git
-[submodule "openprocesssim"]
-	path = openprocesssim
-	url = https://github.com/KrunalPanchal1995/openprocesssim.git
-[submodule "openpinn"]
-	path = openpinn
-	url = https://github.com/KrunalPanchal1995/openpinn.git
 [submodule "openrecommend"]
 	path = openrecommend
 	url = https://github.com/KrunalPanchal1995/openrecommend.git

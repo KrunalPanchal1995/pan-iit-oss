@@ -1,0 +1,184 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Session 3: tunnelling through a barrier</title>
+<style>
+  :root { --bg:#ffffff; --fg:#14181f; --muted:#5b6472; --card:#f3f5f8; --accent:#1f6feb; --good:#1a7f37; --bad:#b42318; --line:#d7dce3; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#0e1116; --fg:#e6e9ee; --muted:#9aa3b2; --card:#171b22; --accent:#58a6ff; --good:#3fb950; --bad:#f97066; --line:#2a313c; } }
+  * { box-sizing: border-box; }
+  body { margin:0; padding:16px; background:var(--bg); color:var(--fg); font:16px/1.5 system-ui, sans-serif; }
+  main { max-width: 780px; margin: 0 auto; }
+  h1 { font-size: 1.3rem; margin: 0 0 4px; }
+  p.sub { margin: 0 0 12px; color: var(--muted); }
+  .scroll { overflow-x:auto; }
+  canvas { width:100%; min-width:560px; height:auto; background:var(--card); border:1px solid var(--line); border-radius:8px; display:block; }
+  .sr { position:absolute; left:-9999px; }
+  .bar { display:flex; flex-wrap:wrap; gap:8px; margin:10px 0; }
+  button { font:inherit; padding:6px 12px; border:1px solid var(--line); background:var(--card); color:var(--fg); border-radius:6px; cursor:pointer; }
+  button[aria-pressed="true"] { border-color:var(--accent); color:var(--accent); font-weight:600; }
+  button:focus-visible, input:focus-visible { outline:3px solid var(--accent); outline-offset:2px; }
+  .row { display:grid; grid-template-columns: 11rem 1fr 6rem; gap:8px; align-items:center; margin:8px 0; }
+  .row output { text-align:right; font-variant-numeric: tabular-nums; }
+  @media (max-width: 560px) { .row { grid-template-columns: 1fr; gap:2px; } .row output { text-align:left; } }
+  input[type=range] { width:100%; accent-color: var(--accent); }
+  #readout, #challenge, .note { margin-top:10px; padding:10px 12px; background:var(--card); border-radius:8px; border:1px solid var(--line); }
+  #challenge[data-ok="true"] { border-color:var(--good); } #challenge[data-ok="true"] b { color:var(--good); }
+  .note { font-size:.85rem; color:var(--muted); }
+  a { color: var(--accent); }
+</style>
+</head>
+<body>
+<main>
+  <h1>Session 3: tunnelling through a barrier</h1>
+  <p class="sub">The electron energy, the barrier height and the width give the exact transmission, and the thick-barrier estimate when E is below V0.</p>
+  <div class="bar" id="graphs" role="group" aria-label="Choose a graph"></div>
+  <div class="scroll"><canvas id="c" width="720" height="420" role="img" aria-label="Session 3: tunnelling through a barrier: interactive plot"></canvas></div>
+  <div class="bar" id="presets" role="group" aria-label="Presets"></div>
+  <div id="controls"></div>
+  <div class="bar"><button id="reset" type="button">Reset</button></div>
+  <div id="readout"></div>
+  <div id="challenge" hidden></div>
+  <div id="status" class="sr" aria-live="polite"></div>
+  <p class="note">This is a simplified educational model. It is not a validated design tool and must not be used for real structures, electrical installations, vehicles, industrial processes or medical decisions.</p>
+  <p class="sub"><a href="https://github.com/KrunalPanchal1995/pan-iit-oss/tree/main/openqmintro">Back to the repository</a></p>
+</main>
+<script>
+"use strict";
+
+const PARAMS = [{"id": "e", "label": "Electron energy E", "min": 0.25, "max": 3, "step": 0.25, "value": 1, "unit": "eV"}, {"id": "v0", "label": "Barrier height V0", "min": 1, "max": 4, "step": 0.5, "value": 2, "unit": "eV"}, {"id": "a", "label": "Barrier width a", "min": 0.1, "max": 1, "step": 0.05, "value": 0.5, "unit": "nm"}];
+const HBAR = 1.054571817e-34, ME = 9.1093837015e-31, EV = 1.602176634e-19;
+const HB2M = HBAR * HBAR / (2 * ME) / EV * 1e18;
+function T(e, v0, a) {
+  if (Math.abs(e - v0) < 1e-12 * v0) return 1 / (1 + v0 * a * a / (4 * HB2M));
+  if (e < v0) { const kp = Math.sqrt((v0 - e) / HB2M), s = Math.sinh(kp * a); return 1 / (1 + v0 * v0 * s * s / (4 * e * (v0 - e))); }
+  const k2 = Math.sqrt((e - v0) / HB2M), s = Math.sin(k2 * a); return 1 / (1 + v0 * v0 * s * s / (4 * e * (e - v0)));
+}
+const tt = (e, v0, a) => e < v0 ? 16 * e * (v0 - e) / (v0 * v0) * Math.exp(-2 * Math.sqrt((v0 - e) / HB2M) * a) : NaN;
+const lg = x => Math.log10(Math.max(x, 1e-300));
+const GRAPHS = [{id:"width",label:"Transmission versus width",title:"log10 of the transmission against the barrier width",x:[0, 1.5],y:[-10, 0],xl:"barrier width a (nm)",yl:"log10 T (T = 10^y)",curves:[{label:"exact",color:"accent",f:(x, p) => lg(T(p.e, p.v0, x))},{label:"thick-barrier approximation (E below V0)",color:"bad",f:(x, p) => lg(tt(p.e, p.v0, x))}],dots:[{label:"now",color:"good",x:p => p.a,y:p => lg(T(p.e, p.v0, p.a))}]},
+  {id:"energy",label:"Transmission versus energy",title:"Transmission against electron energy",x:[0.1, 4],y:[0, 1.05],xl:"electron energy E (eV)",yl:"transmission probability T",curves:[{label:"exact",color:"accent",f:(x, p) => T(x, p.v0, p.a)}],dots:[{label:"now",color:"bad",x:p => p.e,y:p => T(p.e, p.v0, p.a)},{label:"E = V0",color:"muted",x:p => p.v0,y:p => T(p.v0, p.v0, p.a)}]},
+  {id:"height",label:"Transmission versus height",title:"log10 of the transmission against the barrier height",x:[0.5, 6],y:[-10, 0],xl:"barrier height V0 (eV)",yl:"log10 T (T = 10^y)",curves:[{label:"exact",color:"accent",f:(x, p) => lg(T(p.e, x, p.a))}],dots:[{label:"now",color:"bad",x:p => p.v0,y:p => lg(T(p.e, p.v0, p.a))}]}];
+const PRESETS = [{"label": "Worked example", "values": {"e": 1, "v0": 2, "a": 0.5}}, {"label": "Thin barrier", "values": {"e": 1, "v0": 2, "a": 0.15}}, {"label": "Thick barrier", "values": {"e": 1, "v0": 2, "a": 1}}, {"label": "Above the barrier", "values": {"e": 3, "v0": 2, "a": 0.5}}];
+const CHALLENGE = "Reach a transmission of at least 10 percent with an electron energy of at most half the barrier height and a barrier at least 0.4 nm wide.";
+const CHALLENGE_SOLUTION = {"e": 0.5, "v0": 1, "a": 0.4};
+const challengeTest = CHALLENGE ? (p => p.e <= p.v0 / 2 && p.a >= 0.4 && T(p.e, p.v0, p.a) >= 0.1) : null;
+const READOUT = p => { const t = T(p.e, p.v0, p.a), x = tt(p.e, p.v0, p.a); const kp = p.e < p.v0 ? "kappa = " + Math.sqrt((p.v0 - p.e) / HB2M).toFixed(2) + " /nm" : "E is at or above V0: no decay"; return "T = " + t.toPrecision(3) + " (about 1 electron in " + Math.round(1 / t) + ") &nbsp; " + kp + " &nbsp; thick-barrier estimate: " + (isNaN(x) ? "not valid (E at or above V0)" : x.toPrecision(3)); };
+
+const cv = document.getElementById("c"), ctx = cv.getContext("2d");
+const W = cv.width, H = cv.height, p = {};
+let graph = GRAPHS.length ? GRAPHS[0].id : "main";
+const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+const fmt = v => (Math.abs(v) >= 1000 || (Math.abs(v) > 0 && Math.abs(v) < 0.01)) ? v.toExponential(2) : String(+v.toPrecision(4));
+function readout(html) {
+  document.getElementById("readout").innerHTML = html;
+  cv.setAttribute("aria-label", document.title + ". " + html.replace(/<[^>]+>/g, " ").replace(/&nbsp;/g, " "));  // screen readers get the numbers
+}
+let lastOk = null;
+// ---- plotting helpers: every graph gets labelled axes with units ----
+function niceTicks(lo, hi, n) {
+  const raw = (hi - lo) / n, mag = Math.pow(10, Math.floor(Math.log10(raw))), f = raw / mag;
+  const step = (f < 1.5 ? 1 : f < 3 ? 2 : f < 7 ? 5 : 10) * mag, out = [];
+  for (let v = Math.ceil(lo / step - 1e-9) * step; v <= hi + 1e-9; v += step) out.push(+v.toPrecision(12));
+  return out;
+}
+function axes(o, C) {
+  const L = 66, R = 16, T = 34, B = 50, w = W - L - R, h = H - T - B;
+  const X = v => L + (v - o.x[0]) / (o.x[1] - o.x[0]) * w, Y = v => T + h - (v - o.y[0]) / (o.y[1] - o.y[0]) * h;
+  ctx.lineWidth = 1; ctx.font = "12px system-ui";
+  for (const xv of niceTicks(o.x[0], o.x[1], 6)) {
+    ctx.strokeStyle = C.line; ctx.beginPath(); ctx.moveTo(X(xv), T); ctx.lineTo(X(xv), T + h); ctx.stroke();
+    ctx.fillStyle = C.muted; ctx.textAlign = "center"; ctx.fillText(fmt(xv), X(xv), T + h + 16);
+  }
+  for (const yv of niceTicks(o.y[0], o.y[1], 5)) {
+    ctx.strokeStyle = C.line; ctx.beginPath(); ctx.moveTo(L, Y(yv)); ctx.lineTo(L + w, Y(yv)); ctx.stroke();
+    ctx.fillStyle = C.muted; ctx.textAlign = "right"; ctx.fillText(fmt(yv), L - 6, Y(yv) + 4);
+  }
+  ctx.strokeStyle = C.fg; ctx.beginPath(); ctx.moveTo(L, T); ctx.lineTo(L, T + h); ctx.lineTo(L + w, T + h); ctx.stroke();
+  ctx.fillStyle = C.fg; ctx.textAlign = "center"; ctx.font = "13px system-ui";
+  ctx.fillText(o.xl, L + w / 2, H - 8);
+  ctx.save(); ctx.translate(14, T + h / 2); ctx.rotate(-Math.PI / 2); ctx.fillText(o.yl, 0, 0); ctx.restore();
+  ctx.font = "bold 13px system-ui"; ctx.fillText(o.title || "", L + w / 2, 20);
+  return { X, Y, L, T, w, h, o };
+}
+function curve(f, a, color, x0, x1, n) {
+  n = n || 160; ctx.save(); ctx.beginPath(); ctx.rect(a.L, a.T, a.w, a.h); ctx.clip();   // never draw outside the plot area
+  ctx.strokeStyle = color; ctx.lineWidth = 2.5; ctx.beginPath();
+  let pen = false;
+  for (let i = 0; i <= n; i++) {
+    const x = x0 + (x1 - x0) * i / n, y = f(x);
+    if (!isFinite(y)) { pen = false; continue; }
+    pen ? ctx.lineTo(a.X(x), a.Y(y)) : ctx.moveTo(a.X(x), a.Y(y)); pen = true;
+  }
+  ctx.stroke(); ctx.restore();
+}
+function dot(a, x, y, color, label) {
+  if (!isFinite(x) || !isFinite(y) || x < a.o.x[0] || x > a.o.x[1] || y < a.o.y[0] || y > a.o.y[1]) return;   // off the plot: do not draw
+  ctx.fillStyle = color; ctx.beginPath(); ctx.arc(a.X(x), a.Y(y), 6, 0, 2 * Math.PI); ctx.fill();
+  if (label) { ctx.textAlign = "left"; ctx.font = "12px system-ui"; ctx.fillText(label, a.X(x) + 9, a.Y(y) - 8); }
+}
+function bars(g, C) {
+  const items = g.items.map(it => ({ label: it.label, unit: it.unit, color: C[it.color] || C.accent, v: it.f(p) }));
+  const mx = Math.max(1e-9, ...items.map(it => Math.abs(it.v))) * 1.15, L = 190, T = 50, rowH = 52, bw = W - L - 120;
+  ctx.font = "bold 13px system-ui"; ctx.fillStyle = C.fg; ctx.textAlign = "center"; ctx.fillText(g.title || "", W / 2, 24);
+  items.forEach((it, i) => {
+    const y = T + i * rowH, len = Math.abs(it.v) / mx * bw;
+    ctx.font = "13px system-ui"; ctx.fillStyle = C.fg; ctx.textAlign = "right"; ctx.fillText(it.label, L - 10, y + 22);
+    ctx.fillStyle = it.color; ctx.fillRect(L, y + 4, Math.max(len, 1), 28);
+    ctx.fillStyle = C.fg; ctx.textAlign = "left"; ctx.fillText(fmt(it.v) + " " + it.unit, L + len + 8, y + 23);
+  });
+  ctx.fillStyle = C.muted; ctx.font = "12px system-ui"; ctx.textAlign = "left";
+  ctx.fillText("bar length is proportional to the value", 10, H - 8);
+}
+function draw() {
+  ctx.clearRect(0, 0, W, H);
+  const C = { fg: css("--fg"), muted: css("--muted"), accent: css("--accent"), line: css("--line"), good: css("--good"), bad: css("--bad") };
+  const g = GRAPHS.find(x => x.id === graph) || GRAPHS[0];
+  if (g.items) { bars(g, C); }
+  else {
+    const A = axes(g, C);
+    g.curves.forEach((c, i) => {
+      curve(x => c.f(x, p), A, C[c.color] || C.accent, g.x[0], g.x[1]);
+      ctx.font = "12px system-ui"; ctx.textAlign = "left"; ctx.fillStyle = C[c.color] || C.accent; ctx.fillText(c.label, A.L + 10, A.T + 16 + 16 * i);
+    });
+    (g.dots || []).forEach(d => dot(A, d.x(p), d.y(p), C[d.color] || C.accent, d.label));
+  }
+  readout(READOUT(p));
+  const ch = document.getElementById("challenge");
+  if (challengeTest) { const ok = !!challengeTest(p); ch.hidden = false; ch.dataset.ok = String(ok);
+    ch.innerHTML = "<b>Challenge:</b> " + CHALLENGE + " &nbsp; " + (ok ? "<b>Done!</b>" : "Not yet.");
+    if (ok !== lastOk) { document.getElementById("status").textContent = ok ? "Challenge done." : "Challenge not yet done."; lastOk = ok; } }
+}
+const box = document.getElementById("controls");
+const inputs = {};
+for (const q of PARAMS) {
+  p[q.id] = q.value;
+  const row = document.createElement("div"); row.className = "row";
+  row.innerHTML = `<label for="${q.id}">${q.label} (${q.unit || "no unit"})</label>` +
+    `<input id="${q.id}" type="range" min="${q.min}" max="${q.max}" step="${q.step}" value="${q.value}">` +
+    `<output for="${q.id}">${q.value}</output>`;
+  const inp = row.querySelector("input"), out = row.querySelector("output");
+  inputs[q.id] = [inp, out];
+  inp.addEventListener("input", () => { p[q.id] = +inp.value; out.textContent = inp.value; draw(); });
+  box.appendChild(row);
+}
+function setAll(vals) { for (const k in vals) { p[k] = vals[k]; if (inputs[k]) { inputs[k][0].value = vals[k]; inputs[k][1].textContent = vals[k]; } } draw(); }
+const DEFAULTS = Object.assign({}, p);
+document.getElementById("reset").addEventListener("click", () => setAll(DEFAULTS));
+for (const g of GRAPHS) {
+  const b = document.createElement("button"); b.type = "button"; b.textContent = g.label;
+  b.setAttribute("aria-pressed", String(g.id === graph));
+  b.addEventListener("click", () => { graph = g.id; for (const x of document.querySelectorAll("#graphs button")) x.setAttribute("aria-pressed", String(x === b)); draw(); });
+  document.getElementById("graphs").appendChild(b);
+}
+for (const pr of PRESETS) {
+  const b = document.createElement("button"); b.type = "button"; b.textContent = pr.label;
+  b.addEventListener("click", () => setAll(pr.values));
+  document.getElementById("presets").appendChild(b);
+}
+matchMedia("(prefers-color-scheme: dark)").addEventListener("change", draw);
+draw();
+</script>
+</body>
+</html>

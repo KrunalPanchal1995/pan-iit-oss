@@ -1,0 +1,181 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Session 3: eutectic cooling, Scheil and cooling rate</title>
+<style>
+  :root { --bg:#ffffff; --fg:#14181f; --muted:#5b6472; --card:#f3f5f8; --accent:#1f6feb; --good:#1a7f37; --bad:#b42318; --line:#d7dce3; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#0e1116; --fg:#e6e9ee; --muted:#9aa3b2; --card:#171b22; --accent:#58a6ff; --good:#3fb950; --bad:#f97066; --line:#2a313c; } }
+  * { box-sizing: border-box; }
+  body { margin:0; padding:16px; background:var(--bg); color:var(--fg); font:16px/1.5 system-ui, sans-serif; }
+  main { max-width: 780px; margin: 0 auto; }
+  h1 { font-size: 1.3rem; margin: 0 0 4px; }
+  p.sub { margin: 0 0 12px; color: var(--muted); }
+  .scroll { overflow-x:auto; }
+  canvas { width:100%; min-width:560px; height:auto; background:var(--card); border:1px solid var(--line); border-radius:8px; display:block; }
+  .sr { position:absolute; left:-9999px; }
+  .bar { display:flex; flex-wrap:wrap; gap:8px; margin:10px 0; }
+  button { font:inherit; padding:6px 12px; border:1px solid var(--line); background:var(--card); color:var(--fg); border-radius:6px; cursor:pointer; }
+  button[aria-pressed="true"] { border-color:var(--accent); color:var(--accent); font-weight:600; }
+  button:focus-visible, input:focus-visible { outline:3px solid var(--accent); outline-offset:2px; }
+  .row { display:grid; grid-template-columns: 11rem 1fr 6rem; gap:8px; align-items:center; margin:8px 0; }
+  .row output { text-align:right; font-variant-numeric: tabular-nums; }
+  @media (max-width: 560px) { .row { grid-template-columns: 1fr; gap:2px; } .row output { text-align:left; } }
+  input[type=range] { width:100%; accent-color: var(--accent); }
+  #readout, #challenge, .note { margin-top:10px; padding:10px 12px; background:var(--card); border-radius:8px; border:1px solid var(--line); }
+  #challenge[data-ok="true"] { border-color:var(--good); } #challenge[data-ok="true"] b { color:var(--good); }
+  .note { font-size:.85rem; color:var(--muted); }
+  a { color: var(--accent); }
+</style>
+</head>
+<body>
+<main>
+  <h1>Session 3: eutectic cooling, Scheil and cooling rate</h1>
+  <p class="sub">Choose a lead-rich alloy and a heat-removal rate; compare equilibrium and fast freezing.</p>
+  <div class="bar" id="graphs" role="group" aria-label="Choose a graph"></div>
+  <div class="scroll"><canvas id="c" width="720" height="420" role="img" aria-label="Session 3: eutectic cooling, Scheil and cooling rate: interactive plot"></canvas></div>
+  <div class="bar" id="presets" role="group" aria-label="Presets"></div>
+  <div id="controls"></div>
+  <div class="bar"><button id="reset" type="button">Reset</button></div>
+  <div id="readout"></div>
+  <div id="challenge" hidden></div>
+  <div id="status" class="sr" aria-live="polite"></div>
+  <p class="note">This is a simplified educational model. It is not a validated design tool and must not be used for real structures, electrical installations, vehicles, industrial processes or medical decisions.</p>
+  <p class="sub"><a href="https://github.com/KrunalPanchal1995/pan-iit-oss/tree/main/openphasediagram">Back to the repository</a></p>
+</main>
+<script>
+"use strict";
+const PARAMS = [{"id": "C0", "label": "Alloy composition C0", "min": 5, "max": 60, "step": 1, "value": 40, "unit": "wt% Sn"}, {"id": "lq", "label": "Heat removal rate, log10 of q", "min": -2.5, "max": 1.5, "step": 0.1, "value": -0.3, "unit": "log10(W/g)"}];
+const GRAPHS = [{"id": "diagram", "label": "Eutectic diagram", "diagram": true}, {"id": "cool", "label": "Cooling curves"}, {"id": "seg", "label": "Coring profile"}];
+const PRESETS = [{"label": "Worked example", "values": {"C0": 40, "lq": -0.3}}, {"label": "10 wt%, slow", "values": {"C0": 10, "lq": -2}}, {"label": "10 wt%, fast", "values": {"C0": 10, "lq": 1.5}}];
+const CHALLENGE = "Cool a 10 wt% Sn alloy fast enough that at least 5 percent of it freezes as eutectic (equilibrium predicts none).";
+const CHALLENGE_SOLUTION = {"C0": 10, "lq": 0.7};
+const challengeTest = CHALLENGE ? (p) => ((() => { const K = 19 / 62, ML = 144 / 62, MS = 144 / 19, x = p.C0, q = Math.pow(10, p.lq); const tl = 327 - ML * x, ts = Math.max(327 - MS * x, 183); const fsE = T => { if (T >= tl) return 0; if (T <= ts) return 1; const cl = (327 - T) / ML, cs = (327 - T) / MS; return (cl - x) / (cl - cs); }; const tf = (0.2 * (tl - ts) + 50 * fsE(ts + 1e-9)) / q, al = 1e-12 * tf / (20e-6 * 20e-6); const ap = al > 1e3 ? 0.5 : al * (1 - Math.exp(-1 / al)) - 0.5 * Math.exp(-1 / (2 * al)); const sf = 1 - 2 * ap * K, fe = Math.max(0, 1 - (1 - Math.pow(62 / x, sf / (K - 1))) / sf); return x <= 15 && fe >= 0.05; })()) : null;
+const cv = document.getElementById("c"), ctx = cv.getContext("2d");
+const W = cv.width, H = cv.height, p = {};
+let graph = GRAPHS.length ? GRAPHS[0].id : "main";
+const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+const fmt = v => (Math.abs(v) >= 1000 || (Math.abs(v) > 0 && Math.abs(v) < 0.01)) ? v.toExponential(2) : String(+v.toPrecision(4));
+function readout(html) {
+  document.getElementById("readout").innerHTML = html;
+  cv.setAttribute("aria-label", document.title + ". " + html.replace(/<[^>]+>/g, " ").replace(/&nbsp;/g, " "));  // screen readers get the numbers
+}
+let lastOk = null;
+// ---- plotting helpers: every graph gets labelled axes with units ----
+function niceTicks(lo, hi, n) {
+  const raw = (hi - lo) / n, mag = Math.pow(10, Math.floor(Math.log10(raw))), f = raw / mag;
+  const step = (f < 1.5 ? 1 : f < 3 ? 2 : f < 7 ? 5 : 10) * mag, out = [];
+  for (let v = Math.ceil(lo / step - 1e-9) * step; v <= hi + 1e-9; v += step) out.push(+v.toPrecision(12));
+  return out;
+}
+function axes(o, C) {
+  const L = 66, R = 16, T = 34, B = 50, w = W - L - R, h = H - T - B;
+  const X = v => L + (v - o.x[0]) / (o.x[1] - o.x[0]) * w, Y = v => T + h - (v - o.y[0]) / (o.y[1] - o.y[0]) * h;
+  ctx.lineWidth = 1; ctx.font = "12px system-ui";
+  for (const xv of niceTicks(o.x[0], o.x[1], 6)) {
+    ctx.strokeStyle = C.line; ctx.beginPath(); ctx.moveTo(X(xv), T); ctx.lineTo(X(xv), T + h); ctx.stroke();
+    ctx.fillStyle = C.muted; ctx.textAlign = "center"; ctx.fillText(fmt(xv), X(xv), T + h + 16);
+  }
+  for (const yv of niceTicks(o.y[0], o.y[1], 5)) {
+    ctx.strokeStyle = C.line; ctx.beginPath(); ctx.moveTo(L, Y(yv)); ctx.lineTo(L + w, Y(yv)); ctx.stroke();
+    ctx.fillStyle = C.muted; ctx.textAlign = "right"; ctx.fillText(fmt(yv), L - 6, Y(yv) + 4);
+  }
+  ctx.strokeStyle = C.fg; ctx.beginPath(); ctx.moveTo(L, T); ctx.lineTo(L, T + h); ctx.lineTo(L + w, T + h); ctx.stroke();
+  ctx.fillStyle = C.fg; ctx.textAlign = "center"; ctx.font = "13px system-ui";
+  ctx.fillText(o.xl, L + w / 2, H - 8);
+  ctx.save(); ctx.translate(14, T + h / 2); ctx.rotate(-Math.PI / 2); ctx.fillText(o.yl, 0, 0); ctx.restore();
+  ctx.font = "bold 13px system-ui"; ctx.fillText(o.title || "", L + w / 2, 20);
+  return { X, Y, L, T, w, h };
+}
+function curve(f, a, color, x0, x1, n) {
+  n = n || 160; ctx.save(); ctx.beginPath(); ctx.rect(a.L, a.T, a.w, a.h); ctx.clip();   // never draw outside the plot area
+  ctx.strokeStyle = color; ctx.lineWidth = 2.5; ctx.beginPath();
+  for (let i = 0; i <= n; i++) { const x = x0 + (x1 - x0) * i / n, y = f(x); i ? ctx.lineTo(a.X(x), a.Y(y)) : ctx.moveTo(a.X(x), a.Y(y)); }
+  ctx.stroke(); ctx.restore();
+}
+function dot(a, x, y, color, label) {
+  ctx.fillStyle = color; ctx.beginPath(); ctx.arc(a.X(x), a.Y(y), 6, 0, 2 * Math.PI); ctx.fill();
+  if (label) { ctx.textAlign = "left"; ctx.font = "12px system-ui"; ctx.fillText(label, a.X(x) + 9, a.Y(y) - 8); }
+}
+function draw() {
+  ctx.clearRect(0, 0, W, H);
+  const C = { fg: css("--fg"), muted: css("--muted"), accent: css("--accent"), line: css("--line"), good: css("--good"), bad: css("--bad") };
+  
+const K = 19 / 62, ML = 144 / 62, MS = 144 / 19, CHT = 0.2, LH = 50, DS = 1e-12, LAM = 20e-6;
+const x = p.C0, q = Math.pow(10, p.lq), tl = 327 - ML * x, tsE = x < 62 ? Math.max(327 - MS * x, 183) : 183;
+const fsEq = T => { if (tl - tsE < 1e-9) return T > tl + 1e-9 ? 0 : 1; if (T >= tl) return 0; if (T <= tsE) return 1; const cl = (327 - T) / ML, cs = (327 - T) / MS; return (cl - x) / (cl - cs); };
+const fsSch = T => { if (T >= tl) return 0; if (T <= 183) return 1; return 1 - Math.pow((327 - T) / (ML * x), 1 / (K - 1)); };
+const eutEq = x > 19 ? (x - 19) / 43 : 0, eutSch = Math.min(1, Math.pow(62 / x, 1 / (K - 1)));
+const tf = (CHT * (tl - tsE) + LH * fsEq(tsE + 1e-9)) / q, al = DS * tf / (LAM * LAM);
+const ap = al > 1e3 ? 0.5 : al * (1 - Math.exp(-1 / al)) - 0.5 * Math.exp(-1 / (2 * al));
+const sf = 1 - 2 * ap * K, fsAtE = (1 - Math.pow(62 / x, sf / (K - 1))) / sf, eutCK = Math.max(0, 1 - fsAtE);
+const T0 = tl + 40, Tend = 120;
+const mk = fs => { const enth = T => CHT * T + LH * (1 - fs(T)); return { enth, inv: H => { let a = 0, b = 700; for (let i = 0; i < 55; i++) { const m = 0.5 * (a + b); if (enth(m) >= H) b = m; else a = m; } return 0.5 * (a + b); } }; };
+const eq = mk(fsEq), sc = mk(fsSch), H0 = eq.enth(T0), tEnd = (H0 - (CHT * Tend + LH)) / q;
+const arrEq = LH * eutEq / q, arrSch = LH * eutSch / q;
+if (graph === "diagram") {
+  const A = axes({ x: [0, 100], y: [120, 360], xl: "composition (weight percent Sn)", yl: "temperature (degrees C)", title: "Illustrative Pb-Sn-like eutectic diagram" }, C);
+  curve(c => c <= 62 ? 327 - ML * c : 232 + (183 - 232) * (100 - c) / 38, A, C.bad, 0, 100, 200);
+  curve(c => 327 - MS * c, A, C.accent, 0, 19, 40);
+  curve(() => 183, A, C.accent, 19, 97, 4);
+  curve(c => 183 + (c - 97) * 49 / 3, A, C.accent, 97, 100, 10);
+  ctx.setLineDash([4, 4]); ctx.strokeStyle = C.muted; ctx.beginPath(); ctx.moveTo(A.X(x), A.Y(120)); ctx.lineTo(A.X(x), A.Y(360)); ctx.stroke(); ctx.setLineDash([]);
+  dot(A, x, tl, C.fg, "");
+  ctx.fillStyle = C.fg; ctx.font = "12px system-ui"; ctx.textAlign = "left";
+  ctx.fillText("liquid", A.X(55), A.Y(340)); ctx.fillText("alpha", A.X(3), A.Y(150)); ctx.fillText("alpha + beta", A.X(45), A.Y(150)); ctx.fillText("eutectic 183 C, 62%", A.X(30), A.Y(172));
+} else if (graph === "cool") {
+  const A = axes({ x: [0, tEnd], y: [100, 360], xl: "time (s)", yl: "temperature (degrees C)", title: "Cooling curves: equilibrium (blue) and Scheil (red)" }, C);
+  curve(t => sc.inv(H0 - q * t), A, C.bad, 0, tEnd, 500);
+  curve(t => eq.inv(H0 - q * t), A, C.accent, 0, tEnd, 500);
+  ctx.fillStyle = C.muted; ctx.font = "12px system-ui"; ctx.textAlign = "left";
+  ctx.fillText("flat part at 183 C = eutectic arrest", A.L + 10, A.T + 16);
+} else {
+  const A = axes({ x: [0, 1], y: [0, 25], xl: "fraction solid when the layer froze (centre 0, edge 1)", yl: "Sn in the solid layer (weight percent)", title: "Coring: Sn content across a dendrite" }, C);
+  curve(f => K * x * Math.pow(1 - f, K - 1), A, C.bad, 0, 1 - eutSch, 200);
+  curve(f => K * x * Math.pow(1 - sf * f, (K - 1) / sf), A, C.accent, 0, Math.min(1, fsAtE), 200);
+  curve(() => Math.min(x, 19), A, C.good, 0, 1 - eutEq, 2);
+  ctx.font = "12px system-ui"; ctx.textAlign = "left";
+  ctx.fillStyle = C.bad; ctx.fillText("red: Scheil (no diffusion in the solid)", A.L + 10, A.T + 16);
+  ctx.fillStyle = C.accent; ctx.fillText("blue: with back-diffusion at this cooling rate", A.L + 10, A.T + 32);
+  ctx.fillStyle = C.good; ctx.fillText("green: equilibrium (uniform)", A.L + 10, A.T + 48);
+}
+readout("C0 = " + x + " wt% Sn, q = " + q.toFixed(3) + " W/g (liquid cools at " + (q / CHT).toFixed(2) + " K/s) &nbsp; liquidus " + tl.toFixed(1) + " C &nbsp;|&nbsp; eutectic arrest: equilibrium " + arrEq.toFixed(1) + " s, Scheil " + arrSch.toFixed(1) + " s &nbsp;|&nbsp; eutectic fraction: equilibrium " + (100 * eutEq).toFixed(1) + "%, Scheil " + (100 * eutSch).toFixed(1) + "%, this cooling rate " + (100 * eutCK).toFixed(1) + "%");
+
+  const ch = document.getElementById("challenge");
+  if (challengeTest) { const ok = !!challengeTest(p); ch.hidden = false; ch.dataset.ok = String(ok);
+    ch.innerHTML = "<b>Challenge:</b> " + CHALLENGE + " &nbsp; " + (ok ? "<b>Done!</b>" : "Not yet.");
+    if (ok !== lastOk) { document.getElementById("status").textContent = ok ? "Challenge done." : "Challenge not yet done."; lastOk = ok; } }
+}
+const box = document.getElementById("controls");
+const inputs = {};
+for (const q of PARAMS) {
+  p[q.id] = q.value;
+  const row = document.createElement("div"); row.className = "row";
+  row.innerHTML = `<label for="${q.id}">${q.label} (${q.unit || "no unit"})</label>` +
+    `<input id="${q.id}" type="range" min="${q.min}" max="${q.max}" step="${q.step}" value="${q.value}">` +
+    `<output for="${q.id}">${q.value}</output>`;
+  const inp = row.querySelector("input"), out = row.querySelector("output");
+  inputs[q.id] = [inp, out];
+  inp.addEventListener("input", () => { p[q.id] = +inp.value; out.textContent = inp.value; draw(); });
+  box.appendChild(row);
+}
+function setAll(vals) { for (const k in vals) { p[k] = vals[k]; if (inputs[k]) { inputs[k][0].value = vals[k]; inputs[k][1].textContent = vals[k]; } } draw(); }
+const DEFAULTS = Object.assign({}, p);
+document.getElementById("reset").addEventListener("click", () => setAll(DEFAULTS));
+for (const g of GRAPHS) {
+  const b = document.createElement("button"); b.type = "button"; b.textContent = g.label;
+  b.setAttribute("aria-pressed", String(g.id === graph));
+  b.addEventListener("click", () => { graph = g.id; for (const x of document.querySelectorAll("#graphs button")) x.setAttribute("aria-pressed", String(x === b)); draw(); });
+  document.getElementById("graphs").appendChild(b);
+}
+for (const pr of PRESETS) {
+  const b = document.createElement("button"); b.type = "button"; b.textContent = pr.label;
+  b.addEventListener("click", () => setAll(pr.values));
+  document.getElementById("presets").appendChild(b);
+}
+matchMedia("(prefers-color-scheme: dark)").addEventListener("change", draw);
+draw();
+</script>
+</body>
+</html>

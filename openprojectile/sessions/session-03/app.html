@@ -1,0 +1,206 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Session 3: a cricket ball with air drag</title>
+<style>
+  :root { --bg:#ffffff; --fg:#14181f; --muted:#5b6472; --card:#f3f5f8; --accent:#1f6feb; --good:#1a7f37; --bad:#b42318; --line:#d7dce3; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#0e1116; --fg:#e6e9ee; --muted:#9aa3b2; --card:#171b22; --accent:#58a6ff; --good:#3fb950; --bad:#f97066; --line:#2a313c; } }
+  * { box-sizing: border-box; }
+  body { margin:0; padding:16px; background:var(--bg); color:var(--fg); font:16px/1.5 system-ui, sans-serif; }
+  main { max-width: 780px; margin: 0 auto; }
+  h1 { font-size: 1.3rem; margin: 0 0 4px; }
+  p.sub { margin: 0 0 12px; color: var(--muted); }
+  .scroll { overflow-x:auto; }
+  canvas { width:100%; min-width:560px; height:auto; background:var(--card); border:1px solid var(--line); border-radius:8px; display:block; }
+  .sr { position:absolute; left:-9999px; }
+  .bar { display:flex; flex-wrap:wrap; gap:8px; margin:10px 0; }
+  button { font:inherit; padding:6px 12px; border:1px solid var(--line); background:var(--card); color:var(--fg); border-radius:6px; cursor:pointer; }
+  button[aria-pressed="true"] { border-color:var(--accent); color:var(--accent); font-weight:600; }
+  button:focus-visible, input:focus-visible { outline:3px solid var(--accent); outline-offset:2px; }
+  .row { display:grid; grid-template-columns: 11rem 1fr 6rem; gap:8px; align-items:center; margin:8px 0; }
+  .row output { text-align:right; font-variant-numeric: tabular-nums; }
+  @media (max-width: 560px) { .row { grid-template-columns: 1fr; gap:2px; } .row output { text-align:left; } }
+  input[type=range] { width:100%; accent-color: var(--accent); }
+  #readout, #challenge, .note { margin-top:10px; padding:10px 12px; background:var(--card); border-radius:8px; border:1px solid var(--line); }
+  #challenge[data-ok="true"] { border-color:var(--good); } #challenge[data-ok="true"] b { color:var(--good); }
+  .note { font-size:.85rem; color:var(--muted); }
+  a { color: var(--accent); }
+</style>
+</head>
+<body>
+<main>
+  <h1>Session 3: a cricket ball with air drag</h1>
+  <p class="sub">RK4 simulation of a 0.16 kg, 7 cm ball hit from 1 m (approximate values), with a drag coefficient and a wind.</p>
+  <div class="bar" id="graphs" role="group" aria-label="Choose a graph"></div>
+  <div class="scroll"><canvas id="c" width="720" height="420" role="img" aria-label="Session 3: a cricket ball with air drag: interactive plot"></canvas></div>
+  <div class="bar" id="presets" role="group" aria-label="Presets"></div>
+  <div id="controls"></div>
+  <div class="bar"><button id="reset" type="button">Reset</button></div>
+  <div id="readout"></div>
+  <div id="challenge" hidden></div>
+  <div id="status" class="sr" aria-live="polite"></div>
+  <p class="note">This is a simplified educational model. It is not a validated design tool and must not be used for real structures, electrical installations, vehicles, industrial processes or medical decisions.</p>
+  <p class="sub"><a href="https://github.com/KrunalPanchal1995/pan-iit-oss/tree/main/openprojectile">Back to the repository</a></p>
+</main>
+<script>
+"use strict";
+const PARAMS = [{"id": "v", "label": "Launch speed v", "min": 15, "max": 45, "step": 1, "value": 35, "unit": "m/s"}, {"id": "a", "label": "Launch angle a", "min": 10, "max": 80, "step": 1, "value": 40, "unit": "degrees"}, {"id": "cd", "label": "Drag coefficient Cd", "min": 0, "max": 0.8, "step": 0.05, "value": 0.4, "unit": ""}, {"id": "wind", "label": "Wind (+ tailwind)", "min": -10, "max": 10, "step": 1, "value": 0, "unit": "m/s"}];
+const GRAPHS = [{"id": "forces", "label": "Forces at launch", "diagram": true}, {"id": "paths", "label": "Flight with and without drag"}, {"id": "angle", "label": "Range versus angle"}];
+const PRESETS = [{"label": "Worked example", "values": {"v": 35, "a": 40, "cd": 0.4, "wind": 0}}, {"label": "No drag", "values": {"v": 35, "a": 45, "cd": 0, "wind": 0}}, {"label": "Headwind 5", "values": {"v": 35, "a": 40, "cd": 0.4, "wind": -5}}, {"label": "Tailwind 5", "values": {"v": 35, "a": 40, "cd": 0.4, "wind": 5}}];
+const CHALLENGE = "At 35 m/s, drag coefficient 0.4 and no wind, set the launch angle within 1 degree of the angle that gives the longest range (use the angle view).";
+const CHALLENGE_SOLUTION = {"v": 35, "a": 41, "cd": 0.4, "wind": 0};
+const challengeTest = CHALLENGE ? (p) => (p.v === 35 && Math.abs(p.cd - 0.4) < 1e-9 && p.wind === 0 && p.a >= 40.5 && p.a <= 42.5) : null;
+const cv = document.getElementById("c"), ctx = cv.getContext("2d");
+const W = cv.width, H = cv.height, p = {};
+let graph = GRAPHS.length ? GRAPHS[0].id : "main";
+const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+const fmt = v => (Math.abs(v) >= 1000 || (Math.abs(v) > 0 && Math.abs(v) < 0.01)) ? v.toExponential(2) : String(+v.toPrecision(4));
+function readout(html) {
+  document.getElementById("readout").innerHTML = html;
+  cv.setAttribute("aria-label", document.title + ". " + html.replace(/<[^>]+>/g, " ").replace(/&nbsp;/g, " "));  // screen readers get the numbers
+}
+let lastOk = null;
+// ---- plotting helpers: every graph gets labelled axes with units ----
+function niceTicks(lo, hi, n) {
+  const raw = (hi - lo) / n, mag = Math.pow(10, Math.floor(Math.log10(raw))), f = raw / mag;
+  const step = (f < 1.5 ? 1 : f < 3 ? 2 : f < 7 ? 5 : 10) * mag, out = [];
+  for (let v = Math.ceil(lo / step - 1e-9) * step; v <= hi + 1e-9; v += step) out.push(+v.toPrecision(12));
+  return out;
+}
+function axes(o, C) {
+  const L = 66, R = 16, T = 34, B = 50, w = W - L - R, h = H - T - B;
+  const X = v => L + (v - o.x[0]) / (o.x[1] - o.x[0]) * w, Y = v => T + h - (v - o.y[0]) / (o.y[1] - o.y[0]) * h;
+  ctx.lineWidth = 1; ctx.font = "12px system-ui";
+  for (const xv of niceTicks(o.x[0], o.x[1], 6)) {
+    ctx.strokeStyle = C.line; ctx.beginPath(); ctx.moveTo(X(xv), T); ctx.lineTo(X(xv), T + h); ctx.stroke();
+    ctx.fillStyle = C.muted; ctx.textAlign = "center"; ctx.fillText(fmt(xv), X(xv), T + h + 16);
+  }
+  for (const yv of niceTicks(o.y[0], o.y[1], 5)) {
+    ctx.strokeStyle = C.line; ctx.beginPath(); ctx.moveTo(L, Y(yv)); ctx.lineTo(L + w, Y(yv)); ctx.stroke();
+    ctx.fillStyle = C.muted; ctx.textAlign = "right"; ctx.fillText(fmt(yv), L - 6, Y(yv) + 4);
+  }
+  ctx.strokeStyle = C.fg; ctx.beginPath(); ctx.moveTo(L, T); ctx.lineTo(L, T + h); ctx.lineTo(L + w, T + h); ctx.stroke();
+  ctx.fillStyle = C.fg; ctx.textAlign = "center"; ctx.font = "13px system-ui";
+  ctx.fillText(o.xl, L + w / 2, H - 8);
+  ctx.save(); ctx.translate(14, T + h / 2); ctx.rotate(-Math.PI / 2); ctx.fillText(o.yl, 0, 0); ctx.restore();
+  ctx.font = "bold 13px system-ui"; ctx.fillText(o.title || "", L + w / 2, 20);
+  return { X, Y, L, T, w, h };
+}
+function curve(f, a, color, x0, x1, n) {
+  n = n || 160; ctx.save(); ctx.beginPath(); ctx.rect(a.L, a.T, a.w, a.h); ctx.clip();   // never draw outside the plot area
+  ctx.strokeStyle = color; ctx.lineWidth = 2.5; ctx.beginPath();
+  for (let i = 0; i <= n; i++) { const x = x0 + (x1 - x0) * i / n, y = f(x); i ? ctx.lineTo(a.X(x), a.Y(y)) : ctx.moveTo(a.X(x), a.Y(y)); }
+  ctx.stroke(); ctx.restore();
+}
+function dot(a, x, y, color, label) {
+  ctx.fillStyle = color; ctx.beginPath(); ctx.arc(a.X(x), a.Y(y), 6, 0, 2 * Math.PI); ctx.fill();
+  if (label) { ctx.textAlign = "left"; ctx.font = "12px system-ui"; ctx.fillText(label, a.X(x) + 9, a.Y(y) - 8); }
+}
+function draw() {
+  ctx.clearRect(0, 0, W, H);
+  const C = { fg: css("--fg"), muted: css("--muted"), accent: css("--accent"), line: css("--line"), good: css("--good"), bad: css("--bad") };
+  
+const G = 9.81, RHO = 1.2, MASS = 0.16, DIAM = 0.07, H0 = 1.0, AREA = Math.PI * DIAM * DIAM / 4;
+const kk = 0.5 * RHO * p.cd * AREA, kom = kk / MASS, ar = p.a * Math.PI / 180;
+function fly(v, deg, k, w, dt, keep) {
+  const a = deg * Math.PI / 180;
+  let s = [0, H0, v * Math.cos(a), v * Math.sin(a)], t = 0, pk = H0;
+  const pts = keep ? [[0, H0]] : null;
+  const f = q => { const rx = q[2] - w, sp = Math.hypot(rx, q[3]); return [q[2], q[3], -k * sp * rx, -G - k * sp * q[3]]; };
+  const step = (q, h) => { const k1 = f(q), k2 = f(q.map((u, i) => u + 0.5 * h * k1[i])), k3 = f(q.map((u, i) => u + 0.5 * h * k2[i])), k4 = f(q.map((u, i) => u + h * k3[i]));
+    return q.map((u, i) => u + h / 6 * (k1[i] + 2 * k2[i] + 2 * k3[i] + k4[i])); };
+  while (t < 60) {
+    const n = step(s, dt);
+    if (n[1] < 0) { let lo = 0, hi = 1; for (let i = 0; i < 30; i++) { const m = 0.5 * (lo + hi); if (step(s, m * dt)[1] < 0) hi = m; else lo = m; }
+      s = step(s, hi * dt); t += hi * dt; if (keep) pts.push([s[0], 0]); break; }
+    s = n; t += dt; if (s[1] > pk) pk = s[1]; if (keep) pts.push([s[0], s[1]]);
+  }
+  return { R: s[0], T: t, H: pk, pts: pts };
+}
+const withD = fly(p.v, p.a, kom, p.wind, 0.01, true), free = fly(p.v, p.a, 0, 0, 0.01, true);
+const angs = [], rd = [], rf = [];
+for (let d = 5; d <= 85; d += 2) { angs.push(d); rd.push(fly(p.v, d, kom, p.wind, 0.02, false).R); rf.push(fly(p.v, d, 0, 0, 0.02, false).R); }
+let ib = 0; for (let i = 1; i < rd.length; i++) if (rd[i] > rd[ib]) ib = i;
+let bestA = angs[ib], bestR = rd[ib];
+if (ib > 0 && ib < rd.length - 1) { const y0 = rd[ib - 1], y1 = rd[ib], y2 = rd[ib + 1], den = y0 - 2 * y1 + y2;
+  if (den < 0) { const off = 0.5 * (y0 - y2) / den; bestA = angs[ib] + 2 * off; bestR = fly(p.v, bestA, kom, p.wind, 0.02, false).R; } }
+let ibf = 0; for (let i = 1; i < rf.length; i++) if (rf[i] > rf[ibf]) ibf = i;
+const vt = p.cd > 0 ? Math.sqrt(2 * MASS * G / (RHO * p.cd * AREA)) : 0;
+const rvx = p.v * Math.cos(ar) - p.wind, rvy = p.v * Math.sin(ar), rel = Math.hypot(rvx, rvy);
+const Fd = kk * rel * rel;
+if (graph === "forces") {
+  const ox = 300, oy = 260, arrow = (x0, y0, x1, y1, col) => {
+    ctx.strokeStyle = col; ctx.fillStyle = col; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(x0, y0); ctx.lineTo(x1, y1); ctx.stroke();
+    const d = Math.atan2(y1 - y0, x1 - x0); if (Math.hypot(x1 - x0, y1 - y0) > 4) { ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x1 - 10 * Math.cos(d - 0.4), y1 - 10 * Math.sin(d - 0.4)); ctx.lineTo(x1 - 10 * Math.cos(d + 0.4), y1 - 10 * Math.sin(d + 0.4)); ctx.fill(); } };
+  const ux = Math.cos(ar), uy = Math.sin(ar), wt = MASS * G, sc = 20;
+  arrow(ox, oy, ox + 3 * p.v * ux, oy - 3 * p.v * uy, C.accent);
+  arrow(ox, oy, ox, oy + sc * wt, C.fg);
+  if (rel > 0) arrow(ox, oy, ox - sc * Fd * rvx / rel, oy + sc * Fd * rvy / rel, C.bad);
+  ctx.fillStyle = C.muted; ctx.beginPath(); ctx.arc(ox, oy, 14, 0, 2 * Math.PI); ctx.fill();
+  const wx = 600; arrow(wx, 110, wx + 6 * p.wind, 110, C.good);
+  ctx.font = "13px system-ui"; ctx.textAlign = "left"; ctx.fillStyle = C.accent; ctx.fillText("blue: launch velocity " + p.v.toFixed(0) + " m/s at " + p.a.toFixed(0) + " degrees (3 px per m/s)", 10, 24);
+  ctx.fillStyle = C.fg; ctx.fillText("black: weight m g = " + wt.toFixed(2) + " N", 10, 46);
+  ctx.fillStyle = C.bad; ctx.fillText("red: drag at launch = " + Fd.toFixed(2) + " N = " + (Fd / wt).toFixed(2) + " x weight (against the velocity relative to the air)", 10, 68);
+  ctx.fillStyle = C.good; ctx.textAlign = "center"; ctx.fillText("wind " + p.wind.toFixed(0) + " m/s (+ = tailwind)", wx, 90);
+  ctx.textAlign = "left"; ctx.fillStyle = C.muted; ctx.font = "12px system-ui"; ctx.fillText("arrows start at the ball at launch; force scale 20 px per newton", 10, H - 12);
+} else if (graph === "angle") {
+  const top = Math.max(rf[ibf], bestR, Math.max.apply(null, rd)) * 1.08;
+  const A = axes({ x: [0, 90], y: [0, top], xl: "launch angle (degrees)", yl: "range (m)", title: "Range versus angle: drag lowers the peak and moves it left" }, C);
+  const ip = (arr, x) => { const i = Math.min(arr.length - 2, Math.max(0, Math.floor((x - 5) / 2))), u = (x - angs[i]) / 2; return arr[i] * (1 - u) + arr[i + 1] * u; };
+  curve(x => ip(rf, Math.min(85, Math.max(5, x))), A, C.muted, 5, 85, 80);
+  curve(x => ip(rd, Math.min(85, Math.max(5, x))), A, C.accent, 5, 85, 80);
+  dot(A, bestA, bestR, C.accent, "best with drag " + bestA.toFixed(1));
+  dot(A, angs[ibf], rf[ibf], C.muted, "no drag");
+  dot(A, p.a, withD.R, C.bad, "now");
+  ctx.font = "12px system-ui"; ctx.textAlign = "left"; ctx.fillStyle = C.muted; ctx.fillText("grey: no drag. blue: with drag and wind. (curves joined from 2 degree steps)", A.L + 10, A.T + 16);
+} else {
+  let xlo = 0, xhi = Math.max(withD.R, free.R, 1), yhi = Math.max(withD.H, free.H, 2);
+  withD.pts.forEach(q => { xlo = Math.min(xlo, q[0]); xhi = Math.max(xhi, q[0]); });
+  const A = axes({ x: [xlo * 1.05, xhi * 1.05], y: [0, yhi * 1.1], xl: "horizontal distance x (m)", yl: "height y (m)", title: "Flight with drag (solid) and without (dashed)" }, C);
+  const trace = (pts, col, dash) => { ctx.save(); ctx.beginPath(); ctx.rect(A.L, A.T, A.w, A.h); ctx.clip(); ctx.strokeStyle = col; ctx.lineWidth = 2.5; ctx.setLineDash(dash);
+    ctx.beginPath(); pts.forEach((q, i) => i ? ctx.lineTo(A.X(q[0]), A.Y(q[1])) : ctx.moveTo(A.X(q[0]), A.Y(q[1]))); ctx.stroke(); ctx.restore(); };
+  trace(free.pts, C.muted, [6, 4]); trace(withD.pts, C.accent, []);
+  dot(A, withD.R, 0, C.accent, "lands " + withD.R.toFixed(1) + " m"); dot(A, free.R, 0, C.muted, "");
+  ctx.font = "12px system-ui"; ctx.textAlign = "left"; ctx.fillStyle = C.muted; ctx.fillText("dashed grey: no drag, lands " + free.R.toFixed(1) + " m", A.L + 10, A.T + 16);
+}
+readout("with drag: range " + withD.R.toFixed(1) + " m, flight " + withD.T.toFixed(2) + " s, peak " + withD.H.toFixed(1) + " m &nbsp;|&nbsp; no drag: range " + free.R.toFixed(1) + " m &nbsp;|&nbsp; drag costs " + (free.R - withD.R).toFixed(1) + " m (" + (100 * (1 - withD.R / free.R)).toFixed(0) + " percent) &nbsp;|&nbsp; best angle with drag " + bestA.toFixed(1) + " degrees (no drag " + angs[ibf].toFixed(0) + ") &nbsp;|&nbsp; terminal speed " + (p.cd > 0 ? vt.toFixed(1) + " m/s" : "none (no drag)") + " &nbsp;|&nbsp; k = " + kk.toExponential(2) + " kg/m");
+
+  const ch = document.getElementById("challenge");
+  if (challengeTest) { const ok = !!challengeTest(p); ch.hidden = false; ch.dataset.ok = String(ok);
+    ch.innerHTML = "<b>Challenge:</b> " + CHALLENGE + " &nbsp; " + (ok ? "<b>Done!</b>" : "Not yet.");
+    if (ok !== lastOk) { document.getElementById("status").textContent = ok ? "Challenge done." : "Challenge not yet done."; lastOk = ok; } }
+}
+const box = document.getElementById("controls");
+const inputs = {};
+for (const q of PARAMS) {
+  p[q.id] = q.value;
+  const row = document.createElement("div"); row.className = "row";
+  row.innerHTML = `<label for="${q.id}">${q.label} (${q.unit || "no unit"})</label>` +
+    `<input id="${q.id}" type="range" min="${q.min}" max="${q.max}" step="${q.step}" value="${q.value}">` +
+    `<output for="${q.id}">${q.value}</output>`;
+  const inp = row.querySelector("input"), out = row.querySelector("output");
+  inputs[q.id] = [inp, out];
+  inp.addEventListener("input", () => { p[q.id] = +inp.value; out.textContent = inp.value; draw(); });
+  box.appendChild(row);
+}
+function setAll(vals) { for (const k in vals) { p[k] = vals[k]; if (inputs[k]) { inputs[k][0].value = vals[k]; inputs[k][1].textContent = vals[k]; } } draw(); }
+const DEFAULTS = Object.assign({}, p);
+document.getElementById("reset").addEventListener("click", () => setAll(DEFAULTS));
+for (const g of GRAPHS) {
+  const b = document.createElement("button"); b.type = "button"; b.textContent = g.label;
+  b.setAttribute("aria-pressed", String(g.id === graph));
+  b.addEventListener("click", () => { graph = g.id; for (const x of document.querySelectorAll("#graphs button")) x.setAttribute("aria-pressed", String(x === b)); draw(); });
+  document.getElementById("graphs").appendChild(b);
+}
+for (const pr of PRESETS) {
+  const b = document.createElement("button"); b.type = "button"; b.textContent = pr.label;
+  b.addEventListener("click", () => setAll(pr.values));
+  document.getElementById("presets").appendChild(b);
+}
+matchMedia("(prefers-color-scheme: dark)").addEventListener("change", draw);
+draw();
+</script>
+</body>
+</html>

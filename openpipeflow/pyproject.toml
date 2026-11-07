@@ -1,0 +1,11 @@
+[project]
+name = "openpipeflow"
+version = "0.1.0"
+description = "Learn pipe flow and pressure loss: choose a pipe size that meets the flow within a pump budget."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+dependencies = ["numpy", "matplotlib"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

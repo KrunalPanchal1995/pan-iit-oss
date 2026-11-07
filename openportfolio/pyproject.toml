@@ -1,0 +1,11 @@
+[project]
+name = "openportfolio"
+version = "0.1.0"
+description = "Learn how diversification lowers risk: correlation, portfolios and the efficient frontier, from scratch in 3 sessions (made-up data, not investment advice)."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+dependencies = ["numpy", "matplotlib"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
