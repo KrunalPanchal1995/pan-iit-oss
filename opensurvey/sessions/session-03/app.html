@@ -1,0 +1,190 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Session 3: a closed traverse with errors</title>
+<style>
+  :root { --bg:#ffffff; --fg:#14181f; --muted:#5b6472; --card:#f3f5f8; --accent:#1f6feb; --good:#1a7f37; --bad:#b42318; --line:#d7dce3; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#0e1116; --fg:#e6e9ee; --muted:#9aa3b2; --card:#171b22; --accent:#58a6ff; --good:#3fb950; --bad:#f97066; --line:#2a313c; } }
+  * { box-sizing: border-box; }
+  body { margin:0; padding:16px; background:var(--bg); color:var(--fg); font:16px/1.5 system-ui, sans-serif; }
+  main { max-width: 780px; margin: 0 auto; }
+  h1 { font-size: 1.3rem; margin: 0 0 4px; }
+  p.sub { margin: 0 0 12px; color: var(--muted); }
+  .scroll { overflow-x:auto; }
+  canvas { width:100%; min-width:560px; height:auto; background:var(--card); border:1px solid var(--line); border-radius:8px; display:block; }
+  .sr { position:absolute; left:-9999px; }
+  .bar { display:flex; flex-wrap:wrap; gap:8px; margin:10px 0; }
+  button { font:inherit; padding:6px 12px; border:1px solid var(--line); background:var(--card); color:var(--fg); border-radius:6px; cursor:pointer; }
+  button[aria-pressed="true"] { border-color:var(--accent); color:var(--accent); font-weight:600; }
+  button:focus-visible, input:focus-visible { outline:3px solid var(--accent); outline-offset:2px; }
+  .row { display:grid; grid-template-columns: 11rem 1fr 6rem; gap:8px; align-items:center; margin:8px 0; }
+  .row output { text-align:right; font-variant-numeric: tabular-nums; }
+  @media (max-width: 560px) { .row { grid-template-columns: 1fr; gap:2px; } .row output { text-align:left; } }
+  input[type=range] { width:100%; accent-color: var(--accent); }
+  #readout, #challenge, .note { margin-top:10px; padding:10px 12px; background:var(--card); border-radius:8px; border:1px solid var(--line); }
+  #challenge[data-ok="true"] { border-color:var(--good); } #challenge[data-ok="true"] b { color:var(--good); }
+  .note { font-size:.85rem; color:var(--muted); }
+  a { color: var(--accent); }
+</style>
+</head>
+<body>
+<main>
+  <h1>Session 3: a closed traverse with errors</h1>
+  <p class="sub">Fixed error patterns scaled by the sliders; the walk, its misclosure and the Bowditch-adjusted figure.</p>
+  <div class="bar" id="graphs" role="group" aria-label="Choose a graph"></div>
+  <div class="scroll"><canvas id="c" width="720" height="420" role="img" aria-label="Session 3: a closed traverse with errors: interactive plot"></canvas></div>
+  <div class="bar" id="presets" role="group" aria-label="Presets"></div>
+  <div id="controls"></div>
+  <div class="bar"><button id="reset" type="button">Reset</button></div>
+  <div id="readout"></div>
+  <div id="challenge" hidden></div>
+  <div id="status" class="sr" aria-live="polite"></div>
+  <p class="note">This is a simplified educational model. It is not a validated design tool and must not be used for real structures, electrical installations, vehicles, industrial processes or medical decisions.</p>
+  <p class="sub"><a href="https://github.com/KrunalPanchal1995/pan-iit-oss/tree/main/opensurvey">Back to the repository</a></p>
+</main>
+<script>
+"use strict";
+const PARAMS = [{"id": "sig", "label": "Angle error scale", "min": 0, "max": 600, "step": 20, "value": 100, "unit": "arc-seconds"}, {"id": "ds", "label": "Distance error scale", "min": 0, "max": 50, "step": 5, "value": 10, "unit": "mm"}, {"id": "bl", "label": "Blunder at corner 4", "min": 0, "max": 1, "step": 0.1, "value": 0, "unit": "degrees"}];
+const GRAPHS = [{"id": "plan", "label": "Traverse", "diagram": true}, {"id": "mis", "label": "Misclosure versus angle error"}];
+const PRESETS = [{"label": "Perfect", "values": {"sig": 0, "ds": 0, "bl": 0}}, {"label": "Good work", "values": {"sig": 100, "ds": 10, "bl": 0}}, {"label": "One blunder", "values": {"sig": 100, "ds": 10, "bl": 1}}];
+const CHALLENGE = "With a distance error of 10 mm and no blunder, find the largest angle error scale (a multiple of 20 arc-seconds) that still gives a relative accuracy of at least 1 in 5000.";
+const CHALLENGE_SOLUTION = {"sig": 320, "ds": 10, "bl": 0};
+const challengeTest = CHALLENGE ? (p) => (p.sig === 320 && p.ds === 10 && p.bl === 0) : null;
+const cv = document.getElementById("c"), ctx = cv.getContext("2d");
+const W = cv.width, H = cv.height, p = {};
+let graph = GRAPHS.length ? GRAPHS[0].id : "main";
+const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+const fmt = v => (Math.abs(v) >= 1000 || (Math.abs(v) > 0 && Math.abs(v) < 0.01)) ? v.toExponential(2) : String(+v.toPrecision(4));
+function readout(html) {
+  document.getElementById("readout").innerHTML = html;
+  cv.setAttribute("aria-label", document.title + ". " + html.replace(/<[^>]+>/g, " ").replace(/&nbsp;/g, " "));  // screen readers get the numbers
+}
+let lastOk = null;
+// ---- plotting helpers: every graph gets labelled axes with units ----
+function niceTicks(lo, hi, n) {
+  const raw = (hi - lo) / n, mag = Math.pow(10, Math.floor(Math.log10(raw))), f = raw / mag;
+  const step = (f < 1.5 ? 1 : f < 3 ? 2 : f < 7 ? 5 : 10) * mag, out = [];
+  for (let v = Math.ceil(lo / step - 1e-9) * step; v <= hi + 1e-9; v += step) out.push(+v.toPrecision(12));
+  return out;
+}
+function axes(o, C) {
+  const L = 66, R = 16, T = 34, B = 50, w = W - L - R, h = H - T - B;
+  const X = v => L + (v - o.x[0]) / (o.x[1] - o.x[0]) * w, Y = v => T + h - (v - o.y[0]) / (o.y[1] - o.y[0]) * h;
+  ctx.lineWidth = 1; ctx.font = "12px system-ui";
+  for (const xv of niceTicks(o.x[0], o.x[1], 6)) {
+    ctx.strokeStyle = C.line; ctx.beginPath(); ctx.moveTo(X(xv), T); ctx.lineTo(X(xv), T + h); ctx.stroke();
+    ctx.fillStyle = C.muted; ctx.textAlign = "center"; ctx.fillText(fmt(xv), X(xv), T + h + 16);
+  }
+  for (const yv of niceTicks(o.y[0], o.y[1], 5)) {
+    ctx.strokeStyle = C.line; ctx.beginPath(); ctx.moveTo(L, Y(yv)); ctx.lineTo(L + w, Y(yv)); ctx.stroke();
+    ctx.fillStyle = C.muted; ctx.textAlign = "right"; ctx.fillText(fmt(yv), L - 6, Y(yv) + 4);
+  }
+  ctx.strokeStyle = C.fg; ctx.beginPath(); ctx.moveTo(L, T); ctx.lineTo(L, T + h); ctx.lineTo(L + w, T + h); ctx.stroke();
+  ctx.fillStyle = C.fg; ctx.textAlign = "center"; ctx.font = "13px system-ui";
+  ctx.fillText(o.xl, L + w / 2, H - 8);
+  ctx.save(); ctx.translate(14, T + h / 2); ctx.rotate(-Math.PI / 2); ctx.fillText(o.yl, 0, 0); ctx.restore();
+  ctx.font = "bold 13px system-ui"; ctx.fillText(o.title || "", L + w / 2, 20);
+  return { X, Y, L, T, w, h };
+}
+function curve(f, a, color, x0, x1, n) {
+  n = n || 160; ctx.save(); ctx.beginPath(); ctx.rect(a.L, a.T, a.w, a.h); ctx.clip();   // never draw outside the plot area
+  ctx.strokeStyle = color; ctx.lineWidth = 2.5; ctx.beginPath();
+  for (let i = 0; i <= n; i++) { const x = x0 + (x1 - x0) * i / n, y = f(x); i ? ctx.lineTo(a.X(x), a.Y(y)) : ctx.moveTo(a.X(x), a.Y(y)); }
+  ctx.stroke(); ctx.restore();
+}
+function dot(a, x, y, color, label) {
+  ctx.fillStyle = color; ctx.beginPath(); ctx.arc(a.X(x), a.Y(y), 6, 0, 2 * Math.PI); ctx.fill();
+  if (label) { ctx.textAlign = "left"; ctx.font = "12px system-ui"; ctx.fillText(label, a.X(x) + 9, a.Y(y) - 8); }
+}
+function draw() {
+  ctx.clearRect(0, 0, W, H);
+  const C = { fg: css("--fg"), muted: css("--muted"), accent: css("--accent"), line: css("--line"), good: css("--good"), bad: css("--bad") };
+  
+const T = [[0, 0], [0, 120], [100, 180], [200, 120], [200, 0]], n = 5, R = Math.PI / 180, md = (x, m) => ((x % m) + m) % m;
+const bt = [], dt = [];
+for (let i = 0; i < n; i++) { const o = T[i], q = T[(i + 1) % n]; bt.push(md(Math.atan2(q[0] - o[0], q[1] - o[1]) / R, 360)); dt.push(Math.hypot(q[0] - o[0], q[1] - o[1])); }
+const at = bt.map((b, i) => md(bt[(i + n - 1) % n] + 180 - b, 360));
+const PA = [0.6, -1, 0.8, -0.3, 0.5], PD = [1, -0.6, 0.8, -1, 0.5];
+const area = pts => { let s = 0; for (let i = 0; i < n; i++) { const u = pts[i], v = pts[(i + 1) % n]; s += u[0] * v[1] - v[0] * u[1]; } return Math.abs(s) / 2; };
+function run(sig, ds, bl) {
+  const am = at.map((x, i) => x + sig * PA[i] / 3600 + (i === 3 ? bl : 0));
+  const dm = dt.map((x, i) => x + ds * PD[i] / 1000);
+  const amis = am.reduce((s, x) => s + x, 0) - (n - 2) * 180;
+  const ad = am.map(x => x - amis / n);
+  const br = [bt[0]]; for (let k = 1; k < n; k++) br.push(md(br[k - 1] + 180 - ad[k], 360));
+  const P = dm.reduce((s, x) => s + x, 0);
+  const st = dm.map((x, i) => [x * Math.sin(br[i] * R), x * Math.cos(br[i] * R)]);
+  const e = [st.reduce((s, v) => s + v[0], 0), st.reduce((s, v) => s + v[1], 0)];
+  const raw = [[0, 0]], adj = [[0, 0]];
+  st.forEach((v, i) => { const r = raw[i], q = adj[i]; raw.push([r[0] + v[0], r[1] + v[1]]); adj.push([q[0] + v[0] - e[0] * dm[i] / P, q[1] + v[1] - e[1] * dm[i] / P]); });
+  const m = Math.hypot(e[0], e[1]);
+  return { raw: raw, adj: adj, e: e, m: m, P: P, N: m < 1e-6 ? 0 : P / m, area: area(adj), amis: amis * 3600 };
+}
+const r = run(p.sig, p.ds, p.bl), LIM = r.P / 5000;
+if (graph === "plan") {
+  let dev = 0; r.raw.forEach((q, i) => { const t = T[i % n]; dev = Math.max(dev, Math.hypot(q[0] - t[0], q[1] - t[1])); });
+  r.adj.forEach((q, i) => { const t = T[i % n]; dev = Math.max(dev, Math.hypot(q[0] - t[0], q[1] - t[1])); });
+  const M = dev > 1e-6 ? Math.min(100, 40 / dev) : 1, S = 1.4;
+  const P2 = (q, i) => { const t = T[i % n], x = t[0] + M * (q[0] - t[0]), y = t[1] + M * (q[1] - t[1]); return [360 + S * (x - 100), 215 - S * (y - 90)]; };
+  const path = (pts, col, wd, dash) => { ctx.strokeStyle = col; ctx.lineWidth = wd; ctx.setLineDash(dash); ctx.beginPath(); pts.forEach((q, i) => { const z = P2(q, i); i ? ctx.lineTo(z[0], z[1]) : ctx.moveTo(z[0], z[1]); }); ctx.stroke(); ctx.setLineDash([]); };
+  path(T.concat([T[0]]), C.muted, 1.5, [3, 4]);
+  path(r.raw, C.bad, 2, []);
+  path(r.adj, C.good, 2, []);
+  ctx.fillStyle = C.fg; ctx.font = "12px system-ui"; ctx.textAlign = "left";
+  T.forEach((t, i) => { const z = P2(t, i); ctx.beginPath(); ctx.arc(z[0], z[1], 3, 0, 2 * Math.PI); ctx.fill(); ctx.fillText(String(i + 1), z[0] + 6, z[1] - 6); });
+  if (r.m > 1e-6) {
+    const z0 = P2(r.raw[n], 0), z1 = P2(r.adj[0], 0), ang = Math.atan2(z1[1] - z0[1], z1[0] - z0[0]);
+    ctx.strokeStyle = C.bad; ctx.fillStyle = C.bad; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(z0[0], z0[1]); ctx.lineTo(z1[0], z1[1]); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(z1[0], z1[1]); ctx.lineTo(z1[0] - 10 * Math.cos(ang - 0.4), z1[1] - 10 * Math.sin(ang - 0.4)); ctx.lineTo(z1[0] - 10 * Math.cos(ang + 0.4), z1[1] - 10 * Math.sin(ang + 0.4)); ctx.closePath(); ctx.fill();
+  }
+  ctx.fillStyle = C.bad; ctx.fillText("red: walked traverse and misclosure arrow", 10, 18);
+  ctx.fillStyle = C.good; ctx.fillText("green: after Bowditch (closed)", 10, 34);
+  ctx.fillStyle = C.muted; ctx.fillText("dotted: true corners. Deviations are drawn " + M.toFixed(0) + " times larger.", 10, H - 8);
+} else {
+  const A = axes({ x: [0, 600], y: [0, 2.2], xl: "angle error scale (arc-seconds)", yl: "misclosure (m)", title: "Misclosure grows with the angle error" }, C);
+  curve(s => run(s, p.ds, p.bl).m, A, C.accent, 0, 600, 60);
+  curve(() => LIM, A, C.bad, 0, 600, 2);
+  dot(A, p.sig, r.m, C.accent, "now");
+  ctx.font = "12px system-ui"; ctx.textAlign = "left"; ctx.fillStyle = C.bad; ctx.fillText("red: 1 in 5000 limit = " + LIM.toFixed(4) + " m", A.L + 10, A.Y(LIM) - 6);
+}
+readout("angle misclosure = " + r.amis.toFixed(0) + " arc-s &nbsp; misclosure = " + r.m.toFixed(4) + " m &nbsp; " + (r.N > 0 ? "relative accuracy 1 in " + r.N.toFixed(0) + (r.N >= 5000 ? " (meets 1 in 5000)" : " (FAILS 1 in 5000)") : "closes exactly") + " &nbsp; adjusted area = " + r.area.toFixed(2) + " m2 (exact 30000)");
+
+  const ch = document.getElementById("challenge");
+  if (challengeTest) { const ok = !!challengeTest(p); ch.hidden = false; ch.dataset.ok = String(ok);
+    ch.innerHTML = "<b>Challenge:</b> " + CHALLENGE + " &nbsp; " + (ok ? "<b>Done!</b>" : "Not yet.");
+    if (ok !== lastOk) { document.getElementById("status").textContent = ok ? "Challenge done." : "Challenge not yet done."; lastOk = ok; } }
+}
+const box = document.getElementById("controls");
+const inputs = {};
+for (const q of PARAMS) {
+  p[q.id] = q.value;
+  const row = document.createElement("div"); row.className = "row";
+  row.innerHTML = `<label for="${q.id}">${q.label} (${q.unit || "no unit"})</label>` +
+    `<input id="${q.id}" type="range" min="${q.min}" max="${q.max}" step="${q.step}" value="${q.value}">` +
+    `<output for="${q.id}">${q.value}</output>`;
+  const inp = row.querySelector("input"), out = row.querySelector("output");
+  inputs[q.id] = [inp, out];
+  inp.addEventListener("input", () => { p[q.id] = +inp.value; out.textContent = inp.value; draw(); });
+  box.appendChild(row);
+}
+function setAll(vals) { for (const k in vals) { p[k] = vals[k]; if (inputs[k]) { inputs[k][0].value = vals[k]; inputs[k][1].textContent = vals[k]; } } draw(); }
+const DEFAULTS = Object.assign({}, p);
+document.getElementById("reset").addEventListener("click", () => setAll(DEFAULTS));
+for (const g of GRAPHS) {
+  const b = document.createElement("button"); b.type = "button"; b.textContent = g.label;
+  b.setAttribute("aria-pressed", String(g.id === graph));
+  b.addEventListener("click", () => { graph = g.id; for (const x of document.querySelectorAll("#graphs button")) x.setAttribute("aria-pressed", String(x === b)); draw(); });
+  document.getElementById("graphs").appendChild(b);
+}
+for (const pr of PRESETS) {
+  const b = document.createElement("button"); b.type = "button"; b.textContent = pr.label;
+  b.addEventListener("click", () => setAll(pr.values));
+  document.getElementById("presets").appendChild(b);
+}
+matchMedia("(prefers-color-scheme: dark)").addEventListener("change", draw);
+draw();
+</script>
+</body>
+</html>

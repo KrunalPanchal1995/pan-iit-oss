@@ -1,0 +1,183 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Session 1: a day of sun against a day of demand</title>
+<style>
+  :root { --bg:#ffffff; --fg:#14181f; --muted:#5b6472; --card:#f3f5f8; --accent:#1f6feb; --good:#1a7f37; --bad:#b42318; --line:#d7dce3; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#0e1116; --fg:#e6e9ee; --muted:#9aa3b2; --card:#171b22; --accent:#58a6ff; --good:#3fb950; --bad:#f97066; --line:#2a313c; } }
+  * { box-sizing: border-box; }
+  body { margin:0; padding:16px; background:var(--bg); color:var(--fg); font:16px/1.5 system-ui, sans-serif; }
+  main { max-width: 780px; margin: 0 auto; }
+  h1 { font-size: 1.3rem; margin: 0 0 4px; }
+  p.sub { margin: 0 0 12px; color: var(--muted); }
+  .scroll { overflow-x:auto; }
+  canvas { width:100%; min-width:560px; height:auto; background:var(--card); border:1px solid var(--line); border-radius:8px; display:block; }
+  .sr { position:absolute; left:-9999px; }
+  .bar { display:flex; flex-wrap:wrap; gap:8px; margin:10px 0; }
+  button { font:inherit; padding:6px 12px; border:1px solid var(--line); background:var(--card); color:var(--fg); border-radius:6px; cursor:pointer; }
+  button[aria-pressed="true"] { border-color:var(--accent); color:var(--accent); font-weight:600; }
+  button:focus-visible, input:focus-visible { outline:3px solid var(--accent); outline-offset:2px; }
+  .row { display:grid; grid-template-columns: 11rem 1fr 6rem; gap:8px; align-items:center; margin:8px 0; }
+  .row output { text-align:right; font-variant-numeric: tabular-nums; }
+  @media (max-width: 560px) { .row { grid-template-columns: 1fr; gap:2px; } .row output { text-align:left; } }
+  input[type=range] { width:100%; accent-color: var(--accent); }
+  #readout, #challenge, .note { margin-top:10px; padding:10px 12px; background:var(--card); border-radius:8px; border:1px solid var(--line); }
+  #challenge[data-ok="true"] { border-color:var(--good); } #challenge[data-ok="true"] b { color:var(--good); }
+  .note { font-size:.85rem; color:var(--muted); }
+  a { color: var(--accent); }
+</style>
+</head>
+<body>
+<main>
+  <h1>Session 1: a day of sun against a day of demand</h1>
+  <p class="sub">Change the array, the demand and the weather; the graph shades surplus and deficit.</p>
+  <div class="bar" id="graphs" role="group" aria-label="Choose a graph"></div>
+  <div class="scroll"><canvas id="c" width="720" height="420" role="img" aria-label="Session 1: a day of sun against a day of demand: interactive plot"></canvas></div>
+  <div class="bar" id="presets" role="group" aria-label="Presets"></div>
+  <div id="controls"></div>
+  <div class="bar"><button id="reset" type="button">Reset</button></div>
+  <div id="readout"></div>
+  <div id="challenge" hidden></div>
+  <div id="status" class="sr" aria-live="polite"></div>
+  <p class="note">This is a simplified educational model. It is not a validated design tool and must not be used for real structures, electrical installations, vehicles, industrial processes or medical decisions.</p>
+  <p class="sub"><a href="https://github.com/KrunalPanchal1995/pan-iit-oss/tree/main/opensolarbattery">Back to the repository</a></p>
+</main>
+<script>
+"use strict";
+const PARAMS = [{"id": "pk", "label": "Array size", "min": 0, "max": 8, "step": 0.5, "value": 4, "unit": "kW"}, {"id": "daily", "label": "Home demand per day", "min": 4, "max": 20, "step": 1, "value": 10, "unit": "kWh"}, {"id": "sun", "label": "Sun factor", "min": 0.2, "max": 1, "step": 0.1, "value": 1, "unit": ""}];
+const GRAPHS = [{"id": "day", "label": "Power curves through the day"}, {"id": "bars", "label": "Energy bars", "diagram": true}];
+const PRESETS = [{"label": "Clear day, 4 kW", "values": {"pk": 4, "daily": 10, "sun": 1}}, {"label": "Dull day", "values": {"pk": 4, "daily": 10, "sun": 0.4}}, {"label": "Small array", "values": {"pk": 1.5, "daily": 10, "sun": 1}}, {"label": "Big home", "values": {"pk": 4, "daily": 18, "sun": 1}}];
+const CHALLENGE = "Make the day's solar energy match the day's demand to within 1 kWh, then read the solar share of demand in the readout.";
+const CHALLENGE_SOLUTION = {"pk": 1.5, "daily": 10, "sun": 0.9};
+const challengeTest = CHALLENGE ? (p) => (Math.abs(p.pk * p.sun * 24 / Math.PI - p.daily) < 1) : null;
+const cv = document.getElementById("c"), ctx = cv.getContext("2d");
+const W = cv.width, H = cv.height, p = {};
+let graph = GRAPHS.length ? GRAPHS[0].id : "main";
+const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+const fmt = v => (Math.abs(v) >= 1000 || (Math.abs(v) > 0 && Math.abs(v) < 0.01)) ? v.toExponential(2) : String(+v.toPrecision(4));
+function readout(html) {
+  document.getElementById("readout").innerHTML = html;
+  cv.setAttribute("aria-label", document.title + ". " + html.replace(/<[^>]+>/g, " ").replace(/&nbsp;/g, " "));  // screen readers get the numbers
+}
+let lastOk = null;
+// ---- plotting helpers: every graph gets labelled axes with units ----
+function niceTicks(lo, hi, n) {
+  const raw = (hi - lo) / n, mag = Math.pow(10, Math.floor(Math.log10(raw))), f = raw / mag;
+  const step = (f < 1.5 ? 1 : f < 3 ? 2 : f < 7 ? 5 : 10) * mag, out = [];
+  for (let v = Math.ceil(lo / step - 1e-9) * step; v <= hi + 1e-9; v += step) out.push(+v.toPrecision(12));
+  return out;
+}
+function axes(o, C) {
+  const L = 66, R = 16, T = 34, B = 50, w = W - L - R, h = H - T - B;
+  const X = v => L + (v - o.x[0]) / (o.x[1] - o.x[0]) * w, Y = v => T + h - (v - o.y[0]) / (o.y[1] - o.y[0]) * h;
+  ctx.lineWidth = 1; ctx.font = "12px system-ui";
+  for (const xv of niceTicks(o.x[0], o.x[1], 6)) {
+    ctx.strokeStyle = C.line; ctx.beginPath(); ctx.moveTo(X(xv), T); ctx.lineTo(X(xv), T + h); ctx.stroke();
+    ctx.fillStyle = C.muted; ctx.textAlign = "center"; ctx.fillText(fmt(xv), X(xv), T + h + 16);
+  }
+  for (const yv of niceTicks(o.y[0], o.y[1], 5)) {
+    ctx.strokeStyle = C.line; ctx.beginPath(); ctx.moveTo(L, Y(yv)); ctx.lineTo(L + w, Y(yv)); ctx.stroke();
+    ctx.fillStyle = C.muted; ctx.textAlign = "right"; ctx.fillText(fmt(yv), L - 6, Y(yv) + 4);
+  }
+  ctx.strokeStyle = C.fg; ctx.beginPath(); ctx.moveTo(L, T); ctx.lineTo(L, T + h); ctx.lineTo(L + w, T + h); ctx.stroke();
+  ctx.fillStyle = C.fg; ctx.textAlign = "center"; ctx.font = "13px system-ui";
+  ctx.fillText(o.xl, L + w / 2, H - 8);
+  ctx.save(); ctx.translate(14, T + h / 2); ctx.rotate(-Math.PI / 2); ctx.fillText(o.yl, 0, 0); ctx.restore();
+  ctx.font = "bold 13px system-ui"; ctx.fillText(o.title || "", L + w / 2, 20);
+  return { X, Y, L, T, w, h };
+}
+function curve(f, a, color, x0, x1, n) {
+  n = n || 160; ctx.save(); ctx.beginPath(); ctx.rect(a.L, a.T, a.w, a.h); ctx.clip();   // never draw outside the plot area
+  ctx.strokeStyle = color; ctx.lineWidth = 2.5; ctx.beginPath();
+  for (let i = 0; i <= n; i++) { const x = x0 + (x1 - x0) * i / n, y = f(x); i ? ctx.lineTo(a.X(x), a.Y(y)) : ctx.moveTo(a.X(x), a.Y(y)); }
+  ctx.stroke(); ctx.restore();
+}
+function dot(a, x, y, color, label) {
+  ctx.fillStyle = color; ctx.beginPath(); ctx.arc(a.X(x), a.Y(y), 6, 0, 2 * Math.PI); ctx.fill();
+  if (label) { ctx.textAlign = "left"; ctx.font = "12px system-ui"; ctx.fillText(label, a.X(x) + 9, a.Y(y) - 8); }
+}
+function draw() {
+  ctx.clearRect(0, 0, W, H);
+  const C = { fg: css("--fg"), muted: css("--muted"), accent: css("--accent"), line: css("--line"), good: css("--good"), bad: css("--bad") };
+  
+const N = 240, dt = 0.1;
+const shape = t => 0.3 + Math.exp(-0.5 * Math.pow((t - 7.5) / 1.2, 2)) + 1.6 * Math.exp(-0.5 * Math.pow((t - 19) / 2, 2));
+let ss = 0; for (let k = 0; k < N; k++) ss += shape((k + 0.5) * dt) * dt;
+const pvf = t => (t >= 6 && t <= 18) ? p.pk * p.sun * Math.sin(Math.PI * (t - 6) / 12) : 0;
+const ldf = t => p.daily * shape(t) / ss;
+let pvE = 0, ldE = 0, dir = 0, sur = 0, def = 0;
+for (let k = 0; k < N; k++) {
+  const t = (k + 0.5) * dt, a = pvf(t), b = ldf(t);
+  pvE += a * dt; ldE += b * dt; dir += Math.min(a, b) * dt; sur += Math.max(a - b, 0) * dt; def += Math.max(b - a, 0) * dt;
+}
+if (graph === "day") {
+  const ymax = Math.max(3, Math.ceil(p.pk * p.sun) + 1);
+  const A = axes({ x: [0, 24], y: [0, ymax], xl: "time of day (hours)", yl: "power (kW)", title: "Solar output and household demand" }, C);
+  for (let k = 0; k < N; k++) {
+    const t = (k + 0.5) * dt, a = pvf(t), b = ldf(t);
+    ctx.fillStyle = a > b ? C.good : C.bad; ctx.globalAlpha = 0.35;
+    const ya = A.Y(a), yb = A.Y(b), x0 = A.X(t - dt / 2), x1 = A.X(t + dt / 2);
+    ctx.fillRect(x0, Math.min(ya, yb), x1 - x0 + 0.5, Math.abs(ya - yb)); ctx.globalAlpha = 1;
+  }
+  curve(pvf, A, C.accent, 0, 24, 241);
+  curve(ldf, A, C.fg, 0, 24, 241);
+  ctx.font = "12px system-ui"; ctx.textAlign = "left";
+  ctx.fillStyle = C.accent; ctx.fillText("solar", A.L + 8, A.T + 14);
+  ctx.fillStyle = C.fg; ctx.fillText("demand", A.L + 8, A.T + 28);
+  ctx.fillStyle = C.good; ctx.fillText("green: surplus", A.L + 70, A.T + 14);
+  ctx.fillStyle = C.bad; ctx.fillText("red: deficit", A.L + 70, A.T + 28);
+} else {
+  const sc = 520 / Math.max(pvE, ldE, 1), x0 = 100;
+  ctx.font = "13px system-ui"; ctx.textAlign = "left"; ctx.fillStyle = C.fg;
+  ctx.fillText("Where one day's energy goes (areas, kWh)", 20, 30);
+  ctx.fillText("Solar", 20, 108); ctx.fillText("Demand", 20, 248);
+  ctx.fillStyle = C.accent; ctx.fillRect(x0, 80, pvE * sc, 44);
+  ctx.fillStyle = C.good; ctx.fillRect(x0 + dir * sc, 80, sur * sc, 44);
+  ctx.fillStyle = C.accent; ctx.fillRect(x0, 220, dir * sc, 44);
+  ctx.fillStyle = C.bad; ctx.fillRect(x0 + dir * sc, 220, def * sc, 44);
+  ctx.fillStyle = C.fg; ctx.font = "12px system-ui";
+  ctx.fillText("total solar " + pvE.toFixed(1) + " kWh: used directly " + dir.toFixed(1) + " | surplus " + sur.toFixed(1), x0, 150);
+  ctx.fillText("total demand " + ldE.toFixed(1) + " kWh: from solar " + dir.toFixed(1) + " | deficit " + def.toFixed(1), x0, 290);
+  ctx.fillStyle = C.muted; ctx.fillText("The shared block (direct use) is the same in both bars.", x0, 340);
+}
+readout("solar " + pvE.toFixed(1) + " kWh &nbsp; demand " + ldE.toFixed(1) + " kWh &nbsp; used directly " + dir.toFixed(2) + " kWh &nbsp; surplus " + sur.toFixed(2) + " kWh &nbsp; deficit " + def.toFixed(2) + " kWh &nbsp; solar share of demand " + (100 * dir / ldE).toFixed(1) + " % &nbsp; solar used directly " + (pvE > 0 ? 100 * dir / pvE : 0).toFixed(1) + " %");
+
+  const ch = document.getElementById("challenge");
+  if (challengeTest) { const ok = !!challengeTest(p); ch.hidden = false; ch.dataset.ok = String(ok);
+    ch.innerHTML = "<b>Challenge:</b> " + CHALLENGE + " &nbsp; " + (ok ? "<b>Done!</b>" : "Not yet.");
+    if (ok !== lastOk) { document.getElementById("status").textContent = ok ? "Challenge done." : "Challenge not yet done."; lastOk = ok; } }
+}
+const box = document.getElementById("controls");
+const inputs = {};
+for (const q of PARAMS) {
+  p[q.id] = q.value;
+  const row = document.createElement("div"); row.className = "row";
+  row.innerHTML = `<label for="${q.id}">${q.label} (${q.unit || "no unit"})</label>` +
+    `<input id="${q.id}" type="range" min="${q.min}" max="${q.max}" step="${q.step}" value="${q.value}">` +
+    `<output for="${q.id}">${q.value}</output>`;
+  const inp = row.querySelector("input"), out = row.querySelector("output");
+  inputs[q.id] = [inp, out];
+  inp.addEventListener("input", () => { p[q.id] = +inp.value; out.textContent = inp.value; draw(); });
+  box.appendChild(row);
+}
+function setAll(vals) { for (const k in vals) { p[k] = vals[k]; if (inputs[k]) { inputs[k][0].value = vals[k]; inputs[k][1].textContent = vals[k]; } } draw(); }
+const DEFAULTS = Object.assign({}, p);
+document.getElementById("reset").addEventListener("click", () => setAll(DEFAULTS));
+for (const g of GRAPHS) {
+  const b = document.createElement("button"); b.type = "button"; b.textContent = g.label;
+  b.setAttribute("aria-pressed", String(g.id === graph));
+  b.addEventListener("click", () => { graph = g.id; for (const x of document.querySelectorAll("#graphs button")) x.setAttribute("aria-pressed", String(x === b)); draw(); });
+  document.getElementById("graphs").appendChild(b);
+}
+for (const pr of PRESETS) {
+  const b = document.createElement("button"); b.type = "button"; b.textContent = pr.label;
+  b.addEventListener("click", () => setAll(pr.values));
+  document.getElementById("presets").appendChild(b);
+}
+matchMedia("(prefers-color-scheme: dark)").addEventListener("change", draw);
+draw();
+</script>
+</body>
+</html>

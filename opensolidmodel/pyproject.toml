@@ -1,0 +1,11 @@
+[project]
+name = "opensolidmodel"
+version = "0.1.0"
+description = "Learn how a parametric CAD program works: a recipe of parameters and equations, the stiffness of an outline and a sketch constraint solver, in 3 sessions."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+dependencies = ["numpy", "matplotlib"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

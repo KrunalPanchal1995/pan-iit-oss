@@ -13,45 +13,18 @@
 [submodule "openvfx"]
 	path = openvfx
 	url = https://github.com/KrunalPanchal1995/openvfx.git
-[submodule "openstressstrain"]
-	path = openstressstrain
-	url = https://github.com/KrunalPanchal1995/openstressstrain.git
 [submodule "opentruss"]
 	path = opentruss
 	url = https://github.com/KrunalPanchal1995/opentruss.git
-[submodule "opensurvey"]
-	path = opensurvey
-	url = https://github.com/KrunalPanchal1995/opensurvey.git
 [submodule "opentolerance"]
 	path = opentolerance
 	url = https://github.com/KrunalPanchal1995/opentolerance.git
-[submodule "opensql"]
-	path = opensql
-	url = https://github.com/KrunalPanchal1995/opensql.git
-[submodule "opensolarbattery"]
-	path = opensolarbattery
-	url = https://github.com/KrunalPanchal1995/opensolarbattery.git
-[submodule "openseismo"]
-	path = openseismo
-	url = https://github.com/KrunalPanchal1995/openseismo.git
 [submodule "openwatershed"]
 	path = openwatershed
 	url = https://github.com/KrunalPanchal1995/openwatershed.git
 [submodule "openuncertainty"]
 	path = openuncertainty
 	url = https://github.com/KrunalPanchal1995/openuncertainty.git
-[submodule "openstereodic"]
-	path = openstereodic
-	url = https://github.com/KrunalPanchal1995/openstereodic.git
-[submodule "openstitchdic"]
-	path = openstitchdic
-	url = https://github.com/KrunalPanchal1995/openstitchdic.git
-[submodule "opensorting"]
-	path = opensorting
-	url = https://github.com/KrunalPanchal1995/opensorting.git
-[submodule "opensurrogate"]
-	path = opensurrogate
-	url = https://github.com/KrunalPanchal1995/opensurrogate.git
 [submodule "opensymbolic"]
 	path = opensymbolic
 	url = https://github.com/KrunalPanchal1995/opensymbolic.git

@@ -1,0 +1,176 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Session 1: sort a row of cards</title>
+<style>
+  :root { --bg:#ffffff; --fg:#14181f; --muted:#5b6472; --card:#f3f5f8; --accent:#1f6feb; --good:#1a7f37; --bad:#b42318; --line:#d7dce3; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#0e1116; --fg:#e6e9ee; --muted:#9aa3b2; --card:#171b22; --accent:#58a6ff; --good:#3fb950; --bad:#f97066; --line:#2a313c; } }
+  * { box-sizing: border-box; }
+  body { margin:0; padding:16px; background:var(--bg); color:var(--fg); font:16px/1.5 system-ui, sans-serif; }
+  main { max-width: 780px; margin: 0 auto; }
+  h1 { font-size: 1.3rem; margin: 0 0 4px; }
+  p.sub { margin: 0 0 12px; color: var(--muted); }
+  .scroll { overflow-x:auto; }
+  canvas { width:100%; min-width:560px; height:auto; background:var(--card); border:1px solid var(--line); border-radius:8px; display:block; }
+  .sr { position:absolute; left:-9999px; }
+  .bar { display:flex; flex-wrap:wrap; gap:8px; margin:10px 0; }
+  button { font:inherit; padding:6px 12px; border:1px solid var(--line); background:var(--card); color:var(--fg); border-radius:6px; cursor:pointer; }
+  button[aria-pressed="true"] { border-color:var(--accent); color:var(--accent); font-weight:600; }
+  button:focus-visible, input:focus-visible { outline:3px solid var(--accent); outline-offset:2px; }
+  .row { display:grid; grid-template-columns: 11rem 1fr 6rem; gap:8px; align-items:center; margin:8px 0; }
+  .row output { text-align:right; font-variant-numeric: tabular-nums; }
+  @media (max-width: 560px) { .row { grid-template-columns: 1fr; gap:2px; } .row output { text-align:left; } }
+  input[type=range] { width:100%; accent-color: var(--accent); }
+  #readout, #challenge, .note { margin-top:10px; padding:10px 12px; background:var(--card); border-radius:8px; border:1px solid var(--line); }
+  #challenge[data-ok="true"] { border-color:var(--good); } #challenge[data-ok="true"] b { color:var(--good); }
+  .note { font-size:.85rem; color:var(--muted); }
+  a { color: var(--accent); }
+</style>
+</head>
+<body>
+<main>
+  <h1>Session 1: sort a row of cards</h1>
+  <p class="sub">Reverse the front of a row and count the steps of bubble and insertion sort.</p>
+  <div class="bar" id="graphs" role="group" aria-label="Choose a graph"></div>
+  <div class="scroll"><canvas id="c" width="720" height="420" role="img" aria-label="Session 1: sort a row of cards: interactive plot"></canvas></div>
+  <div class="bar" id="presets" role="group" aria-label="Presets"></div>
+  <div id="controls"></div>
+  <div class="bar"><button id="reset" type="button">Reset</button></div>
+  <div id="readout"></div>
+  <div id="challenge" hidden></div>
+  <div id="status" class="sr" aria-live="polite"></div>
+  <p class="note">This is a simplified educational model. It is not a validated design tool and must not be used for real structures, electrical installations, vehicles, industrial processes or medical decisions.</p>
+  <p class="sub"><a href="https://github.com/KrunalPanchal1995/pan-iit-oss/tree/main/opensorting">Back to the repository</a></p>
+</main>
+<script>
+"use strict";
+const PARAMS = [{"id": "n", "label": "Number of cards", "min": 4, "max": 40, "step": 1, "value": 20, "unit": "cards"}, {"id": "mixed", "label": "Share of the row reversed", "min": 0, "max": 100, "step": 5, "value": 50, "unit": "percent"}];
+const GRAPHS = [{"id": "bars", "label": "Row of cards", "diagram": true}, {"id": "steps", "label": "Steps versus disorder"}];
+const PRESETS = [{"label": "Already sorted", "values": {"n": 20, "mixed": 0}}, {"label": "Half reversed", "values": {"n": 20, "mixed": 50}}, {"label": "Fully reversed", "values": {"n": 20, "mixed": 100}}, {"label": "40 cards reversed", "values": {"n": 40, "mixed": 100}}];
+const CHALLENGE = "Make the two methods need more than 400 swaps.";
+const CHALLENGE_SOLUTION = {"n": 40, "mixed": 100};
+const challengeTest = CHALLENGE ? (p) => ((() => { const k = Math.min(p.n, Math.round(p.n * p.mixed / 100)); return k * (k - 1) / 2 > 400; })()) : null;
+const cv = document.getElementById("c"), ctx = cv.getContext("2d");
+const W = cv.width, H = cv.height, p = {};
+let graph = GRAPHS.length ? GRAPHS[0].id : "main";
+const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+const fmt = v => (Math.abs(v) >= 1000 || (Math.abs(v) > 0 && Math.abs(v) < 0.01)) ? v.toExponential(2) : String(+v.toPrecision(4));
+function readout(html) {
+  document.getElementById("readout").innerHTML = html;
+  cv.setAttribute("aria-label", document.title + ". " + html.replace(/<[^>]+>/g, " ").replace(/&nbsp;/g, " "));  // screen readers get the numbers
+}
+let lastOk = null;
+// ---- plotting helpers: every graph gets labelled axes with units ----
+function niceTicks(lo, hi, n) {
+  const raw = (hi - lo) / n, mag = Math.pow(10, Math.floor(Math.log10(raw))), f = raw / mag;
+  const step = (f < 1.5 ? 1 : f < 3 ? 2 : f < 7 ? 5 : 10) * mag, out = [];
+  for (let v = Math.ceil(lo / step - 1e-9) * step; v <= hi + 1e-9; v += step) out.push(+v.toPrecision(12));
+  return out;
+}
+function axes(o, C) {
+  const L = 66, R = 16, T = 34, B = 50, w = W - L - R, h = H - T - B;
+  const X = v => L + (v - o.x[0]) / (o.x[1] - o.x[0]) * w, Y = v => T + h - (v - o.y[0]) / (o.y[1] - o.y[0]) * h;
+  ctx.lineWidth = 1; ctx.font = "12px system-ui";
+  for (const xv of niceTicks(o.x[0], o.x[1], 6)) {
+    ctx.strokeStyle = C.line; ctx.beginPath(); ctx.moveTo(X(xv), T); ctx.lineTo(X(xv), T + h); ctx.stroke();
+    ctx.fillStyle = C.muted; ctx.textAlign = "center"; ctx.fillText(fmt(xv), X(xv), T + h + 16);
+  }
+  for (const yv of niceTicks(o.y[0], o.y[1], 5)) {
+    ctx.strokeStyle = C.line; ctx.beginPath(); ctx.moveTo(L, Y(yv)); ctx.lineTo(L + w, Y(yv)); ctx.stroke();
+    ctx.fillStyle = C.muted; ctx.textAlign = "right"; ctx.fillText(fmt(yv), L - 6, Y(yv) + 4);
+  }
+  ctx.strokeStyle = C.fg; ctx.beginPath(); ctx.moveTo(L, T); ctx.lineTo(L, T + h); ctx.lineTo(L + w, T + h); ctx.stroke();
+  ctx.fillStyle = C.fg; ctx.textAlign = "center"; ctx.font = "13px system-ui";
+  ctx.fillText(o.xl, L + w / 2, H - 8);
+  ctx.save(); ctx.translate(14, T + h / 2); ctx.rotate(-Math.PI / 2); ctx.fillText(o.yl, 0, 0); ctx.restore();
+  ctx.font = "bold 13px system-ui"; ctx.fillText(o.title || "", L + w / 2, 20);
+  return { X, Y, L, T, w, h };
+}
+function curve(f, a, color, x0, x1, n) {
+  n = n || 160; ctx.save(); ctx.beginPath(); ctx.rect(a.L, a.T, a.w, a.h); ctx.clip();   // never draw outside the plot area
+  ctx.strokeStyle = color; ctx.lineWidth = 2.5; ctx.beginPath();
+  for (let i = 0; i <= n; i++) { const x = x0 + (x1 - x0) * i / n, y = f(x); i ? ctx.lineTo(a.X(x), a.Y(y)) : ctx.moveTo(a.X(x), a.Y(y)); }
+  ctx.stroke(); ctx.restore();
+}
+function dot(a, x, y, color, label) {
+  ctx.fillStyle = color; ctx.beginPath(); ctx.arc(a.X(x), a.Y(y), 6, 0, 2 * Math.PI); ctx.fill();
+  if (label) { ctx.textAlign = "left"; ctx.font = "12px system-ui"; ctx.fillText(label, a.X(x) + 9, a.Y(y) - 8); }
+}
+function draw() {
+  ctx.clearRect(0, 0, W, H);
+  const C = { fg: css("--fg"), muted: css("--muted"), accent: css("--accent"), line: css("--line"), good: css("--good"), bad: css("--bad") };
+  
+const n = p.n, k = Math.min(n, Math.round(n * p.mixed / 100));
+const make = (m, kk) => { const a = []; for (let v = kk; v >= 1; v--) a.push(v); for (let v = kk + 1; v <= m; v++) a.push(v); return a; };
+const bubble = a0 => { const a = a0.slice(); let c = 0, s = 0;
+  for (let end = a.length - 1; end > 0; end--) { let sw = false;
+    for (let j = 0; j < end; j++) { c++; if (a[j] > a[j + 1]) { const t = a[j]; a[j] = a[j + 1]; a[j + 1] = t; s++; sw = true; } }
+    if (!sw) break; }
+  return [c, s]; };
+const insertion = a0 => { const a = a0.slice(); let c = 0, s = 0;
+  for (let i = 1; i < a.length; i++) { let j = i;
+    while (j > 0) { c++; if (a[j - 1] > a[j]) { const t = a[j - 1]; a[j - 1] = a[j]; a[j] = t; s++; j--; } else break; } }
+  return [c, s]; };
+const row = make(n, k), B = bubble(row), I = insertion(row), inv = Math.max(0, k * (k - 1) / 2);
+if (graph === "bars") {
+  const x0 = 40, bw = (W - 80) / n, base = H - 60, unit = (H - 110) / n;
+  ctx.strokeStyle = C.line; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(x0, base); ctx.lineTo(W - 40, base); ctx.stroke();
+  row.forEach((v, i) => { ctx.fillStyle = (v === i + 1) ? C.good : C.bad; ctx.fillRect(x0 + i * bw + 1, base - v * unit, Math.max(bw - 2, 1), v * unit); });
+  ctx.fillStyle = C.fg; ctx.font = "13px system-ui"; ctx.textAlign = "left";
+  ctx.fillText("the row of " + n + " cards: bar height = card value", 40, 24);
+  ctx.fillStyle = C.good; ctx.fillText("green: card already in its final place", 40, base + 24);
+  ctx.fillStyle = C.bad; ctx.fillText("red: card in the wrong place", 300, base + 24);
+  ctx.fillStyle = C.muted; ctx.fillText("position in the row, 1 to " + n + " (left to right)", 40, base + 46);
+} else {
+  const A = axes({ x: [0, 100], y: [0, Math.max(1, n * (n - 1) / 2)], xl: "share of the row that starts mixed up (percent)", yl: "steps counted", title: "Steps grow with the disorder" }, C);
+  const share = x => Math.min(n, Math.round(n * x / 100));
+  curve(x => bubble(make(n, share(x)))[0], A, C.bad, 0, 100, 41);
+  curve(x => insertion(make(n, share(x)))[0], A, C.accent, 0, 100, 41);
+  curve(x => { const kk = share(x); return Math.max(0, kk * (kk - 1) / 2); }, A, C.good, 0, 100, 41);
+  dot(A, p.mixed, B[0], C.bad, "bubble"); dot(A, p.mixed, I[0], C.accent, "insertion"); dot(A, p.mixed, inv, C.good, "swaps");
+  ctx.font = "12px system-ui"; ctx.textAlign = "left";
+  ctx.fillStyle = C.bad; ctx.fillText("red: bubble sort comparisons", A.L + 10, A.T + 16);
+  ctx.fillStyle = C.accent; ctx.fillText("blue: insertion sort comparisons", A.L + 10, A.T + 32);
+  ctx.fillStyle = C.good; ctx.fillText("green: swaps (same for both methods)", A.L + 10, A.T + 48);
+}
+readout(n + " cards, first " + k + " reversed &nbsp; pairs in wrong order = " + inv + " &nbsp; bubble: " + B[0] + " comparisons, " + B[1] + " swaps &nbsp; insertion: " + I[0] + " comparisons, " + I[1] + " swaps");
+
+  const ch = document.getElementById("challenge");
+  if (challengeTest) { const ok = !!challengeTest(p); ch.hidden = false; ch.dataset.ok = String(ok);
+    ch.innerHTML = "<b>Challenge:</b> " + CHALLENGE + " &nbsp; " + (ok ? "<b>Done!</b>" : "Not yet.");
+    if (ok !== lastOk) { document.getElementById("status").textContent = ok ? "Challenge done." : "Challenge not yet done."; lastOk = ok; } }
+}
+const box = document.getElementById("controls");
+const inputs = {};
+for (const q of PARAMS) {
+  p[q.id] = q.value;
+  const row = document.createElement("div"); row.className = "row";
+  row.innerHTML = `<label for="${q.id}">${q.label} (${q.unit || "no unit"})</label>` +
+    `<input id="${q.id}" type="range" min="${q.min}" max="${q.max}" step="${q.step}" value="${q.value}">` +
+    `<output for="${q.id}">${q.value}</output>`;
+  const inp = row.querySelector("input"), out = row.querySelector("output");
+  inputs[q.id] = [inp, out];
+  inp.addEventListener("input", () => { p[q.id] = +inp.value; out.textContent = inp.value; draw(); });
+  box.appendChild(row);
+}
+function setAll(vals) { for (const k in vals) { p[k] = vals[k]; if (inputs[k]) { inputs[k][0].value = vals[k]; inputs[k][1].textContent = vals[k]; } } draw(); }
+const DEFAULTS = Object.assign({}, p);
+document.getElementById("reset").addEventListener("click", () => setAll(DEFAULTS));
+for (const g of GRAPHS) {
+  const b = document.createElement("button"); b.type = "button"; b.textContent = g.label;
+  b.setAttribute("aria-pressed", String(g.id === graph));
+  b.addEventListener("click", () => { graph = g.id; for (const x of document.querySelectorAll("#graphs button")) x.setAttribute("aria-pressed", String(x === b)); draw(); });
+  document.getElementById("graphs").appendChild(b);
+}
+for (const pr of PRESETS) {
+  const b = document.createElement("button"); b.type = "button"; b.textContent = pr.label;
+  b.addEventListener("click", () => setAll(pr.values));
+  document.getElementById("presets").appendChild(b);
+}
+matchMedia("(prefers-color-scheme: dark)").addEventListener("change", draw);
+draw();
+</script>
+</body>
+</html>
