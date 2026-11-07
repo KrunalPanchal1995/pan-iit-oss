@@ -25,127 +25,127 @@ Openfirststeps is the umbrella for a family of small teaching repositories made 
 
 ## Status
 
-259 repositories planned, 132 built and verified, 113 published so far. Published ones live at `https://github.com/KrunalPanchal1995/<name>` and their apps at `https://krunalpanchal1995.github.io/<name>/`.
+118 projects are built and live, each in its own folder of this repository. Open a folder to start, or use its live apps at `https://krunalpanchal1995.github.io/pan-iit-oss/<name>/`. Entries below that say planned are ideas that are not built yet.
 
 ## All projects
 
 
 ### Everyday Life and Practical Knowledge
 
-- **[openhousehold](https://github.com/KrunalPanchal1995/openhousehold)** (live; middle school to higher secondary): Predict a household's daily electricity use and bill, and see where the energy goes. Homes use a large share of a country's electricity, and bills are easier to cut once you can see which appliance uses what.
-- **[openfridge](https://github.com/KrunalPanchal1995/openfridge)** (live; middle school to higher secondary): Explain and size the refrigerator cycle that keeps food cold. A refrigerator moves heat from a cold space to a warm room, and the same cycle runs air conditioners and heat pumps.
-- **[openpressurecooker](https://github.com/KrunalPanchal1995/openpressurecooker)** (live; middle school to higher secondary): Show why a pressure cooker cooks faster using pressure and boiling point. Raising the pressure raises the boiling point of water, so food cooks faster and uses less fuel.
-- **[openelevator](https://github.com/KrunalPanchal1995/openelevator)** (live; middle school to higher secondary): Design an elevator ride that is quick and comfortable (counterweight, motor, jerk). An elevator must be quick and still comfortable, which is a trade-off between speed, acceleration and jerk.
-- **[opentrafficsignal](https://github.com/KrunalPanchal1995/opentrafficsignal)** (live; middle school to higher secondary): Time a traffic-signal junction to cut waiting and queues. Signal timing decides how long people wait and how long queues grow at a junction.
-- **[opengps](https://github.com/KrunalPanchal1995/opengps)** (live; middle school to higher secondary): Fix a position with GPS trilateration and a relativity correction. A position fix comes from timing signals from several satellites, and even tiny clock errors matter.
-- **[openqrcode](https://github.com/KrunalPanchal1995/openqrcode)** (live; middle school to higher secondary): Read a damaged QR code using error-correcting codes. Error-correcting codes let a damaged code still be read, which is the same idea that protects data everywhere.
-- **[openupi](https://github.com/KrunalPanchal1995/openupi)** (live; middle school to higher secondary): Trace a digital payment from tap to bank balance, and spot where fraud checks sit. A digital payment is a chain of checks between devices, banks and networks, and each step can fail or be attacked.
+- **[openhousehold](https://github.com/KrunalPanchal1995/pan-iit-oss/tree/main/openhousehold)** (live; middle school to higher secondary): Predict a household's daily electricity use and bill, and see where the energy goes. Homes use a large share of a country's electricity, and bills are easier to cut once you can see which appliance uses what.
+- **[openfridge](https://github.com/KrunalPanchal1995/pan-iit-oss/tree/main/openfridge)** (live; middle school to higher secondary): Explain and size the refrigerator cycle that keeps food cold. A refrigerator moves heat from a cold space to a warm room, and the same cycle runs air conditioners and heat pumps.
+- **[openpressurecooker](https://github.com/KrunalPanchal1995/pan-iit-oss/tree/main/openpressurecooker)** (live; middle school to higher secondary): Show why a pressure cooker cooks faster using pressure and boiling point. Raising the pressure raises the boiling point of water, so food cooks faster and uses less fuel.
+- **[openelevator](https://github.com/KrunalPanchal1995/pan-iit-oss/tree/main/openelevator)** (live; middle school to higher secondary): Design an elevator ride that is quick and comfortable (counterweight, motor, jerk). An elevator must be quick and still comfortable, which is a trade-off between speed, acceleration and jerk.
+- **[opentrafficsignal](https://github.com/KrunalPanchal1995/pan-iit-oss/tree/main/opentrafficsignal)** (live; middle school to higher secondary): Time a traffic-signal junction to cut waiting and queues. Signal timing decides how long people wait and how long queues grow at a junction.
+- **[opengps](https://github.com/KrunalPanchal1995/pan-iit-oss/tree/main/opengps)** (live; middle school to higher secondary): Fix a position with GPS trilateration and a relativity correction. A position fix comes from timing signals from several satellites, and even tiny clock errors matter.
+- **[openqrcode](https://github.com/KrunalPanchal1995/pan-iit-oss/tree/main/openqrcode)** (live; middle school to higher secondary): Read a damaged QR code using error-correcting codes. Error-correcting codes let a damaged code still be read, which is the same idea that protects data everywhere.
+- **[openupi](https://github.com/KrunalPanchal1995/pan-iit-oss/tree/main/openupi)** (live; middle school to higher secondary): Trace a digital payment from tap to bank balance, and spot where fraud checks sit. A digital payment is a chain of checks between devices, banks and networks, and each step can fail or be attacked.
 
 ### Mathematics and Visual Problem-Solving
 
-- **[openunits](https://github.com/KrunalPanchal1995/openunits)** (live; secondary to diploma/undergrad): Catch the Mars Climate Orbiter units bug before it flies. A number without a unit is not an answer, and unit mistakes have destroyed real spacecraft.
-- **[opencalculus](https://github.com/KrunalPanchal1995/opencalculus)** (live; secondary to diploma/undergrad): See derivatives and integrals as slopes and areas on a moving car's graph. Slopes and areas on a graph are the language for rates of change and totals in every science.
-- **[openvectors](https://github.com/KrunalPanchal1995/openvectors)** (live; secondary to diploma/undergrad): Add forces and velocities as arrows to land a boat across a river. Quantities with direction, like force and velocity, add as arrows, not as plain numbers.
-- **[openheights](https://github.com/KrunalPanchal1995/openheights)** (live; secondary to diploma/undergrad): Measure the height of a tower or tree with trigonometry and a phone. Trigonometry lets you measure what you cannot reach, such as the height of a tower.
-- **[openfractal](https://github.com/KrunalPanchal1995/openfractal)** (live; secondary to diploma/undergrad): Render a Mandelbrot and Julia zoom video from complex numbers. Simple rules on complex numbers produce endless detail, a good way to see iteration and chaos.
-- **[openvfx](https://github.com/KrunalPanchal1995/openvfx)** (live; secondary to diploma/undergrad): Bend a character arm for film VFX using matrix transformations and skinning. Matrices move every point of a shape at once, which is how characters bend in films and games.
-- **[openmapproject](https://github.com/KrunalPanchal1995/openmapproject)** (live; secondary to diploma/undergrad): Choose a map projection by measuring its distortion. A flat map must distort the round Earth, and the choice of projection decides what is kept true.
-- **[openodds](https://github.com/KrunalPanchal1995/openodds)** (live; secondary to diploma/undergrad): Estimate the odds in dice, cards and lotteries by counting and simulation. Counting and simulation turn vague chance into numbers you can reason with.
-- **[openfloat](https://github.com/KrunalPanchal1995/openfloat)** (live; secondary to diploma/undergrad): Learn from floating-point disasters like Patriot and Ariane 5. Computers store numbers with limited precision, and tiny errors can grow into disasters.
+- **[openunits](https://github.com/KrunalPanchal1995/pan-iit-oss/tree/main/openunits)** (live; secondary to diploma/undergrad): Catch the Mars Climate Orbiter units bug before it flies. A number without a unit is not an answer, and unit mistakes have destroyed real spacecraft.
+- **[opencalculus](https://github.com/KrunalPanchal1995/pan-iit-oss/tree/main/opencalculus)** (live; secondary to diploma/undergrad): See derivatives and integrals as slopes and areas on a moving car's graph. Slopes and areas on a graph are the language for rates of change and totals in every science.
+- **[openvectors](https://github.com/KrunalPanchal1995/pan-iit-oss/tree/main/openvectors)** (live; secondary to diploma/undergrad): Add forces and velocities as arrows to land a boat across a river. Quantities with direction, like force and velocity, add as arrows, not as plain numbers.
+- **[openheights](https://github.com/KrunalPanchal1995/pan-iit-oss/tree/main/openheights)** (live; secondary to diploma/undergrad): Measure the height of a tower or tree with trigonometry and a phone. Trigonometry lets you measure what you cannot reach, such as the height of a tower.
+- **[openfractal](https://github.com/KrunalPanchal1995/pan-iit-oss/tree/main/openfractal)** (live; secondary to diploma/undergrad): Render a Mandelbrot and Julia zoom video from complex numbers. Simple rules on complex numbers produce endless detail, a good way to see iteration and chaos.
+- **[openvfx](https://github.com/KrunalPanchal1995/pan-iit-oss/tree/main/openvfx)** (live; secondary to diploma/undergrad): Bend a character arm for film VFX using matrix transformations and skinning. Matrices move every point of a shape at once, which is how characters bend in films and games.
+- **[openmapproject](https://github.com/KrunalPanchal1995/pan-iit-oss/tree/main/openmapproject)** (live; secondary to diploma/undergrad): Choose a map projection by measuring its distortion. A flat map must distort the round Earth, and the choice of projection decides what is kept true.
+- **[openodds](https://github.com/KrunalPanchal1995/pan-iit-oss/tree/main/openodds)** (live; secondary to diploma/undergrad): Estimate the odds in dice, cards and lotteries by counting and simulation. Counting and simulation turn vague chance into numbers you can reason with.
+- **[openfloat](https://github.com/KrunalPanchal1995/pan-iit-oss/tree/main/openfloat)** (live; secondary to diploma/undergrad): Learn from floating-point disasters like Patriot and Ariane 5. Computers store numbers with limited precision, and tiny errors can grow into disasters.
 
 ### Physics and the Science of Motion
 
-- **[openmotion](https://github.com/KrunalPanchal1995/openmotion)** (live; secondary to diploma/undergrad): Read position, velocity and acceleration graphs of a moving body. Reading position, velocity and acceleration graphs is the base skill of mechanics.
-- **[openincline](https://github.com/KrunalPanchal1995/openincline)** (live; secondary to diploma/undergrad): Find the angle where a block starts to slide on a ramp. Whether a block slides depends on a balance between its weight along the slope and friction.
-- **[openprojectile](https://github.com/KrunalPanchal1995/openprojectile)** (live; secondary to diploma/undergrad): Plan a cricket shot with air drag. Anything thrown or launched follows a curved path that depends on speed, angle and air drag.
-- **[opencrashsim](https://github.com/KrunalPanchal1995/opencrashsim)** (live; secondary to diploma/undergrad): Design crumple zones with momentum and energy balance. Crumple zones absorb energy over a longer time so that the force on people is lower.
-- **[openoscillator](https://github.com/KrunalPanchal1995/openoscillator)** (live; secondary to diploma/undergrad): Tune a spring-mass or pendulum to a target period with damping. Springs and pendulums oscillate at natural frequencies that engineers must tune or avoid.
-- **[openchaos](https://github.com/KrunalPanchal1995/openchaos)** (live; secondary to diploma/undergrad): See chaos in a double pendulum. A simple double pendulum is unpredictable over time, which shows the limits of forecasting.
-- **[opengyro](https://github.com/KrunalPanchal1995/opengyro)** (live; secondary to diploma/undergrad): Explain a spinning top's precession. A spinning body resists changes of direction, which explains tops, bicycles and gyroscopes.
-- **[opencentripetal](https://github.com/KrunalPanchal1995/opencentripetal)** (live; secondary to diploma/undergrad): Design a banked curve or roundabout that grips at speed. A turning vehicle needs an inward force, and banking and friction supply it.
+- **[openmotion](https://github.com/KrunalPanchal1995/pan-iit-oss/tree/main/openmotion)** (live; secondary to diploma/undergrad): Read position, velocity and acceleration graphs of a moving body. Reading position, velocity and acceleration graphs is the base skill of mechanics.
+- **[openincline](https://github.com/KrunalPanchal1995/pan-iit-oss/tree/main/openincline)** (live; secondary to diploma/undergrad): Find the angle where a block starts to slide on a ramp. Whether a block slides depends on a balance between its weight along the slope and friction.
+- **[openprojectile](https://github.com/KrunalPanchal1995/pan-iit-oss/tree/main/openprojectile)** (live; secondary to diploma/undergrad): Plan a cricket shot with air drag. Anything thrown or launched follows a curved path that depends on speed, angle and air drag.
+- **[opencrashsim](https://github.com/KrunalPanchal1995/pan-iit-oss/tree/main/opencrashsim)** (live; secondary to diploma/undergrad): Design crumple zones with momentum and energy balance. Crumple zones absorb energy over a longer time so that the force on people is lower.
+- **[openoscillator](https://github.com/KrunalPanchal1995/pan-iit-oss/tree/main/openoscillator)** (live; secondary to diploma/undergrad): Tune a spring-mass or pendulum to a target period with damping. Springs and pendulums oscillate at natural frequencies that engineers must tune or avoid.
+- **[openchaos](https://github.com/KrunalPanchal1995/pan-iit-oss/tree/main/openchaos)** (live; secondary to diploma/undergrad): See chaos in a double pendulum. A simple double pendulum is unpredictable over time, which shows the limits of forecasting.
+- **[opengyro](https://github.com/KrunalPanchal1995/pan-iit-oss/tree/main/opengyro)** (live; secondary to diploma/undergrad): Explain a spinning top's precession. A spinning body resists changes of direction, which explains tops, bicycles and gyroscopes.
+- **[opencentripetal](https://github.com/KrunalPanchal1995/pan-iit-oss/tree/main/opencentripetal)** (live; secondary to diploma/undergrad): Design a banked curve or roundabout that grips at speed. A turning vehicle needs an inward force, and banking and friction supply it.
 
 ### Heat, Thermodynamics and Fluid Mechanics
 
-- **[openheatspread](https://github.com/KrunalPanchal1995/openheatspread)** (live; higher secondary to diploma/undergrad): Predict laptop hot spots with heat diffusion. Electronics fail when heat cannot escape, so predicting hot spots is part of design.
-- **[openengine](https://github.com/KrunalPanchal1995/openengine)** (live; higher secondary to diploma/undergrad): Compare Otto and Diesel cycle efficiency on P-V diagrams. Heat engines turn fuel into work, and their efficiency is limited by physics.
-- **[openheatpump](https://github.com/KrunalPanchal1995/openheatpump)** (live; higher secondary to diploma/undergrad): Size a heat pump and see why it beats a heater. A heat pump moves heat instead of making it, so it can deliver several units of heat per unit of electricity.
-- **[openpipeflow](https://github.com/KrunalPanchal1995/openpipeflow)** (live; higher secondary to diploma/undergrad): Choose a pipe size that meets flow needs within a pump budget. Friction in pipes costs pumping energy, and pipe size decides the cost of moving water.
-- **[openhydraulics](https://github.com/KrunalPanchal1995/openhydraulics)** (live; higher secondary to diploma/undergrad): Lift a car with a small force using Pascal's law. Fluids transmit pressure, so a small force on a small piston can lift a car.
-- **[openbuoyancy](https://github.com/KrunalPanchal1995/openbuoyancy)** (live; higher secondary to diploma/undergrad): Decide whether a ship floats and stays upright using Archimedes' principle. Whether a ship floats and stays upright follows from displaced water and the position of its centre of gravity.
-- **[openboiling](https://github.com/KrunalPanchal1995/openboiling)** (live; higher secondary to diploma/undergrad): Model boiling and bubble growth on a heated surface. Boiling moves large amounts of heat, and bubble behaviour sets how well a surface can cool.
+- **[openheatspread](https://github.com/KrunalPanchal1995/pan-iit-oss/tree/main/openheatspread)** (live; higher secondary to diploma/undergrad): Predict laptop hot spots with heat diffusion. Electronics fail when heat cannot escape, so predicting hot spots is part of design.
+- **[openengine](https://github.com/KrunalPanchal1995/pan-iit-oss/tree/main/openengine)** (live; higher secondary to diploma/undergrad): Compare Otto and Diesel cycle efficiency on P-V diagrams. Heat engines turn fuel into work, and their efficiency is limited by physics.
+- **[openheatpump](https://github.com/KrunalPanchal1995/pan-iit-oss/tree/main/openheatpump)** (live; higher secondary to diploma/undergrad): Size a heat pump and see why it beats a heater. A heat pump moves heat instead of making it, so it can deliver several units of heat per unit of electricity.
+- **[openpipeflow](https://github.com/KrunalPanchal1995/pan-iit-oss/tree/main/openpipeflow)** (live; higher secondary to diploma/undergrad): Choose a pipe size that meets flow needs within a pump budget. Friction in pipes costs pumping energy, and pipe size decides the cost of moving water.
+- **[openhydraulics](https://github.com/KrunalPanchal1995/pan-iit-oss/tree/main/openhydraulics)** (live; higher secondary to diploma/undergrad): Lift a car with a small force using Pascal's law. Fluids transmit pressure, so a small force on a small piston can lift a car.
+- **[openbuoyancy](https://github.com/KrunalPanchal1995/pan-iit-oss/tree/main/openbuoyancy)** (live; higher secondary to diploma/undergrad): Decide whether a ship floats and stays upright using Archimedes' principle. Whether a ship floats and stays upright follows from displaced water and the position of its centre of gravity.
+- **[openboiling](https://github.com/KrunalPanchal1995/pan-iit-oss/tree/main/openboiling)** (live; higher secondary to diploma/undergrad): Model boiling and bubble growth on a heated surface. Boiling moves large amounts of heat, and bubble behaviour sets how well a surface can cool.
 
 ### Electricity, Magnetism and Electronics
 
-- **[openohm](https://github.com/KrunalPanchal1995/openohm)** (live; secondary to diploma/undergrad): Design a resistor circuit to a power and current limit with Ohm's law. Voltage, current and resistance link every electric circuit, and power limits decide what is safe.
-- **[opencircuitlab](https://github.com/KrunalPanchal1995/opencircuitlab)** (live; secondary to diploma/undergrad): Build series and parallel circuits and solve them with Kirchhoff's laws. Series and parallel networks, solved with Kirchhoff's laws, are the basis of all circuit analysis.
-- **[openrcfilter](https://github.com/KrunalPanchal1995/openrcfilter)** (live; secondary to diploma/undergrad): Design a filter that removes noise from a sensor signal. A filter keeps the signal you want and removes noise, using only a resistor and a capacitor.
-- **[openledcontrol](https://github.com/KrunalPanchal1995/openledcontrol)** (live; secondary to diploma/undergrad): Build a light-activated LED controller with a sensor and transistor switch. A transistor lets a tiny sensor signal switch a larger load, the idea behind automatic lights.
-- **[openemwave](https://github.com/KrunalPanchal1995/openemwave)** (live; secondary to diploma/undergrad): Watch an antenna radiate and visualise electric and magnetic fields. Accelerating charges radiate waves, which is how radios, mobiles and radar work.
-- **[openinduction](https://github.com/KrunalPanchal1995/openinduction)** (live; secondary to diploma/undergrad): Explain how a transformer and a generator work from Faraday's law. A changing magnetic field makes a voltage, the principle behind generators and transformers.
-- **[opendcmotor](https://github.com/KrunalPanchal1995/opendcmotor)** (live; secondary to diploma/undergrad): Read and use a DC motor's torque-speed curve for a drive. A motor's torque-speed curve tells you what load it can drive and how fast.
+- **[openohm](https://github.com/KrunalPanchal1995/pan-iit-oss/tree/main/openohm)** (live; secondary to diploma/undergrad): Design a resistor circuit to a power and current limit with Ohm's law. Voltage, current and resistance link every electric circuit, and power limits decide what is safe.
+- **[opencircuitlab](https://github.com/KrunalPanchal1995/pan-iit-oss/tree/main/opencircuitlab)** (live; secondary to diploma/undergrad): Build series and parallel circuits and solve them with Kirchhoff's laws. Series and parallel networks, solved with Kirchhoff's laws, are the basis of all circuit analysis.
+- **[openrcfilter](https://github.com/KrunalPanchal1995/pan-iit-oss/tree/main/openrcfilter)** (live; secondary to diploma/undergrad): Design a filter that removes noise from a sensor signal. A filter keeps the signal you want and removes noise, using only a resistor and a capacitor.
+- **[openledcontrol](https://github.com/KrunalPanchal1995/pan-iit-oss/tree/main/openledcontrol)** (live; secondary to diploma/undergrad): Build a light-activated LED controller with a sensor and transistor switch. A transistor lets a tiny sensor signal switch a larger load, the idea behind automatic lights.
+- **[openemwave](https://github.com/KrunalPanchal1995/pan-iit-oss/tree/main/openemwave)** (live; secondary to diploma/undergrad): Watch an antenna radiate and visualise electric and magnetic fields. Accelerating charges radiate waves, which is how radios, mobiles and radar work.
+- **[openinduction](https://github.com/KrunalPanchal1995/pan-iit-oss/tree/main/openinduction)** (live; secondary to diploma/undergrad): Explain how a transformer and a generator work from Faraday's law. A changing magnetic field makes a voltage, the principle behind generators and transformers.
+- **[opendcmotor](https://github.com/KrunalPanchal1995/pan-iit-oss/tree/main/opendcmotor)** (live; secondary to diploma/undergrad): Read and use a DC motor's torque-speed curve for a drive. A motor's torque-speed curve tells you what load it can drive and how fast.
 
 ### Chemistry and Materials Science
 
-- **[openmole](https://github.com/KrunalPanchal1995/openmole)** (live; secondary to diploma/undergrad): Balance a reaction and compute how much reagent you need (stoichiometry). Stoichiometry tells you how much of each substance a reaction needs and makes.
-- **[openphtitration](https://github.com/KrunalPanchal1995/openphtitration)** (live; secondary to diploma/undergrad): Find an unknown acid concentration from a titration curve. A titration curve reveals the unknown concentration of an acid or base.
-- **[openbatterycell](https://github.com/KrunalPanchal1995/openbatterycell)** (live; secondary to diploma/undergrad): Build and size an electrochemical cell for a target voltage. An electrochemical cell turns a chemical reaction into voltage, and its design sets capacity and cost.
-- **[openreactionrate](https://github.com/KrunalPanchal1995/openreactionrate)** (live; secondary to diploma/undergrad): Write reaction networks as ODEs and see how catalysts speed them. Reaction networks written as equations show which steps are fast, slow or sped up by a catalyst.
-- **[openarrhenius](https://github.com/KrunalPanchal1995/openarrhenius)** (live; secondary to diploma/undergrad): Fit rate constants with uncertainty using the Arrhenius law. Reaction rates depend steeply on temperature, and fitting them with uncertainty is the base of kinetics modelling.
-- **[openignition](https://github.com/KrunalPanchal1995/openignition)** (live; secondary to diploma/undergrad): Predict hydrogen-oxygen ignition delay. Ignition delay decides whether a fuel burns safely and efficiently in an engine or furnace.
-- **[openstressstrain](https://github.com/KrunalPanchal1995/openstressstrain)** (live; secondary to diploma/undergrad): Read a stress-strain curve to pick a safe material. A stress-strain curve shows how a material stretches, yields and breaks, and so which one to pick.
-- **[openphasediagram](https://github.com/KrunalPanchal1995/openphasediagram)** (live; secondary to diploma/undergrad): Read a phase diagram to choose an alloy and heat treatment. A phase diagram maps which phases a mixture forms, guiding alloys and heat treatment.
+- **[openmole](https://github.com/KrunalPanchal1995/pan-iit-oss/tree/main/openmole)** (live; secondary to diploma/undergrad): Balance a reaction and compute how much reagent you need (stoichiometry). Stoichiometry tells you how much of each substance a reaction needs and makes.
+- **[openphtitration](https://github.com/KrunalPanchal1995/pan-iit-oss/tree/main/openphtitration)** (live; secondary to diploma/undergrad): Find an unknown acid concentration from a titration curve. A titration curve reveals the unknown concentration of an acid or base.
+- **[openbatterycell](https://github.com/KrunalPanchal1995/pan-iit-oss/tree/main/openbatterycell)** (live; secondary to diploma/undergrad): Build and size an electrochemical cell for a target voltage. An electrochemical cell turns a chemical reaction into voltage, and its design sets capacity and cost.
+- **[openreactionrate](https://github.com/KrunalPanchal1995/pan-iit-oss/tree/main/openreactionrate)** (live; secondary to diploma/undergrad): Write reaction networks as ODEs and see how catalysts speed them. Reaction networks written as equations show which steps are fast, slow or sped up by a catalyst.
+- **[openarrhenius](https://github.com/KrunalPanchal1995/pan-iit-oss/tree/main/openarrhenius)** (live; secondary to diploma/undergrad): Fit rate constants with uncertainty using the Arrhenius law. Reaction rates depend steeply on temperature, and fitting them with uncertainty is the base of kinetics modelling.
+- **[openignition](https://github.com/KrunalPanchal1995/pan-iit-oss/tree/main/openignition)** (live; secondary to diploma/undergrad): Predict hydrogen-oxygen ignition delay. Ignition delay decides whether a fuel burns safely and efficiently in an engine or furnace.
+- **[openstressstrain](https://github.com/KrunalPanchal1995/pan-iit-oss/tree/main/openstressstrain)** (live; secondary to diploma/undergrad): Read a stress-strain curve to pick a safe material. A stress-strain curve shows how a material stretches, yields and breaks, and so which one to pick.
+- **[openphasediagram](https://github.com/KrunalPanchal1995/pan-iit-oss/tree/main/openphasediagram)** (live; secondary to diploma/undergrad): Read a phase diagram to choose an alloy and heat treatment. A phase diagram maps which phases a mixture forms, guiding alloys and heat treatment.
 
 ### Biology, Human Body and Health Science
 
-- **[openheartflow](https://github.com/KrunalPanchal1995/openheartflow)** (live; secondary to diploma/undergrad): Model blood circulation as a pump and pipes to see how blood pressure arises. The circulatory system behaves like a pump and a network of pipes, which explains blood pressure.
-- **[openneuron](https://github.com/KrunalPanchal1995/openneuron)** (live; secondary to diploma/undergrad): Simulate a nerve cell firing and how signals travel. Nerve cells fire when a voltage threshold is crossed, which is how signals travel in the body.
-- **[opengenetics](https://github.com/KrunalPanchal1995/opengenetics)** (live; secondary to diploma/undergrad): Predict inheritance of traits with Punnett squares and simulation. Inheritance follows simple probability rules that predict how traits appear in offspring.
-- **[openepidemic](https://github.com/KrunalPanchal1995/openepidemic)** (live; secondary to diploma/undergrad): Fit an SIR model to outbreak data and test vaccination (general education only). Simple outbreak models show how contact rates and vaccination change the course of a disease.
-- **[opennutrition](https://github.com/KrunalPanchal1995/opennutrition)** (live; secondary to diploma/undergrad): Balance food energy against activity (general education, not medical advice). Food energy and activity balance explain weight change in general terms.
+- **[openheartflow](https://github.com/KrunalPanchal1995/pan-iit-oss/tree/main/openheartflow)** (live; secondary to diploma/undergrad): Model blood circulation as a pump and pipes to see how blood pressure arises. The circulatory system behaves like a pump and a network of pipes, which explains blood pressure.
+- **[openneuron](https://github.com/KrunalPanchal1995/pan-iit-oss/tree/main/openneuron)** (live; secondary to diploma/undergrad): Simulate a nerve cell firing and how signals travel. Nerve cells fire when a voltage threshold is crossed, which is how signals travel in the body.
+- **[opengenetics](https://github.com/KrunalPanchal1995/pan-iit-oss/tree/main/opengenetics)** (live; secondary to diploma/undergrad): Predict inheritance of traits with Punnett squares and simulation. Inheritance follows simple probability rules that predict how traits appear in offspring.
+- **[openepidemic](https://github.com/KrunalPanchal1995/pan-iit-oss/tree/main/openepidemic)** (live; secondary to diploma/undergrad): Fit an SIR model to outbreak data and test vaccination (general education only). Simple outbreak models show how contact rates and vaccination change the course of a disease.
+- **[opennutrition](https://github.com/KrunalPanchal1995/pan-iit-oss/tree/main/opennutrition)** (live; secondary to diploma/undergrad): Balance food energy against activity (general education, not medical advice). Food energy and activity balance explain weight change in general terms.
 
 ### Civil Engineering and Construction
 
-- **[openbeam](https://github.com/KrunalPanchal1995/openbeam)** (live; diploma/undergrad to advanced undergrad): Meet a deflection limit with the lightest beam (shear, moment, deflection). Beams carry loads by bending, and depth is the cheapest way to make them stiff.
-- **[opentruss](https://github.com/KrunalPanchal1995/opentruss)** (live; diploma/undergrad to advanced undergrad): Compute member forces in a truss bridge. A truss carries load through members in tension and compression, using little material.
-- **[openfoundation](https://github.com/KrunalPanchal1995/openfoundation)** (live; diploma/undergrad to advanced undergrad): Choose a foundation size from soil bearing capacity. A foundation must spread the building load so the soil is not overloaded.
-- **[openbuildingsway](https://github.com/KrunalPanchal1995/openbuildingsway)** (live; diploma/undergrad to advanced undergrad): Predict building sway in an earthquake with multi-DOF vibration. Tall buildings sway in earthquakes and wind, and designers tune their natural frequencies.
-- **[openretainingwall](https://github.com/KrunalPanchal1995/openretainingwall)** (live; diploma/undergrad to advanced undergrad): Check a retaining wall against sliding and overturning. A retaining wall must resist soil pressure without sliding or overturning.
-- **[opensurvey](https://github.com/KrunalPanchal1995/opensurvey)** (live; diploma/undergrad to advanced undergrad): Level a site and measure distances with trigonometry and a total station model. Levelling and distance measurement with trigonometry set out every construction site.
+- **[openbeam](https://github.com/KrunalPanchal1995/pan-iit-oss/tree/main/openbeam)** (live; diploma/undergrad to advanced undergrad): Meet a deflection limit with the lightest beam (shear, moment, deflection). Beams carry loads by bending, and depth is the cheapest way to make them stiff.
+- **[opentruss](https://github.com/KrunalPanchal1995/pan-iit-oss/tree/main/opentruss)** (live; diploma/undergrad to advanced undergrad): Compute member forces in a truss bridge. A truss carries load through members in tension and compression, using little material.
+- **[openfoundation](https://github.com/KrunalPanchal1995/pan-iit-oss/tree/main/openfoundation)** (live; diploma/undergrad to advanced undergrad): Choose a foundation size from soil bearing capacity. A foundation must spread the building load so the soil is not overloaded.
+- **[openbuildingsway](https://github.com/KrunalPanchal1995/pan-iit-oss/tree/main/openbuildingsway)** (live; diploma/undergrad to advanced undergrad): Predict building sway in an earthquake with multi-DOF vibration. Tall buildings sway in earthquakes and wind, and designers tune their natural frequencies.
+- **[openretainingwall](https://github.com/KrunalPanchal1995/pan-iit-oss/tree/main/openretainingwall)** (live; diploma/undergrad to advanced undergrad): Check a retaining wall against sliding and overturning. A retaining wall must resist soil pressure without sliding or overturning.
+- **[opensurvey](https://github.com/KrunalPanchal1995/pan-iit-oss/tree/main/opensurvey)** (live; diploma/undergrad to advanced undergrad): Level a site and measure distances with trigonometry and a total station model. Levelling and distance measurement with trigonometry set out every construction site.
 
 ### Mechanical Engineering
 
-- **[opengears](https://github.com/KrunalPanchal1995/opengears)** (live; diploma/undergrad to advanced undergrad): Design a gearbox train to hit a target ratio and torque. Gear trains trade speed for torque and set direction, in every machine with a motor.
-- **[openlinkage](https://github.com/KrunalPanchal1995/openlinkage)** (live; diploma/undergrad to advanced undergrad): Design a four-bar walking machine (Strandbeest style). Linkages turn one simple motion into a useful path, such as walking legs or wipers.
-- **[opentolerance](https://github.com/KrunalPanchal1995/opentolerance)** (live; diploma/undergrad to advanced undergrad): Choose fits and tolerances so parts assemble and still work. Parts must fit together and still work, which is decided by tolerances and fits.
-- **[openfatigue](https://github.com/KrunalPanchal1995/openfatigue)** (live; diploma/undergrad to advanced undergrad): Predict how many load cycles a part survives (S-N curve). Repeated loads can break a part that would survive one large load, so life is counted in cycles.
-- **[opencncpath](https://github.com/KrunalPanchal1995/opencncpath)** (live; diploma/undergrad to advanced undergrad): Turn a drawing into a CNC toolpath. A CNC machine follows a toolpath made from a drawing, and the path sets cost and quality.
-- **[opensculpt](https://github.com/KrunalPanchal1995/opensculpt)** (live; diploma/undergrad to advanced undergrad): Model a mug and other CAD parts with signed distance functions. Solid shapes can be described by simple distance functions, which makes CAD and graphics flexible.
+- **[opengears](https://github.com/KrunalPanchal1995/pan-iit-oss/tree/main/opengears)** (live; diploma/undergrad to advanced undergrad): Design a gearbox train to hit a target ratio and torque. Gear trains trade speed for torque and set direction, in every machine with a motor.
+- **[openlinkage](https://github.com/KrunalPanchal1995/pan-iit-oss/tree/main/openlinkage)** (live; diploma/undergrad to advanced undergrad): Design a four-bar walking machine (Strandbeest style). Linkages turn one simple motion into a useful path, such as walking legs or wipers.
+- **[opentolerance](https://github.com/KrunalPanchal1995/pan-iit-oss/tree/main/opentolerance)** (live; diploma/undergrad to advanced undergrad): Choose fits and tolerances so parts assemble and still work. Parts must fit together and still work, which is decided by tolerances and fits.
+- **[openfatigue](https://github.com/KrunalPanchal1995/pan-iit-oss/tree/main/openfatigue)** (live; diploma/undergrad to advanced undergrad): Predict how many load cycles a part survives (S-N curve). Repeated loads can break a part that would survive one large load, so life is counted in cycles.
+- **[opencncpath](https://github.com/KrunalPanchal1995/pan-iit-oss/tree/main/opencncpath)** (live; diploma/undergrad to advanced undergrad): Turn a drawing into a CNC toolpath. A CNC machine follows a toolpath made from a drawing, and the path sets cost and quality.
+- **[opensculpt](https://github.com/KrunalPanchal1995/pan-iit-oss/tree/main/opensculpt)** (live; diploma/undergrad to advanced undergrad): Model a mug and other CAD parts with signed distance functions. Solid shapes can be described by simple distance functions, which makes CAD and graphics flexible.
 
 ### Computer Science, Programming and Software
 
-- **[openbinary](https://github.com/KrunalPanchal1995/openbinary)** (live; secondary to diploma/undergrad): Build an adder from logic gates and see how computers count. Computers count in binary and compute with logic gates built from switches.
-- **[opensorting](https://github.com/KrunalPanchal1995/opensorting)** (live; secondary to diploma/undergrad): Compare sorting algorithms by swaps, comparisons and time. Different algorithms do the same job at very different costs as data grows.
-- **[openpacket](https://github.com/KrunalPanchal1995/openpacket)** (live; secondary to diploma/undergrad): Follow a packet across the internet from browser to server. Data travels the internet in small packets, routed hop by hop.
-- **[opensql](https://github.com/KrunalPanchal1995/opensql)** (live; secondary to diploma/undergrad): Query a small database and design its tables. Relational databases store facts in tables that you question with simple queries.
-- **[opencrypto](https://github.com/KrunalPanchal1995/opencrypto)** (live; secondary to diploma/undergrad): Break and then fix a toy cipher, and learn why keys matter. Keys, not secrecy of the method, protect messages, and weak ciphers are easy to break.
+- **[openbinary](https://github.com/KrunalPanchal1995/pan-iit-oss/tree/main/openbinary)** (live; secondary to diploma/undergrad): Build an adder from logic gates and see how computers count. Computers count in binary and compute with logic gates built from switches.
+- **[opensorting](https://github.com/KrunalPanchal1995/pan-iit-oss/tree/main/opensorting)** (live; secondary to diploma/undergrad): Compare sorting algorithms by swaps, comparisons and time. Different algorithms do the same job at very different costs as data grows.
+- **[openpacket](https://github.com/KrunalPanchal1995/pan-iit-oss/tree/main/openpacket)** (live; secondary to diploma/undergrad): Follow a packet across the internet from browser to server. Data travels the internet in small packets, routed hop by hop.
+- **[opensql](https://github.com/KrunalPanchal1995/pan-iit-oss/tree/main/opensql)** (live; secondary to diploma/undergrad): Query a small database and design its tables. Relational databases store facts in tables that you question with simple queries.
+- **[opencrypto](https://github.com/KrunalPanchal1995/pan-iit-oss/tree/main/opencrypto)** (live; secondary to diploma/undergrad): Break and then fix a toy cipher, and learn why keys matter. Keys, not secrecy of the method, protect messages, and weak ciphers are easy to break.
 
 ### Artificial Intelligence, Data Science and Robotics
 
-- **[openneuralnet](https://github.com/KrunalPanchal1995/openneuralnet)** (live; higher secondary to advanced undergrad): Train a neural network from scratch and watch backpropagation. A neural network learns by adjusting weights to reduce error, using backpropagation.
-- **[openregression](https://github.com/KrunalPanchal1995/openregression)** (live; higher secondary to advanced undergrad): Predict crop yield with regression and spot overfitting. Fitting a line to data predicts new values, but too flexible a model memorises noise.
-- **[openclassifier](https://github.com/KrunalPanchal1995/openclassifier)** (live; higher secondary to advanced undergrad): Draw decision boundaries and read a confusion matrix. A classifier draws a boundary between categories, and a confusion matrix shows its mistakes.
-- **[openrecommend](https://github.com/KrunalPanchal1995/openrecommend)** (live; higher secondary to advanced undergrad): Build a recommender that suggests what you might like. Recommenders find items similar to what you liked using patterns in many users' choices.
-- **[openneuralode](https://github.com/KrunalPanchal1995/openneuralode)** (live; higher secondary to advanced undergrad): Learn dynamics from data with neural ODEs. A neural network can learn the rate of change of a system and then simulate it forward.
-- **[openpinn](https://github.com/KrunalPanchal1995/openpinn)** (live; higher secondary to advanced undergrad): Solve the heat equation with a physics-informed network. A network trained with a physical law as part of its loss can solve equations with little data.
-- **[opensurrogate](https://github.com/KrunalPanchal1995/opensurrogate)** (live; higher secondary to advanced undergrad): Build a neural surrogate for stiff kinetics. A fast learned stand-in for a slow simulation makes design and uncertainty studies affordable.
-- **[opensymbolic](https://github.com/KrunalPanchal1995/opensymbolic)** (live; higher secondary to advanced undergrad): Rediscover physical laws with symbolic regression. Symbolic regression searches for a formula that fits data, so the result can be read and trusted.
-- **[openrobotarm](https://github.com/KrunalPanchal1995/openrobotarm)** (live; higher secondary to advanced undergrad): Forward and inverse kinematics for a pick-and-place arm. Inverse kinematics finds the joint angles that put a robot's hand where it is needed.
-- **[openpathplanner](https://github.com/KrunalPanchal1995/openpathplanner)** (live; higher secondary to advanced undergrad): Plan routes for a warehouse robot with A* and RRT. A robot must find a route that avoids obstacles, with algorithms like A* and RRT.
+- **[openneuralnet](https://github.com/KrunalPanchal1995/pan-iit-oss/tree/main/openneuralnet)** (live; higher secondary to advanced undergrad): Train a neural network from scratch and watch backpropagation. A neural network learns by adjusting weights to reduce error, using backpropagation.
+- **[openregression](https://github.com/KrunalPanchal1995/pan-iit-oss/tree/main/openregression)** (live; higher secondary to advanced undergrad): Predict crop yield with regression and spot overfitting. Fitting a line to data predicts new values, but too flexible a model memorises noise.
+- **[openclassifier](https://github.com/KrunalPanchal1995/pan-iit-oss/tree/main/openclassifier)** (live; higher secondary to advanced undergrad): Draw decision boundaries and read a confusion matrix. A classifier draws a boundary between categories, and a confusion matrix shows its mistakes.
+- **[openrecommend](https://github.com/KrunalPanchal1995/pan-iit-oss/tree/main/openrecommend)** (live; higher secondary to advanced undergrad): Build a recommender that suggests what you might like. Recommenders find items similar to what you liked using patterns in many users' choices.
+- **[openneuralode](https://github.com/KrunalPanchal1995/pan-iit-oss/tree/main/openneuralode)** (live; higher secondary to advanced undergrad): Learn dynamics from data with neural ODEs. A neural network can learn the rate of change of a system and then simulate it forward.
+- **[openpinn](https://github.com/KrunalPanchal1995/pan-iit-oss/tree/main/openpinn)** (live; higher secondary to advanced undergrad): Solve the heat equation with a physics-informed network. A network trained with a physical law as part of its loss can solve equations with little data.
+- **[opensurrogate](https://github.com/KrunalPanchal1995/pan-iit-oss/tree/main/opensurrogate)** (live; higher secondary to advanced undergrad): Build a neural surrogate for stiff kinetics. A fast learned stand-in for a slow simulation makes design and uncertainty studies affordable.
+- **[opensymbolic](https://github.com/KrunalPanchal1995/pan-iit-oss/tree/main/opensymbolic)** (live; higher secondary to advanced undergrad): Rediscover physical laws with symbolic regression. Symbolic regression searches for a formula that fits data, so the result can be read and trusted.
+- **[openrobotarm](https://github.com/KrunalPanchal1995/pan-iit-oss/tree/main/openrobotarm)** (live; higher secondary to advanced undergrad): Forward and inverse kinematics for a pick-and-place arm. Inverse kinematics finds the joint angles that put a robot's hand where it is needed.
+- **[openpathplanner](https://github.com/KrunalPanchal1995/pan-iit-oss/tree/main/openpathplanner)** (live; higher secondary to advanced undergrad): Plan routes for a warehouse robot with A* and RRT. A robot must find a route that avoids obstacles, with algorithms like A* and RRT.
 
 ### Electrical Power and Renewable Energy
 
-- **[opensolarbattery](https://github.com/KrunalPanchal1995/opensolarbattery)** (live; diploma/undergrad to advanced undergrad): Size a rooftop solar and battery system for a home. Matching solar output, battery size and demand decides cost and reliability of a home system.
-- **[opengrid](https://github.com/KrunalPanchal1995/opengrid)** (live; diploma/undergrad to advanced undergrad): See how the grid balances supply and demand, and what power factor does. The grid must balance supply and demand every second, and power factor changes the load on lines.
+- **[opensolarbattery](https://github.com/KrunalPanchal1995/pan-iit-oss/tree/main/opensolarbattery)** (live; diploma/undergrad to advanced undergrad): Size a rooftop solar and battery system for a home. Matching solar output, battery size and demand decides cost and reliability of a home system.
+- **[opengrid](https://github.com/KrunalPanchal1995/pan-iit-oss/tree/main/opengrid)** (live; diploma/undergrad to advanced undergrad): See how the grid balances supply and demand, and what power factor does. The grid must balance supply and demand every second, and power factor changes the load on lines.
 - **`openwindturbine`** (built; diploma/undergrad to advanced undergrad): Estimate wind-turbine power from the wind and blade size. A turbine's power rises with the cube of wind speed, so siting and size matter a great deal.
 - **`openmppt`** (built; diploma/undergrad to advanced undergrad): Track the maximum power point of a solar panel. A solar panel gives the most power at one operating point, which a controller keeps tracking.
 - **`openhydrogen`** (built; diploma/undergrad to advanced undergrad): Fill a hydrogen tank and use a fuel cell, thermodynamics first. Hydrogen stores and carries energy, and filling and using it involves heat and pressure.
@@ -154,50 +154,50 @@ Openfirststeps is the umbrella for a family of small teaching repositories made 
 
 - **`openmassbalance`** (built; diploma/undergrad to advanced undergrad): Close the mass and energy balance of a simple process. What goes into a process must come out or accumulate, and checking that finds errors.
 - **`openheatexchanger`** (built; diploma/undergrad to advanced undergrad): Size a heat exchanger for a target outlet temperature. A heat exchanger moves heat between fluids without mixing them, and its size sets cost.
-- **[opendistillation](https://github.com/KrunalPanchal1995/opendistillation)** (live; diploma/undergrad to advanced undergrad): Separate ethanol and water with a distillation column. Distillation separates mixtures by boiling point differences, using a column of stages.
+- **[opendistillation](https://github.com/KrunalPanchal1995/pan-iit-oss/tree/main/opendistillation)** (live; diploma/undergrad to advanced undergrad): Separate ethanol and water with a distillation column. Distillation separates mixtures by boiling point differences, using a column of stages.
 - **`openreactor`** (built; diploma/undergrad to advanced undergrad): Design CSTR and PFR chemical reactors. The type and size of a reactor decide how much of a reactant converts to product.
-- **[opendesalination](https://github.com/KrunalPanchal1995/opendesalination)** (live; diploma/undergrad to advanced undergrad): Estimate the energy to turn seawater into drinking water. Making fresh water from seawater takes a minimum amount of energy set by physics.
+- **[opendesalination](https://github.com/KrunalPanchal1995/pan-iit-oss/tree/main/opendesalination)** (live; diploma/undergrad to advanced undergrad): Estimate the energy to turn seawater into drinking water. Making fresh water from seawater takes a minimum amount of energy set by physics.
 - **`opengreensteel`** (built; diploma/undergrad to advanced undergrad): Decarbonise a blast furnace with hydrogen injection. Replacing carbon with hydrogen in a blast furnace could cut a large source of emissions.
 
 ### Aerospace, Automotive and Transportation
 
-- **[openairfoil](https://github.com/KrunalPanchal1995/openairfoil)** (live; higher secondary to advanced undergrad): Estimate airfoil lift and drag with a panel method. The shape of a wing decides its lift and drag, and therefore a plane's fuel use.
-- **[openascent](https://github.com/KrunalPanchal1995/openascent)** (live; higher secondary to advanced undergrad): Fly a rocket launch trajectory to orbit with staging. A rocket must climb and turn to reach orbit, and staging drops dead weight on the way.
+- **[openairfoil](https://github.com/KrunalPanchal1995/pan-iit-oss/tree/main/openairfoil)** (live; higher secondary to advanced undergrad): Estimate airfoil lift and drag with a panel method. The shape of a wing decides its lift and drag, and therefore a plane's fuel use.
+- **[openascent](https://github.com/KrunalPanchal1995/pan-iit-oss/tree/main/openascent)** (live; higher secondary to advanced undergrad): Fly a rocket launch trajectory to orbit with staging. A rocket must climb and turn to reach orbit, and staging drops dead weight on the way.
 - **`opensuspension`** (built; higher secondary to advanced undergrad): Tune a quarter-car suspension for ride comfort. A suspension trades comfort against road holding by tuning springs and dampers.
 - **`opentrafficflow`** (built; higher secondary to advanced undergrad): Explain traffic jams from nothing with a car-following model. Traffic jams can start from nothing when drivers react to the car in front.
-- **[opendronecontrol](https://github.com/KrunalPanchal1995/opendronecontrol)** (live; higher secondary to advanced undergrad): PID hover and attitude control of a quadrotor. A multicopter hovers by controlling thrust with feedback, often a PID controller.
+- **[opendronecontrol](https://github.com/KrunalPanchal1995/pan-iit-oss/tree/main/opendronecontrol)** (live; higher secondary to advanced undergrad): PID hover and attitude control of a quadrotor. A multicopter hovers by controlling thrust with feedback, often a PID controller.
 
 ### Architecture, Design and Smart Buildings
 
-- **[opendaylight](https://github.com/KrunalPanchal1995/opendaylight)** (live; higher secondary to diploma/undergrad): Plan windows for natural daylight using the sun path. Window size and sun path decide how much natural light a room gets and how much energy it needs.
-- **[opencomfort](https://github.com/KrunalPanchal1995/opencomfort)** (live; higher secondary to diploma/undergrad): Cool a building passively with shading and ventilation. Shading and ventilation can keep a building cool without much energy.
-- **[openevacuation](https://github.com/KrunalPanchal1995/openevacuation)** (live; higher secondary to diploma/undergrad): Plan a safe evacuation from a building with crowd flow. People move like a flow, and exits and corridors set how quickly a building can be emptied.
+- **[opendaylight](https://github.com/KrunalPanchal1995/pan-iit-oss/tree/main/opendaylight)** (live; higher secondary to diploma/undergrad): Plan windows for natural daylight using the sun path. Window size and sun path decide how much natural light a room gets and how much energy it needs.
+- **[opencomfort](https://github.com/KrunalPanchal1995/pan-iit-oss/tree/main/opencomfort)** (live; higher secondary to diploma/undergrad): Cool a building passively with shading and ventilation. Shading and ventilation can keep a building cool without much energy.
+- **[openevacuation](https://github.com/KrunalPanchal1995/pan-iit-oss/tree/main/openevacuation)** (live; higher secondary to diploma/undergrad): Plan a safe evacuation from a building with crowd flow. People move like a flow, and exits and corridors set how quickly a building can be emptied.
 
 ### Economics, Business, Finance and Entrepreneurship
 
 - **`opensupplydemand`** (built; secondary to diploma/undergrad): Find the market price where supply meets demand. Price settles where what sellers offer equals what buyers want.
-- **[openloan](https://github.com/KrunalPanchal1995/openloan)** (live; secondary to diploma/undergrad): Compare loan EMIs and see how interest compounds. Interest compounds, and the length and rate of a loan decide what you really pay.
-- **[openbreakeven](https://github.com/KrunalPanchal1995/openbreakeven)** (live; secondary to diploma/undergrad): Find the break-even point of a small business. The break-even point is the sales level where income covers costs.
-- **[openportfolio](https://github.com/KrunalPanchal1995/openportfolio)** (live; secondary to diploma/undergrad): See how diversification lowers risk in a portfolio. Spreading money over assets that do not move together lowers risk.
+- **[openloan](https://github.com/KrunalPanchal1995/pan-iit-oss/tree/main/openloan)** (live; secondary to diploma/undergrad): Compare loan EMIs and see how interest compounds. Interest compounds, and the length and rate of a loan decide what you really pay.
+- **[openbreakeven](https://github.com/KrunalPanchal1995/pan-iit-oss/tree/main/openbreakeven)** (live; secondary to diploma/undergrad): Find the break-even point of a small business. The break-even point is the sales level where income covers costs.
+- **[openportfolio](https://github.com/KrunalPanchal1995/pan-iit-oss/tree/main/openportfolio)** (live; secondary to diploma/undergrad): See how diversification lowers risk in a portfolio. Spreading money over assets that do not move together lowers risk.
 
 ### Geography, Climate, Environment and Earth Science
 
-- **[openseismo](https://github.com/KrunalPanchal1995/openseismo)** (live; secondary to diploma/undergrad): Locate an earthquake from seismograph arrivals. Arrival times of earthquake waves at several stations locate where the quake began.
-- **[opennowcast](https://github.com/KrunalPanchal1995/opennowcast)** (live; secondary to diploma/undergrad): Nowcast rain by advecting radar fields. Moving the latest radar picture forward predicts rain over the next hour.
-- **[openclimate](https://github.com/KrunalPanchal1995/openclimate)** (live; secondary to diploma/undergrad): Explain the greenhouse effect with a simple energy-balance model. A simple energy balance shows how greenhouse gases warm the Earth.
-- **[openwatershed](https://github.com/KrunalPanchal1995/openwatershed)** (live; secondary to diploma/undergrad): Predict a river's flood peak from rainfall on a watershed. Rain falling on a catchment collects into a river, and the shape of the flood peak depends on the land.
+- **[openseismo](https://github.com/KrunalPanchal1995/pan-iit-oss/tree/main/openseismo)** (live; secondary to diploma/undergrad): Locate an earthquake from seismograph arrivals. Arrival times of earthquake waves at several stations locate where the quake began.
+- **[opennowcast](https://github.com/KrunalPanchal1995/pan-iit-oss/tree/main/opennowcast)** (live; secondary to diploma/undergrad): Nowcast rain by advecting radar fields. Moving the latest radar picture forward predicts rain over the next hour.
+- **[openclimate](https://github.com/KrunalPanchal1995/pan-iit-oss/tree/main/openclimate)** (live; secondary to diploma/undergrad): Explain the greenhouse effect with a simple energy-balance model. A simple energy balance shows how greenhouse gases warm the Earth.
+- **[openwatershed](https://github.com/KrunalPanchal1995/pan-iit-oss/tree/main/openwatershed)** (live; secondary to diploma/undergrad): Predict a river's flood peak from rainfall on a watershed. Rain falling on a catchment collects into a river, and the shape of the flood peak depends on the land.
 
 ### Astronomy and Space Science
 
-- **[openorbit](https://github.com/KrunalPanchal1995/openorbit)** (live; secondary to diploma/undergrad): Plan satellite transfer orbits with Kepler's laws. Kepler's laws and transfer orbits let spacecraft reach other planets with little fuel.
-- **[openseasons](https://github.com/KrunalPanchal1995/openseasons)** (live; secondary to diploma/undergrad): Explain day, night, seasons and Moon phases with geometry. The tilt of the Earth and its orbit explain day, night, seasons and Moon phases.
-- **[openeclipse](https://github.com/KrunalPanchal1995/openeclipse)** (live; secondary to diploma/undergrad): Predict when and where an eclipse will be seen. Eclipses follow from the geometry of Sun, Moon and Earth and can be predicted far ahead.
-- **[openexoplanet](https://github.com/KrunalPanchal1995/openexoplanet)** (live; secondary to diploma/undergrad): Find a planet around another star from a dip in starlight. A planet crossing its star dims the starlight slightly, which is how many planets are found.
+- **[openorbit](https://github.com/KrunalPanchal1995/pan-iit-oss/tree/main/openorbit)** (live; secondary to diploma/undergrad): Plan satellite transfer orbits with Kepler's laws. Kepler's laws and transfer orbits let spacecraft reach other planets with little fuel.
+- **[openseasons](https://github.com/KrunalPanchal1995/pan-iit-oss/tree/main/openseasons)** (live; secondary to diploma/undergrad): Explain day, night, seasons and Moon phases with geometry. The tilt of the Earth and its orbit explain day, night, seasons and Moon phases.
+- **[openeclipse](https://github.com/KrunalPanchal1995/pan-iit-oss/tree/main/openeclipse)** (live; secondary to diploma/undergrad): Predict when and where an eclipse will be seen. Eclipses follow from the geometry of Sun, Moon and Earth and can be predicted far ahead.
+- **[openexoplanet](https://github.com/KrunalPanchal1995/pan-iit-oss/tree/main/openexoplanet)** (live; secondary to diploma/undergrad): Find a planet around another star from a dip in starlight. A planet crossing its star dims the starlight slightly, which is how many planets are found.
 
 ### Statistics, Research and Experimental Methods
 
-- **[openexperiment](https://github.com/KrunalPanchal1995/openexperiment)** (live; higher secondary to advanced undergrad): Design a fair experiment and calibrate a sensor. A fair experiment and a calibrated sensor are what make data worth trusting.
-- **[openuncertainty](https://github.com/KrunalPanchal1995/openuncertainty)** (live; higher secondary to advanced undergrad): Propagate measurement error into a final answer. Every measurement has error, and the error carries through to the final answer.
+- **[openexperiment](https://github.com/KrunalPanchal1995/pan-iit-oss/tree/main/openexperiment)** (live; higher secondary to advanced undergrad): Design a fair experiment and calibrate a sensor. A fair experiment and a calibrated sensor are what make data worth trusting.
+- **[openuncertainty](https://github.com/KrunalPanchal1995/pan-iit-oss/tree/main/openuncertainty)** (live; higher secondary to advanced undergrad): Propagate measurement error into a final answer. Every measurement has error, and the error carries through to the final answer.
 - **`openhypothesis`** (planned; higher secondary to advanced undergrad): Run a correct A/B test and read a p-value. A test tells you whether a difference is likely real or just chance.
 - **`openkalman`** (planned; higher secondary to advanced undergrad): Track a moving phone by fusing noisy sensors with a Kalman filter. A Kalman filter combines noisy sensors and a model to give a better estimate than either.
 
@@ -210,22 +210,22 @@ Openfirststeps is the umbrella for a family of small teaching repositories made 
 
 ### Statistics, Research and Experimental Methods
 
-- **[openstereodic](https://github.com/KrunalPanchal1995/openstereodic)** (live; higher secondary to advanced undergrad): Measure 3D surface strain from two cameras (stereo digital image correlation). Two cameras can measure how a surface deforms in 3D without touching it, which turns photos into strain maps.
+- **[openstereodic](https://github.com/KrunalPanchal1995/pan-iit-oss/tree/main/openstereodic)** (live; higher secondary to advanced undergrad): Measure 3D surface strain from two cameras (stereo digital image correlation). Two cameras can measure how a surface deforms in 3D without touching it, which turns photos into strain maps.
 
 ### Biology, Human Body and Health Science
 
-- **[openproteinmd](https://github.com/KrunalPanchal1995/openproteinmd)** (live; secondary to diploma/undergrad): Fold a small peptide with molecular dynamics (general education). Molecular dynamics follows atoms under forces, showing how a protein folds and moves (general education only).
+- **[openproteinmd](https://github.com/KrunalPanchal1995/pan-iit-oss/tree/main/openproteinmd)** (live; secondary to diploma/undergrad): Fold a small peptide with molecular dynamics (general education). Molecular dynamics follows atoms under forces, showing how a protein folds and moves (general education only).
 
 ### Statistics, Research and Experimental Methods
 
-- **[openflame](https://github.com/KrunalPanchal1995/openflame)** (live; higher secondary to advanced undergrad): Measure flame height and flicker frequency from a phone video. Video of a flame holds its height and flicker frequency, which relate to fuel, size and stability.
-- **[openkymo](https://github.com/KrunalPanchal1995/openkymo)** (live; higher secondary to advanced undergrad): Read flow speed off the stripe slopes of a kymograph. A kymograph turns motion over time into stripes whose slope is the speed.
-- **[openabel](https://github.com/KrunalPanchal1995/openabel)** (live; higher secondary to advanced undergrad): Recover a 3D flame slice from a 2D photo with the Abel inversion. The Abel inversion recovers the inside of an axisymmetric object, like a flame, from a flat image.
-- **[openalias](https://github.com/KrunalPanchal1995/openalias)** (live; higher secondary to advanced undergrad): Understand the wagon-wheel effect and recover the true frequency. Sampling too slowly makes fast motion look slow or backwards, as in the wagon-wheel effect, and the true frequency can be recovered.
+- **[openflame](https://github.com/KrunalPanchal1995/pan-iit-oss/tree/main/openflame)** (live; higher secondary to advanced undergrad): Measure flame height and flicker frequency from a phone video. Video of a flame holds its height and flicker frequency, which relate to fuel, size and stability.
+- **[openkymo](https://github.com/KrunalPanchal1995/pan-iit-oss/tree/main/openkymo)** (live; higher secondary to advanced undergrad): Read flow speed off the stripe slopes of a kymograph. A kymograph turns motion over time into stripes whose slope is the speed.
+- **[openabel](https://github.com/KrunalPanchal1995/pan-iit-oss/tree/main/openabel)** (live; higher secondary to advanced undergrad): Recover a 3D flame slice from a 2D photo with the Abel inversion. The Abel inversion recovers the inside of an axisymmetric object, like a flame, from a flat image.
+- **[openalias](https://github.com/KrunalPanchal1995/pan-iit-oss/tree/main/openalias)** (live; higher secondary to advanced undergrad): Understand the wagon-wheel effect and recover the true frequency. Sampling too slowly makes fast motion look slow or backwards, as in the wagon-wheel effect, and the true frequency can be recovered.
 
 ### Chemistry and Materials Science
 
-- **[openmechanism](https://github.com/KrunalPanchal1995/openmechanism)** (live; secondary to diploma/undergrad): Optimise a kinetic mechanism against experiments. A chemical mechanism with many uncertain rates can be tuned against experiments, which makes combustion models trustworthy.
+- **[openmechanism](https://github.com/KrunalPanchal1995/pan-iit-oss/tree/main/openmechanism)** (live; secondary to diploma/undergrad): Optimise a kinetic mechanism against experiments. A chemical mechanism with many uncertain rates can be tuned against experiments, which makes combustion models trustworthy.
 
 ### Statistics, Research and Experimental Methods
 
@@ -273,7 +273,7 @@ Openfirststeps is the umbrella for a family of small teaching repositories made 
 ### Physics and the Science of Motion
 
 - **`openrollercoaster`** (planned; secondary to diploma/undergrad): Design a roller coaster drop that is thrilling and safe using energy conservation. Energy conservation tells how fast a ride goes at every point of the track.
-- **`opencollisions`** (planned; secondary to diploma/undergrad): Predict what happens in collisions with momentum and energy. Momentum and energy rules predict how objects move after they hit.
+- **[opencollisions](https://github.com/KrunalPanchal1995/pan-iit-oss/tree/main/opencollisions)** (live; secondary to diploma/undergrad): Predict what happens in collisions with momentum and energy. Momentum and energy rules predict how objects move after they hit.
 - **`openripple`** (planned; secondary to diploma/undergrad): See how waves add and cancel using superposition. Waves add and cancel, which explains interference, noise cancelling and light patterns.
 
 ### Heat, Thermodynamics and Fluid Mechanics
@@ -441,7 +441,7 @@ Openfirststeps is the umbrella for a family of small teaching repositories made 
 - **`opencascade`** (planned; higher secondary to diploma/undergrad): Show the energy cascade and Kolmogorov scaling in turbulence. Turbulent energy moves from large eddies to small ones where it becomes heat.
 - **`openvortexstreet`** (planned; higher secondary to diploma/undergrad): Predict vortex shedding behind a cylinder. Flow past a cylinder sheds alternating vortices at a frequency set by the Strouhal number.
 - **`opennssolver`** (planned; higher secondary to diploma/undergrad): Write a small incompressible Navier-Stokes solver with the projection method. A projection method solves the incompressible Navier-Stokes equations step by step on a grid.
-- **[openregularity](https://github.com/KrunalPanchal1995/openregularity)** (live; higher secondary to diploma/undergrad): Learn what is known and unknown about smooth Navier-Stokes solutions (the Millennium problem). Whether smooth solutions of the Navier-Stokes equations always stay smooth is a famous open problem; this repo teaches what is known and does not claim a proof.
+- **[openregularity](https://github.com/KrunalPanchal1995/pan-iit-oss/tree/main/openregularity)** (live; higher secondary to diploma/undergrad): Learn what is known and unknown about smooth Navier-Stokes solutions (the Millennium problem). Whether smooth solutions of the Navier-Stokes equations always stay smooth is a famous open problem; this repo teaches what is known and does not claim a proof.
 
 ### Life Skills, Mind and Learning
 
@@ -456,7 +456,7 @@ Openfirststeps is the umbrella for a family of small teaching repositories made 
 
 ### Statistics, Research and Experimental Methods
 
-- **[openstitchdic](https://github.com/KrunalPanchal1995/openstitchdic)** (live; higher secondary to advanced undergrad): Merge two cameras with different angles, frame rates and aspect ratios into one uniform data set with Makima interpolation. Cameras that differ in angle, frame rate and aspect ratio can still be merged into one data set with warping and interpolation.
+- **[openstitchdic](https://github.com/KrunalPanchal1995/pan-iit-oss/tree/main/openstitchdic)** (live; higher secondary to advanced undergrad): Merge two cameras with different angles, frame rates and aspect ratios into one uniform data set with Makima interpolation. Cameras that differ in angle, frame rate and aspect ratio can still be merged into one data set with warping and interpolation.
 
 ### Mathematics and Visual Problem-Solving
 
@@ -473,28 +473,28 @@ Openfirststeps is the umbrella for a family of small teaching repositories made 
 ### Chemical, Environmental and Process Engineering
 
 - **`openplasma`** (planned; diploma/undergrad to advanced undergrad): Explain plasma pyrolysis, gasification and combustion with one energy and mass balance. Pyrolysis, gasification and combustion differ mainly in how much oxygen is present and how hot it is.
-- **[openprocesssim](https://github.com/KrunalPanchal1995/openprocesssim)** (live; diploma/undergrad to advanced undergrad): Build a small open process simulator with flash, heat exchanger and reactor blocks. A process simulator links unit blocks and solves their mass and energy balances together.
+- **[openprocesssim](https://github.com/KrunalPanchal1995/pan-iit-oss/tree/main/openprocesssim)** (live; diploma/undergrad to advanced undergrad): Build a small open process simulator with flash, heat exchanger and reactor blocks. A process simulator links unit blocks and solves their mass and energy balances together.
 - **`openturbflame`** (built; diploma/undergrad to advanced undergrad): Model a turbulent flame with a flamelet closure. A flamelet closure links chemistry to turbulence through the mixture fraction.
 - **`opensootmoments`** (built; diploma/undergrad to advanced undergrad): Predict soot size and number with the method of moments. The method of moments follows a few averages of the soot size distribution.
 - **`opensootsectional`** (built; diploma/undergrad to advanced undergrad): Predict the soot size distribution with the sectional method. The sectional method splits soot sizes into bins and follows each bin.
 
 ### Statistics, Research and Experimental Methods
 
-- **[openflamevolume](https://github.com/KrunalPanchal1995/openflamevolume)** (live; higher secondary to advanced undergrad): Rebuild a 3D flame from many 2D photos using stereo image correlation. Several views of a flame can be combined to rebuild its three-dimensional shape.
+- **[openflamevolume](https://github.com/KrunalPanchal1995/pan-iit-oss/tree/main/openflamevolume)** (live; higher secondary to advanced undergrad): Rebuild a 3D flame from many 2D photos using stereo image correlation. Several views of a flame can be combined to rebuild its three-dimensional shape.
 - **`opensmokevideo`** (built; higher secondary to advanced undergrad): Estimate smoke density and flow rate from a video using light absorption and refraction. How smoke absorbs and bends light tells its density and how fast it flows.
 
 ### Mechanical Engineering
 
-- **`opensolidmodel`** (planned; diploma/undergrad to advanced undergrad): Build a small parametric CAD kernel like SolidWorks. A CAD kernel stores shapes with parameters so they can be edited later.
-- **`openparametric`** (planned; diploma/undergrad to advanced undergrad): Generate engineered parts from rules and equations like computational engineering tools. Rules and equations can generate whole parts that change when requirements change.
+- **[opensolidmodel](https://github.com/KrunalPanchal1995/pan-iit-oss/tree/main/opensolidmodel)** (live; diploma/undergrad to advanced undergrad): Build a small parametric CAD kernel like SolidWorks. A CAD kernel stores shapes with parameters so they can be edited later.
+- **[openparametric](https://github.com/KrunalPanchal1995/pan-iit-oss/tree/main/openparametric)** (live; diploma/undergrad to advanced undergrad): Generate engineered parts from rules and equations like computational engineering tools. Rules and equations can generate whole parts that change when requirements change.
 
 ### Aerospace, Automotive and Transportation
 
-- **`opengasturbine`** (planned; higher secondary to advanced undergrad): Predict gas turbine thrust and efficiency with the Brayton cycle. The Brayton cycle compresses, heats and expands air to make thrust or power.
+- **[opengasturbine](https://github.com/KrunalPanchal1995/pan-iit-oss/tree/main/opengasturbine)** (live; higher secondary to advanced undergrad): Predict gas turbine thrust and efficiency with the Brayton cycle. The Brayton cycle compresses, heats and expands air to make thrust or power.
 
 ### Physics and the Science of Motion
 
-- **`openqmintro`** (planned; secondary to diploma/undergrad): Learn the basic ideas of quantum mechanics: superposition, measurement and tunnelling. Superposition, measurement and tunnelling are the core ideas behind chemistry and electronics.
+- **[openqmintro](https://github.com/KrunalPanchal1995/pan-iit-oss/tree/main/openqmintro)** (live; secondary to diploma/undergrad): Learn the basic ideas of quantum mechanics: superposition, measurement and tunnelling. Superposition, measurement and tunnelling are the core ideas behind chemistry and electronics.
 
 ## Licence and credits
 

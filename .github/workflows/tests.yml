@@ -1,0 +1,36 @@
+name: Checks
+
+on:
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      project:
+        description: "Project folder to check (empty = every project)"
+        required: false
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Run each project's own check (the same command a beginner runs)
+        run: |
+          if [ -n "${{ github.event.inputs.project }}" ]; then
+            list="${{ github.event.inputs.project }}"
+          elif [ "${{ github.event_name }}" = "pull_request" ]; then
+            list=$(git diff --name-only origin/${{ github.base_ref }}...HEAD | cut -d/ -f1 | sort -u | while read d; do [ -f "$d/start.py" ] && echo "$d"; done)
+          else
+            list=$(ls -d */ | tr -d / | while read d; do [ -f "$d/start.py" ] && echo "$d"; done)
+          fi
+          fail=0
+          for p in $list; do
+            echo "::group::$p"
+            (cd "$p" && python start.py test) || { echo "FAILED: $p"; fail=1; }
+            echo "::endgroup::"
+          done
+          exit $fail

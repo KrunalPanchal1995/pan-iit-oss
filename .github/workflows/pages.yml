@@ -10,6 +10,10 @@ permissions:
   pages: write
   id-token: write
 
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
 jobs:
   deploy:
     runs-on: ubuntu-latest
@@ -18,7 +22,23 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - uses: actions/checkout@v4
-      - run: mkdir _site && cp index.html _site/
+      - name: Assemble site (hub page plus every project's live apps)
+        run: |
+          mkdir _site
+          cp index.html _site/
+          for p in */; do
+            p="${p%/}"
+            [ -f "$p/site/index.html" ] || continue
+            mkdir -p "_site/$p"
+            cp "$p/site/index.html" "_site/$p/index.html"
+            for d in "$p"/sessions/session-*; do
+              [ -f "$d/app.html" ] || continue
+              mkdir -p "_site/$p/$(basename "$d")"
+              cp "$d/app.html" "_site/$p/$(basename "$d")/index.html"
+            done
+            [ -d "$p/promo/media" ] && cp -r "$p/promo/media" "_site/$p/media"
+          done
+          true
       - uses: actions/configure-pages@v5
         with:
           enablement: true
