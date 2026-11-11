@@ -83,6 +83,27 @@ Run the lesson (`python start.py 2`), then open the live app: [Session 2: plan a
 
 **Experiment.** Load the generated G-code into a free G-code viewer or simulator and compare its time estimate and its picture with this model, then (only if a trained operator supervises a real machine) compare with a stopwatch. A real machine will usually be slower: it accelerates and slows at every line end, the cutter and the material limit the feed, and a finishing lap is normally added. The model assumes constant feed and no finishing lap.
 
+### Checking the pocket in an external G-code viewer
+
+Save this as `export_pocket.py` in `opencncpath/` and run `python start.py run export_pocket.py` from that folder (use `python3` on Mac or Linux):
+
+```python
+from pathlib import Path
+from runpy import run_path
+
+pocket_gcode = run_path("sessions/session-02/lesson.py")["pocket_gcode"]
+program = pocket_gcode(40, 30, 5, 6, 2, 4.5, 300)
+Path("session-02-pocket.nc").write_text(program, encoding="ascii")
+```
+
+In the free [UltraNC G-code Viewer](https://ultranc.com/gcode-viewer/app/), click **Open File** and select `session-02-pocket.nc`. Choose **Iso**, turn on **Color by depth**, and turn off **Rapid moves** to see the layers more clearly.
+
+![UltraNC showing seven zigzag passes at each of three depths, with an estimated runtime of 2:44.](../../docs/figures/s02_pocket_external_viewer.png)
+
+The 34 × 24 mm cutter centre path repeats at Z = −1.667, −3.333 and −5 mm. With its default settings, UltraNC shows **2:44 (164 s)**, about **1.4 s longer** than the lesson's 162.6 s with rapids (160.5 s without them). UltraNC starts at Z = 50 mm, uses separate XY and Z rapid rates (5000 and 2000 mm/min), and models acceleration. The lesson starts at the origin and assumes constant speeds with a single 3000 mm/min rapid rate. Both are estimates; actual machining times can differ.
+
+**Safety.** This program is for visualization only and includes rapid returns below the modeled stock surface. Real CNC machines require trained operators, machine-specific verification, and appropriate safety checks before running any G-code.
+
 ## F. Assessment and design challenge
 **Question type A: Conceptual.** The same start (10, 0) and end (0, 10) with I-10 J0 are used for G3 and for G2. Do they give the same arc? Why does the centre not change?
 
